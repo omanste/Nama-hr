@@ -102,3 +102,11 @@ test("a request sent before the manager had a login moves to the manager once th
   assert.equal(now.approver_user_id, u.data.user.id);
   assert.equal(now.route_reason, "dept");
 });
+
+test("my lists can be narrowed to a month or a year", async () => {
+  const nov = (await other.c.get("/api/requests?scope=mine&kind=permission&from=2026-11-01&to=2026-11-30")).data.items;
+  assert.ok(nov.length >= 3 && nov.every((r) => r.start_date.startsWith("2026-11")));
+  const oct = (await other.c.get("/api/requests?scope=mine&kind=permission&from=2026-10-01&to=2026-10-31")).data.items;
+  assert.ok(oct.every((r) => r.start_date.startsWith("2026-10")));
+  assert.equal((await other.c.get("/api/requests?scope=mine&from=2026-13-01")).status, 400);
+});

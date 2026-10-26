@@ -262,6 +262,10 @@ const D = {
   voice_close: ["إغلاق الرسالة", "Close message"], voice_reopen: ["إعادة فتح", "Reopen"], replies_n: ["{n} رد", "{n} replies"],
   voice_no_recipients: ["لا يوجد مستلم متاح بعد (لا يوجد حساب لمديرك أو للموارد البشرية أو الرئيس التنفيذي).", "Nobody can receive messages yet (no login for your manager, HR or the CEO)."],
   report_voice: ["صوت الموظف", "Staff Voice"], report_voice_note: ["أعداد فقط — لا تظهر نصوص الرسائل في التقارير.", "Counts only — message text never appears in reports."], still_open: ["مفتوحة", "Still open"],
+  // my leave / my permissions pages
+  my_leave: ["إجازاتي", "My leave"], leave_taken: ["الإجازات المأخوذة", "Leave taken"], year: ["السنة", "Year"], month: ["الشهر", "Month"],
+  times_n: ["{n} مرة", "{n} times"], pending_n: ["{n} قيد الموافقة", "{n} pending"],
+  nothing_approved_period: ["لا يوجد شيء معتمد في هذه الفترة", "Nothing approved in this period"],
 };
 
 let lang = "ar";

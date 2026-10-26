@@ -260,6 +260,10 @@ export function registerRequests(api, ctx) {
       where.push(`e.department_id IN (${depts.map(() => "?").join(",")})`); args.push(...depts);
     } else if (scope === "all") { if (!can(sess, "requests.viewAll")) throw forbidden(); }
     else throw err(400, "invalid", "unknown scope");
+    // period: requests starting between from and to (YYYY-MM-DD)
+    const from = req.query.get("from"), to = req.query.get("to");
+    if (from) { if (!isIsoDate(from)) throw err(400, "invalid", "from must be a date"); where.push("r.start_date>=?"); args.push(from); }
+    if (to) { if (!isIsoDate(to)) throw err(400, "invalid", "to must be a date"); where.push("r.start_date<=?"); args.push(to); }
     const status = req.query.get("status");
     if (status) { where.push("r.status=?"); args.push(status); }
     const emp = req.query.get("employee");

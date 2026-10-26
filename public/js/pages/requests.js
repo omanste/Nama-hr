@@ -1,31 +1,63 @@
 import { api } from "../api.js";
-import { t } from "../i18n.js";
-import { h, clear, select, pageHead, empty } from "../ui.js";
+import { t, getLang } from "../i18n.js";
+import { h, clear, select, pageHead, empty, num, daysText, todayIso, PERMISSIONS } from "../ui.js";
 import { requestItem } from "./home.js";
-import { permissionSummaryCard } from "./profile.js";
 
 const STATUSES = ["pending", "approved", "rejected", "cancelled"];
 const TITLES = { mine: "my_requests", all: "all_requests", team: "team_requests" };
+const pad = (n) => String(n).padStart(2, "0");
+const monthName = (m) => new Intl.DateTimeFormat(getLang() === "ar" ? "ar-OM-u-nu-latn" : "en-GB", { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2026, m - 1, 1)));
+
+/** Summary of the shown period: times and days/hours of each type (approved requests only). */
+function summary(items, perm, freeLeft) {
+  const done = items.filter((r) => r.status === "approved");
+  const types = [...new Set(done.map((r) => r.type))];
+  const order = perm ? PERMISSIONS : types.sort();
+  const amount = (m) => (perm ? t("hours", { n: num(m / 60) }) : daysText(m));
+  const total = done.reduce((a, r) => a + r.minutes, 0);
+  const pending = items.filter((r) => r.status === "pending").length;
+  return h("section", { class: "card" },
+    h("div", { class: "card-head" }, h("h2", null, t(perm ? "sec_permissions" : "leave_taken")),
+      perm && freeLeft !== undefined ? h("span", { class: "badge" }, t("free_left_month"), ": ", t("hours", { n: num(freeLeft / 60) })) : null),
+    order.length ? h("dl", { class: "facts" },
+      order.map((k) => { const rs = done.filter((r) => r.type === k); return h("div", null, h("dt", null, t("lt_" + k)), h("dd", { class: "num" }, perm ? t("times_hours", { n: num(rs.length), h: num(rs.reduce((a, r) => a + r.minutes, 0) / 60) }) : `${t("times_n", { n: num(rs.length) })} · ${amount(rs.reduce((a, r) => a + r.minutes, 0))}`)); }),
+      h("div", null, h("dt", null, h("b", null, t("total"))), h("dd", { class: "num" }, h("b", null, `${t("times_n", { n: num(done.length) })} · ${amount(total)}`)))) : h("p", { class: "sub" }, t("nothing_approved_period")),
+    h("p", { class: "sub", style: { margin: "10px 0 0" } }, t("approved_only"), pending ? ` · ${t("pending_n", { n: num(pending) })}` : ""));
+}
 
 export async function render(el, _p, { opts, query, me }) {
-  const scope = opts.scope;
+  const scope = opts.scope, mine = scope === "mine", perm = opts.kind === "permission";
   const status = select("status", [["", `${t("status")}: ${t("all")}`], ...STATUSES.map((s) => [s, t("rs_" + s)])], query.get("status") || "");
-  const out = h("div");
-  // my own pages are split (leave / permissions); team and all pages can filter
+  // my own pages are split (leave / permissions); team and all pages can filter by kind
   const kindSel = opts.kind ? null : select("kind", [["", `${t("kind")}: ${t("all")}`], ["leave", t("kind_leave")], ["permission", t("kind_permission")]], query.get("kind") || "");
+  // period: a year, and optionally a month (permissions open on this month, everything else on this year)
+  const now = todayIso(), thisYear = Number(now.slice(0, 4));
+  const years = []; for (let y = thisYear + 1; y >= thisYear - 5; y--) years.push(y);
+  const yearSel = select("year", [["", `${t("year")}: ${t("all")}`], ...years.map((y) => [y, String(y)])], query.get("year") || (mine ? thisYear : ""));
+  const monthSel = select("month", [["", `${t("month")}: ${t("all")}`], ...Array.from({ length: 12 }, (_, i) => [i + 1, monthName(i + 1)])], query.get("month") || (mine && perm ? Number(now.slice(5, 7)) : ""));
+  const head = h("div"), out = h("div");
+  let freeLeft;
+  if (perm && me.employee) freeLeft = (await api.get(`/api/employees/${me.employee.id}`)).permissions.freeLeft;
   const load = async () => {
+    monthSel.disabled = !yearSel.value;
     const qs = new URLSearchParams({ scope });
     if (status.value) qs.set("status", status.value);
     const kind = opts.kind || (kindSel && kindSel.value);
     if (kind) qs.set("kind", kind);
+    if (yearSel.value) {
+      const y = yearSel.value, m = monthSel.value;
+      qs.set("from", m ? `${y}-${pad(m)}-01` : `${y}-01-01`);
+      qs.set("to", m ? `${y}-${pad(m)}-${new Date(Date.UTC(y, m, 0)).getUTCDate()}` : `${y}-12-31`);
+    }
     const { items } = await api.get(`/api/requests?${qs}`);
-    clear(out).append(items.length ? h("div", { class: "list" }, items.map((r) => requestItem(r, scope !== "mine"))) : empty());
+    if (mine && opts.kind) clear(head).append(summary(items, perm, freeLeft));
+    clear(out).append(items.length ? h("div", { class: "list" }, items.map((r) => requestItem(r, !mine))) : empty());
   };
-  status.addEventListener("change", load);
-  if (kindSel) kindSel.addEventListener("change", load);
-  const perm = opts.kind === "permission";
-  el.append(pageHead(t(perm ? "my_permissions" : TITLES[scope]), scope === "mine" && me.employee ? h("a", { class: "btn primary", href: perm ? "#/permissions/new" : "#/leave/new" }, t(perm ? "apply_permission" : "new_request")) : null),
-    perm && me.employee ? await permissionSummaryCard(me.employee.id) : null,
+  for (const s of [status, yearSel, monthSel, kindSel]) if (s) s.addEventListener("change", load);
+  el.append(pageHead(t(perm ? "my_permissions" : opts.kind === "leave" && mine ? "my_leave" : TITLES[scope]),
+      mine && me.employee ? h("a", { class: "btn primary", href: perm ? "#/permissions/new" : "#/leave/new" }, t(perm ? "apply_permission" : "new_request")) : null),
+    h("div", { class: "toolbar" }, yearSel, monthSel), head,
+    h("h2", { style: { margin: "18px 0 8px" } }, t("history")),
     h("div", { class: "toolbar" }, kindSel, status), out);
   await load();
 }

@@ -288,3 +288,4 @@ h1,h2{overflow-wrap:anywhere}
 .badge.v-new{background:var(--gold);color:#fff} .badge.v-in_review{background:var(--gold-soft);color:var(--fg)}
 .badge.v-answered{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)} .badge.v-closed{background:var(--surface-2);color:var(--muted)}
 .read-row input[type=radio]{width:20px;height:20px;min-height:0;margin-top:3px;flex:none}
+.card-head{flex-wrap:wrap} .card-head > h2{white-space:nowrap}
