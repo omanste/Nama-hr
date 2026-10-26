@@ -1,0 +1,16 @@
+node_modules/
+data/
+*.db
+*.db-shm
+*.db-wal
+backups/
+.env
+.env.*
+!.env.example
+tests/out/
+.superpowers/
+# never commit staff data or spreadsheets (the test fixture is generated, not committed)
+*.xlsx
+*.xls
+*.csv
+*backup*.json
