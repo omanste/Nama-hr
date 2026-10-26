@@ -4,7 +4,7 @@ import { nowIso, tx, getSetting } from "./db.mjs";
 import { send, readJson, HttpError } from "./http.mjs";
 import { can, canViewEmployee, approvedDepartments } from "./perm.mjs";
 import { audit } from "./audit.mjs";
-import { TYPES, requestMinutes, eligibleFrom, isIsoDate, fmtDays, DAY, checkLeaveRules, RuleError, sickPayBands, addMonths, daysBetweenInclusive, addDays } from "./leave.mjs";
+import { TYPES, requestMinutes, eligibleFrom, isIsoDate, fmtDays, DAY, checkLeaveRules, RuleError, sickPayBands, addMonths, daysBetweenInclusive, addDays, daysExcludingHolidays } from "./leave.mjs";
 import { approverFor } from "./routing.mjs";
 import { postLedger, balanceOf, pendingMinutes, yearStartFor } from "./ledger.mjs";
 import { notify } from "./notify.mjs";
@@ -26,6 +26,16 @@ export function dayEndOn(db, date) {
   const rs = getSetting(db, "ramadan_start", null), re = getSetting(db, "ramadan_end", null);
   if (rs && re && date >= rs && date <= re) return hm(getSetting(db, "ramadan_day_end", "15:00"));
   return hm(getSetting(db, "work_day_end", "17:00"));
+}
+
+const holidaySet = (db) => new Set(getSetting(db, "official_holidays", []).map((h) => h.date));
+
+/** Early leave: the part of a request beyond this month's free hours, deducted from annual leave (company policy). */
+export function earlyDeduction(db, empId, date, minutes, excludeId = 0, statuses = "('approved')") {
+  const free = Math.round(Number(getSetting(db, "early_free_hours_month", 4)) * 60);
+  const used = db.prepare(`SELECT coalesce(sum(minutes),0) n FROM leave_requests WHERE employee_id=? AND type='early' AND status IN ${statuses}
+    AND substr(start_date,1,7)=? AND id<>?`).get(empId, date.slice(0, 7), excludeId).n;
+  return Math.max(0, minutes - Math.max(0, free - used));
 }
 
 /** Days already requested (pending or approved) of a type, for the legal limits. */
@@ -69,6 +79,17 @@ export function validateRequest(db, emp, body, today) {
   let minutes;
   try { minutes = requestMinutes(type, { start, end, time, dayEnd: dayEndOn(db, start) }); }
   catch (e) { throw err(400, "invalid", e.message, type === "early" ? "time" : "end"); }
+  // official holidays inside leave taken from the annual balance are not deducted
+  if (TYPES[type].effect === "deduct") {
+    const days = daysExcludingHolidays(start, end, holidaySet(db));
+    if (!days) throw err(400, "invalid", "All the chosen days are official holidays", "start");
+    minutes = days * DAY;
+  }
+  let compChoice = null;
+  if (type === "comp_day") {
+    compChoice = body.comp_choice || "leave";
+    if (!["leave", "pay"].includes(compChoice)) throw err(400, "invalid", "Choose a day off or payment", "comp_choice");
+  }
   const relation = String(body.relation || "").trim().slice(0, 100) || null;
   const eventDate = body.event_date || null;
   if (TYPES[type].range) {
@@ -91,7 +112,12 @@ export function validateRequest(db, emp, body, today) {
     const available = balanceOf(db, emp.id) - pendingMinutes(db, emp.id);
     if (minutes > available) throw err(409, "insufficient_balance", `This exceeds your available balance (${fmtDays(available)} days)`);
   }
-  return { type, start_date: start, end_date: end, early_time: time, minutes, relation, event_date: TYPES[type].event ? eventDate : null };
+  if (type === "early") {
+    const extra = earlyDeduction(db, emp.id, start, minutes, 0, ACTIVE);
+    const available = balanceOf(db, emp.id) - pendingMinutes(db, emp.id);
+    if (extra > available) throw err(409, "insufficient_balance", `This exceeds your available balance (${fmtDays(available)} days)`);
+  }
+  return { type, start_date: start, end_date: end, early_time: time, minutes, relation, event_date: TYPES[type].event ? eventDate : null, comp_choice: compChoice };
 }
 
 function event(db, requestId, action, actorId, comment) {
@@ -125,8 +151,8 @@ export function registerRequests(api, ctx) {
     const r = tx(db, () => {
       const v = validateRequest(db, emp, body, ctx.today());
       const route = routeFor(db, emp);
-      const ins = db.prepare(`INSERT INTO leave_requests(employee_id,type,start_date,end_date,early_time,minutes,reason,status,approver_user_id,route_reason,created_by,created_at,relation,event_date)
-        VALUES(?,?,?,?,?,?,?,'pending',?,?,?,?,?,?)`).run(emp.id, v.type, v.start_date, v.end_date, v.early_time, v.minutes, String(body.reason || "").slice(0, 1000) || null, route.userId, route.reason, sess.user.id, nowIso(), v.relation, v.event_date);
+      const ins = db.prepare(`INSERT INTO leave_requests(employee_id,type,start_date,end_date,early_time,minutes,reason,status,approver_user_id,route_reason,created_by,created_at,relation,event_date,comp_choice)
+        VALUES(?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?)`).run(emp.id, v.type, v.start_date, v.end_date, v.early_time, v.minutes, String(body.reason || "").slice(0, 1000) || null, route.userId, route.reason, sess.user.id, nowIso(), v.relation, v.event_date, v.comp_choice);
       const row = getReq(db, ins.lastInsertRowid);
       event(db, row.id, "submitted", sess.user.id, row.reason);
       audit(db, sess.user.id, "request.submit", "request", row.id, null, row);
@@ -172,7 +198,8 @@ export function registerRequests(api, ctx) {
         WHERE employee_id=? AND type='sick' AND status='approved' AND id<>? AND substr(start_date,1,4)=? AND start_date<?`).get(r.employee_id, r.id, r.start_date.slice(0, 4), r.start_date).n;
       sickPay = sickPayBands(prior, daysBetweenInclusive(r.start_date, r.end_date));
     }
-    send(req, res, 200, { request: r, events, approver, files, sickPay, needsProof: !!TYPES[r.type].proof && !files.length,
+    const deducted = -db.prepare("SELECT coalesce(sum(minutes),0) n FROM leave_ledger WHERE request_id=?").get(r.id).n;
+    send(req, res, 200, { request: r, events, approver, files, sickPay, deducted, earlyFreeHours: Number(getSetting(db, "early_free_hours_month", 4)), needsProof: !!TYPES[r.type].proof && !files.length,
       canDecide: r.status === "pending" && can(req.sess, "request.decide", r), canPostpone: r.status === "pending" && r.type === "annual" && can(req.sess, "request.decide", r) });
   });
 
@@ -196,8 +223,15 @@ export function registerRequests(api, ctx) {
           if (effect === "deduct") {
             const available = balanceOf(db, emp.id) - pendingMinutes(db, emp.id, r.id);
             if (r.minutes > available) throw err(409, "insufficient_balance", `The balance is no longer enough (${fmtDays(available)} days available)`);
-            postLedger(db, emp, { kind: "annual_leave", minutes: -r.minutes, date: r.start_date, requestId: r.id, by: sess.user.id });
-          } else if (effect === "credit") {
+            postLedger(db, emp, { kind: r.type === "emergency" ? "emergency_leave" : "annual_leave", minutes: -r.minutes, date: r.start_date, requestId: r.id, by: sess.user.id });
+          } else if (effect === "early") {
+            const extra = earlyDeduction(db, emp.id, r.start_date, r.minutes, r.id);
+            if (extra > 0) {
+              const available = balanceOf(db, emp.id) - pendingMinutes(db, emp.id);
+              if (extra > available) throw err(409, "insufficient_balance", `The balance is no longer enough (${fmtDays(available)} days available)`);
+              postLedger(db, emp, { kind: "early_leave", minutes: -extra, date: r.start_date, requestId: r.id, note: "Beyond the monthly free hours", by: sess.user.id });
+            }
+          } else if (effect === "credit" && r.comp_choice !== "pay") {
             postLedger(db, emp, { kind: "comp_credit", minutes: DAY, date: r.start_date, requestId: r.id, note: "Worked on a holiday", by: sess.user.id });
           }
         }

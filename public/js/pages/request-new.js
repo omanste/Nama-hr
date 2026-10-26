@@ -5,7 +5,7 @@ import { h, field, select, toast, errText, showFieldError, backLink, daysText, n
 
 // mirrors server/leave.mjs TYPES (the server enforces every limit; this only guides the form)
 const RULES = {
-  annual: { range: true, deduct: true }, early: { hours: true }, sick: { range: true, proof: true }, emergency: { range: true },
+  annual: { range: true, deduct: true }, early: { hours: true }, sick: { range: true, proof: true }, emergency: { range: true, deduct: true },
   bereavement: { range: true, proof: true, relation: "list" }, marriage: { range: true, proof: true, max: 3 },
   paternity: { range: true, proof: true, max: 7, gender: "male", event: true }, maternity: { range: true, proof: true, max: 98, gender: "female", event: true },
   hajj: { range: true, proof: true, max: 15 }, exam: { range: true, proof: true, max: 15, omani: true },
@@ -34,6 +34,9 @@ export async function render(el, _p, { me, query }) {
   const time = select("time", [], "");
   const relList = select("relation", Object.keys(BEREAVEMENT).filter((r) => !(emp.gender === "male" && r.startsWith("husband")) && !(emp.gender === "female" && r === "wife")).map((r) => [r, `${t("rel_" + r)} · ${t("days", { n: BEREAVEMENT[r] })}`]), "father");
   const relText = h("input", { name: "relation" });
+  const compChoice = select("comp_choice", [["leave", t("comp_leave")], ["pay", t("comp_pay")]], "leave");
+  const holidays = new Set((settings.official_holidays || []).map((x) => x.date));
+  const workDays = (a, b) => { let n = 0; for (let d = new Date(a + "T00:00:00Z"); d.toISOString().slice(0, 10) <= b; d.setUTCDate(d.getUTCDate() + 1)) if (!holidays.has(d.toISOString().slice(0, 10))) n++; return n; };
   const birth = h("input", { type: "date", name: "event_date" });
   const reason = h("textarea", { name: "reason", rows: 3 });
   const proofFile = h("input", { type: "file", name: "proof", accept: "application/pdf,image/png,image/jpeg,image/webp" });
@@ -53,6 +56,7 @@ export async function render(el, _p, { me, query }) {
     if (type === "early") return dayEnd(date.value) - hm(time.value || "00:00");
     if (type === "comp_day") return 480;
     const d = dayCount(start.value, end.value);
+    if (d > 0 && RULES[type].deduct) return workDays(start.value, end.value) * 480;
     return d > 0 ? d * 480 : 0;
   }
   function update() {
@@ -67,7 +71,8 @@ export async function render(el, _p, { me, query }) {
         R.deduct ? h("div", null, h("dt", null, t("bal_available")), h("dd", { class: "num" }, daysText(L.available))) : null,
         R.deduct ? h("div", null, h("dt", null, t("available_after")), h("dd", { class: "num", style: { color: over ? "var(--bad)" : null } }, daysText(L.available - m))) : null,
         max ? h("div", null, h("dt", null, t("max_allowed")), h("dd", { class: "num" }, t("up_to", { n: t("days", { n: max }) }))) : null),
-      h("p", { class: "sub", style: { margin: "10px 0 0" } }, t("rule_" + type), R.unpaid ? ` · ${t("unpaid_note")}` : ""),
+      h("p", { class: "sub", style: { margin: "10px 0 0" } }, t("rule_" + type, { n: num(settings.early_free_hours_month ?? 4) }), R.unpaid ? ` · ${t("unpaid_note")}` : ""),
+      R.deduct && d > 0 && workDays(start.value, end.value) < d ? h("p", { class: "sub", style: { margin: "4px 0 0" } }, t("holidays_excluded")) : null,
       R.proof ? h("p", { class: "sub", style: { margin: "4px 0 0" } }, t("proof_needed")) : null,
       over ? h("div", { class: "note bad", style: { marginTop: "10px" } }, t("exceeds_balance")) : null,
       blocked ? h("div", { class: "note bad", style: { marginTop: "10px" } }, t("not_eligible", { d: dmy(L.eligibleFrom) })) : null,
@@ -84,7 +89,7 @@ export async function render(el, _p, { me, query }) {
     fieldsBox.replaceChildren(...[
       ...(R.range ? [field(t("start_date"), start, { req: true }), field(t("end_date"), end, { req: true })] : []),
       ...(R.hours ? [field(t("date"), date, { req: true }), field(t("leave_time"), time, { req: true })] : []),
-      ...(type === "comp_day" ? [field(t("worked_date"), date, { req: true })] : []),
+      ...(type === "comp_day" ? [field(t("worked_date"), date, { req: true }), field(t("comp_choice"), compChoice, { req: true })] : []),
       R.relation === "list" ? field(t("relation"), relList, { req: true }) : null,
       R.relation === "text" ? field(t("patient_relation"), relText, { req: true }) : null,
       R.event ? field(t("birth_date"), birth, { req: true }) : null,
@@ -107,6 +112,7 @@ export async function render(el, _p, { me, query }) {
     if (R.relation === "list") body.relation = relList.value;
     if (R.relation === "text") body.relation = relText.value.trim();
     if (R.event) body.event_date = birth.value;
+    if (type === "comp_day") body.comp_choice = compChoice.value;
     submit.disabled = true;
     try {
       const r = await api.post("/api/requests", body);

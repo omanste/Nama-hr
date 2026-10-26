@@ -57,6 +57,8 @@ const MIGRATIONS = [
    CREATE TABLE cap_reviews(id INTEGER PRIMARY KEY, employee_id INTEGER NOT NULL REFERENCES employees(id), year_start TEXT NOT NULL,
      excess INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','forfeited','kept')),
      reason TEXT, decided_by INTEGER, decided_at TEXT, created_at TEXT NOT NULL, UNIQUE(employee_id, year_start));`,
+  // 4: holiday work compensated as a day off ("leave") or payment ("pay") — the employee chooses
+  `ALTER TABLE leave_requests ADD COLUMN comp_choice TEXT;`,
 ];
 
 export function openDb(dataDir) {

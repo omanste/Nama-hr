@@ -12,8 +12,8 @@ export const DAY_END = 17 * 60;    // 17:00
  *   proof: a document must be attached before approval (Art. 84; Art. 47 for sickness) · paid: false = without wage */
 export const TYPES = {
   annual: { effect: "deduct", range: true, maxDays: 60 },
-  early: { effect: "record", hours: true },                       // company permission, recorded in hours (not annual leave)
-  emergency: { effect: "record", range: true, maxDays: 60 },      // company benefit; not in the 2023 law
+  early: { effect: "early", hours: true },                        // company permission: free hours each month, the rest from annual leave
+  emergency: { effect: "deduct", range: true, maxDays: 60 },      // company policy: taken from annual leave (not in the 2023 law)
   sick: { effect: "record", range: true, proof: true, yearCap: 182, maxDays: 182 },
   bereavement: { effect: "record", range: true, proof: true, relation: "list" },
   marriage: { effect: "record", range: true, proof: true, maxDays: 3, once: true },
@@ -115,6 +115,13 @@ export function daysBetweenInclusive(start, end) {
   return Math.round((b - a) / 86400000) + 1;
 }
 
+/** Days of a range that are not official holidays (holidays inside annual leave are not deducted). */
+export function daysExcludingHolidays(start, end, holidays) {
+  let n = 0;
+  for (let d = start; d <= end; d = addDays(d, 1)) if (!holidays.has(d)) n++;
+  return n;
+}
+
 export function annualMinutes(start, end, maxDays = MAX_RANGE_DAYS) {
   const days = daysBetweenInclusive(start, end);
   if (days < 1) throw new RangeError("end date is before start date");
@@ -183,7 +190,7 @@ export function summarize(rows, pendingMinutes, yearStart) {
     carried: sum(before) + sum(of("cap_forfeit")),
     entitlement: sum(of("annual_credit", "opening")),
     extra: sum(of("comp_credit")),
-    used: -sum(of("annual_leave", "early_leave", "reversal").filter((r) => r.kind !== "reversal" || r.minutes > 0)),
+    used: -sum(of("annual_leave", "emergency_leave", "early_leave", "reversal").filter((r) => r.kind !== "reversal" || r.minutes > 0)),
     adjustments: sum(of("adjustment")),
     remaining,
     pending: pendingMinutes,

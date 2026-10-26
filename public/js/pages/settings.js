@@ -27,6 +27,8 @@ export async function render(el, _p, { can }) {
   const rStart = h("input", { type: "date", value: settings.ramadan_start || "" });
   const rEnd = h("input", { type: "date", value: settings.ramadan_end || "" });
   const rDayEnd = select("ramadan_day_end", HALF.map((x) => [x, x]), settings.ramadan_day_end);
+  const hol = h("textarea", { rows: 6, dir: "auto" }); hol.value = (settings.official_holidays || []).map((x) => `${x.date} ${x.name}`).join("\n");
+  const freeH = h("input", { type: "number", min: 0, max: 40, step: 0.5, value: settings.early_free_hours_month ?? 4 });
 
   el.append(pageHead(t("nav_settings"), h("a", { class: "btn", href: "/api/admin/backup" }, t("backup_download"))),
     h("section", { class: "card" }, h("h2", null, t("departments")),
@@ -41,6 +43,13 @@ export async function render(el, _p, { can }) {
       h("p", { class: "sub" }, t("ramadan_hint")),
       h("div", { class: "fields" }, field(t("work_day_end"), dayEnd), field(t("ramadan_start"), rStart), field(t("ramadan_end"), rEnd), field(t("ramadan_day_end"), rDayEnd)),
       h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", { work_day_end: dayEnd.value, ramadan_start: rStart.value || null, ramadan_end: rEnd.value || null, ramadan_day_end: rDayEnd.value })) }, t("save")))),
+    h("section", { class: "card" }, h("h2", null, t("official_holidays")),
+      field(t("official_holidays"), hol, { hint: t("official_holidays_hint") }),
+      field(t("early_free_hours"), freeH),
+      h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", {
+        official_holidays: hol.value.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => { const [date, ...rest] = l.split(/\s+/); return { date, name: rest.join(" ") }; }),
+        early_free_hours_month: Number(freeH.value),
+      })) }, t("save")))),
     h("section", { class: "card" }, h("h2", null, t("contract_types")),
       field(t("contract_types"), types, { hint: t("contract_types_hint") }),
       h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", { contract_types: types.value.split("\n").map((x) => x.trim()).filter(Boolean) })) }, t("save")))));

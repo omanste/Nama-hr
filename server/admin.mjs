@@ -17,6 +17,8 @@ export function readSettings(db) {
     ramadan_start: getSetting(db, "ramadan_start", null),
     ramadan_end: getSetting(db, "ramadan_end", null),
     ramadan_day_end: getSetting(db, "ramadan_day_end", "15:00"),
+    official_holidays: getSetting(db, "official_holidays", []),
+    early_free_hours_month: getSetting(db, "early_free_hours_month", 4),
   };
 }
 
@@ -76,7 +78,13 @@ export function registerAdmin(api, ctx) {
   api.put("/api/settings", async (req, res) => {
     need(req.sess, "settings.edit");
     const b = await readJson(req);
-    const allowed = ["managers_approver_employee_id", "managers_approver_title", "contract_types", "work_day_end", "ramadan_start", "ramadan_end", "ramadan_day_end"];
+    const allowed = ["managers_approver_employee_id", "managers_approver_title", "contract_types", "work_day_end", "ramadan_start", "ramadan_end", "ramadan_day_end", "official_holidays", "early_free_hours_month"];
+    if ("official_holidays" in b) {
+      if (!Array.isArray(b.official_holidays) || !b.official_holidays.every((x) => x && isIsoDate(x.date))) throw invalid("official_holidays", "each holiday needs a valid date");
+      b.official_holidays = b.official_holidays.map((x) => ({ date: x.date, name: String(x.name || "").trim().slice(0, 80) })).sort((x, y) => (x.date < y.date ? -1 : 1));
+    }
+    if ("early_free_hours_month" in b && !(typeof b.early_free_hours_month === "number" && b.early_free_hours_month >= 0 && b.early_free_hours_month <= 40 && (b.early_free_hours_month * 2) % 1 === 0))
+      throw invalid("early_free_hours_month", "hours must be 0–40 in half hours");
     for (const k of ["work_day_end", "ramadan_day_end"]) if (k in b && !/^(1[0-9]|2[0-3]):(00|30)$/.test(String(b[k]))) throw invalid(k, "time must be HH:MM (on the hour or half hour)");
     for (const k of ["ramadan_start", "ramadan_end"]) if (k in b && b[k] !== null && b[k] !== "" && !isIsoDate(b[k])) throw invalid(k, "must be a date");
     if ("ramadan_start" in b && b.ramadan_start === "") b.ramadan_start = null;

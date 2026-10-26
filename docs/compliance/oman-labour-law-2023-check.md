@@ -111,3 +111,12 @@ Still open, for the legal adviser:
 - whether official holidays inside annual leave count as leave days
 - the holiday-work pay rate
 - the wage figures for cash payments and sick pay, which will be handled in the payroll phase
+
+## 8. Company policy decisions (2026-10-26, Hassan Al Riyami)
+
+| Topic | Decision | Where in the portal |
+|---|---|---|
+| Official holidays inside annual or emergency leave | **Not deducted** | Settings → Official holidays (Admin enters them each year) |
+| Emergency leave (not in the 2023 law) | **Taken from annual leave.** Like annual leave, it can't be taken in the first 6 months. | Request type "Emergency leave" |
+| Early leave | **Free hours each month** (default 4, set in Settings). Extra hours are taken from annual leave at 8 h = 1 day. | Settings → Free early-leave hours |
+| Work on a rest day or official holiday (Art. 71) | **The employee chooses** +1 day of leave, or payment. Payment is recorded for payroll at the rate the legal adviser confirms. | Request type "Worked on a holiday" |
