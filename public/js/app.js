@@ -1,6 +1,6 @@
 // App shell: session, layout (header, sidebar / bottom bar), hash router.
 import { api } from "./api.js";
-import { t, setLang, getLang, nm } from "./i18n.js";
+import { t, setLang, getLang, nm, has } from "./i18n.js";
 import { h, clear, errText, empty } from "./ui.js";
 
 const ROUTES = [
@@ -113,7 +113,7 @@ function bottomBar(path) {
   const items = navItems();
   const primary = items.slice(0, 4);
   return h("nav", { class: "bottom", "aria-label": "main" },
-    primary.map(([href, key, ic, count]) => h("a", { href, "aria-current": isCurrent(href, path) ? "page" : null }, h("span", { class: "ic" }, icon(ic, 22), count ? h("span", { class: "dot" }, count) : null), h("span", null, t(key)))),
+    primary.map(([href, key, ic, count]) => h("a", { href, "aria-current": isCurrent(href, path) ? "page" : null, "aria-label": t(key) }, h("span", { class: "ic" }, icon(ic, 22), count ? h("span", { class: "dot" }, count) : null), h("span", null, t(has(key + "_short") ? key + "_short" : key)))),
     h("a", { href: "#/menu", "aria-current": path === "/menu" ? "page" : null }, h("span", { class: "ic" }, icon("more", 22)), h("span", null, t("nav_more"))));
 }
 const isCurrent = (href, path) => { const p = href.slice(1); return p === "/" ? path === "/" : path === p || path.startsWith(p + "/"); };
@@ -171,6 +171,17 @@ export async function render() {
   }
   pollNotifications();
 }
+
+// phones: tables turn into stacked cards, so every cell needs its column name as a label
+function labelTables(root) {
+  for (const table of root.querySelectorAll(".table-wrap:not(.keep-table) table")) {
+    const heads = [...table.querySelectorAll("thead th")].map((th) => th.textContent.trim());
+    for (const tr of table.querySelectorAll("tbody tr")) [...tr.children].forEach((td, i) => { if (heads[i] && !td.hasAttribute("data-label")) td.setAttribute("data-label", heads[i]); });
+  }
+}
+new MutationObserver(() => labelTables(document.getElementById("app"))).observe(document.getElementById("app"), { childList: true, subtree: true });
+// phone ⇄ tablet/desktop (rotation, split screen): pages that pick a layout in code redraw
+matchMedia("(min-width: 900px)").addEventListener("change", () => render());
 
 /** Refresh the cached /api/me (e.g. after approvals change the badge) and redraw. */
 export async function refreshMe() { try { await loadMe(); } catch {} }

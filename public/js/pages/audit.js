@@ -4,6 +4,13 @@ import { h, select, pageHead, dateTime, empty } from "../ui.js";
 
 const ENTITIES = ["employee", "request", "user", "department", "settings", "import"];
 
+// readable value for the log: objects/lists as short text, never "[object Object]"
+const show = (v) => {
+  if (v === null || v === undefined || v === "") return "—";
+  if (Array.isArray(v)) { const txt = v.map((x) => (x && typeof x === "object" ? Object.values(x).filter((y) => y !== "" && y !== null).join(" ") : x)).join("، "); return txt.length > 160 ? txt.slice(0, 160) + "…" : txt || "—"; }
+  if (typeof v === "object") { const txt = JSON.stringify(v); return txt.length > 160 ? txt.slice(0, 160) + "…" : txt; }
+  return String(v);
+};
 export async function render(el, _p, { can, query }) {
   if (!can.viewAll()) throw { status: 403 };
   const entity = select("entity", [["", t("all")], ...ENTITIES.map((e) => [e, e])], query.get("entity") || "", { "aria-label": t("action") });
@@ -13,8 +20,8 @@ export async function render(el, _p, { can, query }) {
   const summary = (a) => {
     try {
       const after = a.after ? JSON.parse(a.after) : null, before = a.before ? JSON.parse(a.before) : null;
-      if (before && after && typeof before === "object") return Object.keys(after).filter((k) => !["updated_at", "created_at"].includes(k) && JSON.stringify(before[k]) !== JSON.stringify(after[k])).map((k) => `${k}: ${before[k] ?? "—"} → ${after[k] ?? "—"}`).join(" · ");
-      if (after && typeof after === "object") return Object.entries(after).filter(([k, v]) => v !== null && !["created_at", "updated_at"].includes(k)).slice(0, 6).map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join(" · ");
+      if (before && after && typeof before === "object") return Object.keys(after).filter((k) => !["updated_at", "created_at"].includes(k) && JSON.stringify(before[k]) !== JSON.stringify(after[k])).map((k) => `${k}: ${show(before[k])} → ${show(after[k])}`).join(" · ");
+      if (after && typeof after === "object") return Object.entries(after).filter(([k, v]) => v !== null && !["created_at", "updated_at"].includes(k)).slice(0, 6).map(([k, v]) => `${k}: ${show(v)}`).join(" · ");
     } catch {}
     return "";
   };

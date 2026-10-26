@@ -188,7 +188,7 @@ export async function render(el, _p, { can }) {
         h("div", { class: "card tile warn" }, h("div", { class: "n" }, num(P.summary.warnings)), h("div", { class: "l" }, t("rows_warn")))),
       h("p", { class: "sub" }, t("data_rows_found", { n: num(P.summary.total) }), " · ", t("balance_as_of"), " ", dmy(S.asOf)),
       h("label", { class: "row" }, h("input", { type: "checkbox", checked: S.onlyErrors, onchange: (e) => { S.onlyErrors = e.target.checked; draw(); } }), t("only_errors")),
-      h("div", { class: "table-wrap" }, h("table", null, h("thead", null, h("tr", null, h("th", null, "#"), cols.map((f) => h("th", null, t("f_" + f))), h("th", null, t("details")))), table)),
+      h("div", { class: "table-wrap keep-table" }, h("table", null, h("thead", null, h("tr", null, h("th", null, "#"), cols.map((f) => h("th", null, t("f_" + f))), h("th", null, t("details")))), table)),
       logins,
       h("div", { class: "form-actions" }, h("button", { class: "btn", type: "button", onclick: () => go(2) }, t("back")),
         h("button", { class: "btn primary", type: "button", disabled: !P.summary.ok, onclick: async (e) => {

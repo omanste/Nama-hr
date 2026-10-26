@@ -209,6 +209,8 @@ const D = {
   weekday: ["يوم الأسبوع", "Day"], weekend: ["عطلة نهاية الأسبوع", "Weekend"], holidays_count: ["{n} يوم عطلة", "{n} holiday days"],
   holidays_none_year: ["لا توجد عطلات مسجلة لعام {y}", "No holidays added for {y}"], err_end_before_start: ["تاريخ النهاية قبل البداية", "End date is before the start"],
   holidays_save_hint: ["اضغط «حفظ» لاعتماد التغييرات", "Press Save to keep your changes"],
+  // short labels for the phone bottom bar
+  nav_calendar_short: ["التقويم", "Calendar"], nav_approvals_short: ["الموافقات", "Approvals"], nav_leave_short: ["إجازاتي", "My leave"], nav_me_short: ["ملفي", "Profile"],
 };
 
 let lang = "ar";

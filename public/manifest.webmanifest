@@ -3,6 +3,8 @@
   "short_name": "Nama HR",
   "start_url": "/",
   "display": "standalone",
+  "orientation": "any",
+  "scope": "/",
   "background_color": "#F2F5F3",
   "theme_color": "#154540",
   "dir": "rtl",
