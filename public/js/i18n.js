@@ -265,7 +265,6 @@ const D = {
   // my leave / my permissions pages
   my_leave: ["إجازاتي", "My leave"], leave_taken: ["الإجازات المأخوذة", "Leave taken"], year: ["السنة", "Year"], month: ["الشهر", "Month"],
   times_n: ["{n} مرة", "{n} times"], pending_n: ["{n} قيد الموافقة", "{n} pending"],
-  nothing_approved_period: ["لا يوجد شيء معتمد في هذه الفترة", "Nothing approved in this period"],
   // years of service
   service_length: ["مدة الخدمة", "Years of service"], one_year: ["سنة واحدة", "1 year"], n_years: ["{n} سنوات", "{n} years"],
   one_month: ["شهر واحد", "1 month"], n_months: ["{n} أشهر", "{n} months"],

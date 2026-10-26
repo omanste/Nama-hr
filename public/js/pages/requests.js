@@ -2,26 +2,32 @@ import { api } from "../api.js";
 import { t, getLang } from "../i18n.js";
 import { h, clear, select, pageHead, empty, num, daysText, todayIso, PERMISSIONS } from "../ui.js";
 import { requestItem } from "./home.js";
+import { isOmani } from "../countries.js";
 
 const STATUSES = ["pending", "approved", "rejected", "cancelled"];
 const TITLES = { mine: "my_requests", all: "all_requests", team: "team_requests" };
 const pad = (n) => String(n).padStart(2, "0");
 const monthName = (m) => new Intl.DateTimeFormat(getLang() === "ar" ? "ar-OM-u-nu-latn" : "en-GB", { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2026, m - 1, 1)));
 
-/** Summary of the shown period: times and days/hours of each type (approved requests only). */
-function summary(items, perm, freeLeft) {
+// every leave type, in the order staff think of them (permissions have their own page)
+const LEAVE_TYPES = ["annual", "emergency", "sick", "bereavement", "marriage", "paternity", "maternity", "hajj", "exam", "patient_care", "childcare", "unpaid", "comp_day"];
+/** Leave types that can apply to this person (by gender and nationality), as on the request form. */
+const leaveTypesFor = (emp) => LEAVE_TYPES.filter((k) => !(emp && emp.gender === "male" && ["maternity", "childcare"].includes(k))
+  && !(emp && emp.gender === "female" && k === "paternity") && !(["exam", "patient_care"].includes(k) && emp && emp.nationality && !isOmani(emp.nationality)));
+
+/** Summary of the shown period: times and days/hours of every type (approved requests only). */
+function summary(items, perm, freeLeft, emp) {
   const done = items.filter((r) => r.status === "approved");
-  const types = [...new Set(done.map((r) => r.type))];
-  const order = perm ? PERMISSIONS : types.sort();
+  const order = perm ? PERMISSIONS : leaveTypesFor(emp);
   const amount = (m) => (perm ? t("hours", { n: num(m / 60) }) : daysText(m));
   const total = done.reduce((a, r) => a + r.minutes, 0);
   const pending = items.filter((r) => r.status === "pending").length;
   return h("section", { class: "card" },
     h("div", { class: "card-head" }, h("h2", null, t(perm ? "sec_permissions" : "leave_taken")),
       perm && freeLeft !== undefined ? h("span", { class: "badge" }, t("free_left_month"), ": ", t("hours", { n: num(freeLeft / 60) })) : null),
-    order.length ? h("dl", { class: "facts" },
+    h("dl", { class: "facts" },
       order.map((k) => { const rs = done.filter((r) => r.type === k); return h("div", null, h("dt", null, t("lt_" + k)), h("dd", { class: "num" }, perm ? t("times_hours", { n: num(rs.length), h: num(rs.reduce((a, r) => a + r.minutes, 0) / 60) }) : `${t("times_n", { n: num(rs.length) })} · ${amount(rs.reduce((a, r) => a + r.minutes, 0))}`)); }),
-      h("div", null, h("dt", null, h("b", null, t("total"))), h("dd", { class: "num" }, h("b", null, `${t("times_n", { n: num(done.length) })} · ${amount(total)}`)))) : h("p", { class: "sub" }, t("nothing_approved_period")),
+      h("div", null, h("dt", null, h("b", null, t("total"))), h("dd", { class: "num" }, h("b", null, `${t("times_n", { n: num(done.length) })} · ${amount(total)}`)))),
     h("p", { class: "sub", style: { margin: "10px 0 0" } }, t("approved_only"), pending ? ` · ${t("pending_n", { n: num(pending) })}` : ""));
 }
 
@@ -50,7 +56,7 @@ export async function render(el, _p, { opts, query, me }) {
       qs.set("to", m ? `${y}-${pad(m)}-${new Date(Date.UTC(y, m, 0)).getUTCDate()}` : `${y}-12-31`);
     }
     const { items } = await api.get(`/api/requests?${qs}`);
-    if (mine && opts.kind) clear(head).append(summary(items, perm, freeLeft));
+    if (mine && opts.kind) clear(head).append(summary(items, perm, freeLeft, me.employee));
     clear(out).append(items.length ? h("div", { class: "list" }, items.map((r) => requestItem(r, !mine))) : empty());
   };
   for (const s of [status, yearSel, monthSel, kindSel]) if (s) s.addEventListener("change", load);
