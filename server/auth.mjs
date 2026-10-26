@@ -127,7 +127,10 @@ export function registerAuth(api, ctx) {
 
   api.get("/api/me", (req, res) => {
     const s = req.sess;
-    send(req, res, 200, { user: publicUser(s.user), employee: s.employee, isApprover: s.isApprover, env: ctx.appEnv });
+    const pendingApprovals = s.user.role === "admin"
+      ? db.prepare("SELECT count(*) n FROM leave_requests WHERE status='pending'").get().n
+      : db.prepare("SELECT count(*) n FROM leave_requests WHERE status='pending' AND approver_user_id=?").get(s.user.id).n;
+    send(req, res, 200, { user: publicUser(s.user), employee: s.employee, isApprover: s.isApprover, pendingApprovals, env: ctx.appEnv });
   });
 
   api.post("/api/me/password", async (req, res) => {

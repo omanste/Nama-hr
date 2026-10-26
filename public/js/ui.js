@@ -1,0 +1,102 @@
+// Small DOM helpers shared by every page.
+import { t, getLang } from "./i18n.js";
+
+/** h("div", {class:"x", onclick: fn}, "text", child, [more]) */
+export function h(tag, attrs, ...children) {
+  const el = document.createElement(tag);
+  if (attrs) for (const [k, v] of Object.entries(attrs)) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
+    else if (k === "class") el.className = v;
+    else if (k === "style" && typeof v === "object") Object.assign(el.style, v);
+    else if (k === "value" && "value" in el) el.value = v;
+    else if (k === "checked" || k === "disabled" || k === "selected" || k === "required" || k === "multiple") el[k] = !!v;
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  append(el, children);
+  return el;
+}
+function append(el, children) {
+  for (const c of children.flat(Infinity)) {
+    if (c === null || c === undefined || c === false) continue;
+    el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  }
+}
+export const clear = (el) => { el.replaceChildren(); return el; };
+
+const LATIN = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+export const num = (n) => LATIN.format(n);
+/** ISO date → DD/MM/YYYY */
+export const dmy = (iso) => (iso ? String(iso).slice(0, 10).split("-").reverse().join("/") : "—");
+export const dateTime = (iso) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat(getLang() === "ar" ? "ar-OM-u-nu-latn" : "en-GB", { timeZone: "Asia/Muscat", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(d);
+};
+export const daysOf = (min) => Math.round((min / 480) * 100) / 100;
+export const daysText = (min) => t("days", { n: num(daysOf(min)) });
+/** Early leave reads better in hours. */
+export const amountText = (r) => (r.type === "early" ? t("hours", { n: num(r.minutes / 60) }) : daysText(r.minutes));
+export const when = (r) => (r.type === "early" ? `${dmy(r.start_date)} · ${r.early_time}` : r.start_date === r.end_date ? dmy(r.start_date) : `${dmy(r.start_date)} – ${dmy(r.end_date)}`);
+
+export const badge = (status, prefix = "rs_") => h("span", { class: `badge b-${status}` }, t(prefix + status));
+
+let toastTimer;
+export function toast(msg, kind = "ok") {
+  let el = document.getElementById("toast");
+  if (!el) { el = h("div", { id: "toast", role: "status", "aria-live": "polite" }); document.body.append(el); }
+  el.className = `toast show ${kind}`;
+  el.textContent = msg;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 3200);
+}
+export const errText = (e) => (e && e.status === 0 ? t("offline") : (e && e.message) || t("error"));
+
+/** Small confirmation dialog. With {input:"label"} it returns the typed text, else true; null when cancelled. */
+export function confirm(message, { input = null, required = false, okText = t("confirm"), danger = false } = {}) {
+  return new Promise((resolve) => {
+    const field = input ? h("textarea", { rows: 3, "aria-label": input, placeholder: input }) : null;
+    const err = h("div", { class: "field-err" });
+    const done = (v) => { dlg.close(); dlg.remove(); resolve(v); };
+    const ok = h("button", { class: `btn ${danger ? "danger" : "primary"}`, type: "submit" }, okText);
+    const dlg = h("dialog", { class: "dialog" },
+      h("form", { method: "dialog", onsubmit: (e) => {
+        e.preventDefault();
+        if (field && required && !field.value.trim()) { err.textContent = t("required"); field.focus(); return; }
+        done(field ? field.value.trim() : true);
+      } },
+        h("p", { class: "dialog-msg" }, message), field, err,
+        h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => done(null) }, t("cancel")), ok)));
+    dlg.addEventListener("cancel", (e) => { e.preventDefault(); done(null); });
+    document.body.append(dlg);
+    dlg.showModal();
+    (field || ok).focus();
+  });
+}
+
+/** A labelled form field. control is an input/select/textarea element. */
+export function field(label, control, { hint, full, req } = {}) {
+  const id = control.id || (control.id = "f" + Math.random().toString(36).slice(2, 8));
+  return h("div", { class: `field${full ? " full" : ""}`, "data-field": control.name || "" },
+    h("label", { for: id }, label, req ? h("span", { class: "req", "aria-hidden": "true" }, " *") : null),
+    control, hint ? h("div", { class: "hint" }, hint) : null, h("div", { class: "field-err" }));
+}
+export function showFieldError(form, name, message) {
+  form.querySelectorAll(".field-err").forEach((e) => (e.textContent = ""));
+  const f = form.querySelector(`[data-field="${name}"] .field-err`);
+  if (f) { f.textContent = message; f.parentElement.querySelector("input,select,textarea")?.focus(); return true; }
+  return false;
+}
+
+export function select(name, options, value, attrs = {}) {
+  return h("select", { name, ...attrs }, options.map(([v, label]) => h("option", { value: v, selected: String(v) === String(value ?? "") }, label)));
+}
+
+export const pageHead = (title, ...actions) => h("div", { class: "page-head" }, h("h1", null, title), h("div", { class: "row" }, actions));
+export const backLink = (href) => h("a", { class: "back", href }, h("span", { "aria-hidden": "true" }, getLang() === "ar" ? "→ " : "← "), t("back"));
+export const empty = (text = t("no_results")) => h("div", { class: "empty" }, text);
+export const avatar = (emp, size = 40) => emp && emp.photo_file_id
+  ? h("img", { class: "avatar", src: `/api/files/${emp.photo_file_id}`, alt: "", width: size, height: size, style: { width: size + "px", height: size + "px" } })
+  : h("span", { class: "avatar ph", style: { width: size + "px", height: size + "px", fontSize: Math.round(size / 2.4) + "px" }, "aria-hidden": "true" }, ((emp && (emp.name_ar || emp.name_en)) || "؟").trim().charAt(0));
+/** Today's date in Muscat as YYYY-MM-DD. */
+export const todayIso = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Muscat", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());

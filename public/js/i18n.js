@@ -1,0 +1,146 @@
+// Every UI string, Arabic first. t("key", {n: 3}) fills {n}.
+const D = {
+  app_name: ["الموارد البشرية", "Human Resources"],
+  company: ["نماء العقارية", "Nama Real Estate"],
+  lang_toggle: ["English", "العربية"],
+  // auth
+  username: ["اسم المستخدم", "Username"], password: ["كلمة المرور", "Password"], sign_in: ["تسجيل الدخول", "Sign in"],
+  sign_out: ["تسجيل الخروج", "Sign out"], signing_in: ["جارٍ الدخول…", "Signing in…"],
+  bad_credentials: ["اسم المستخدم أو كلمة المرور غير صحيحة", "Wrong username or password"],
+  locked: ["محاولات كثيرة. حاول بعد ١٠ دقائق.", "Too many attempts. Try again in 10 minutes."],
+  choose_password: ["اختر كلمة مرور جديدة", "Choose a new password"],
+  choose_password_sub: ["لأمان حسابك، اختر كلمة مرور خاصة بك (٨ أحرف على الأقل).", "For your security, choose your own password (at least 8 characters)."],
+  current_password: ["كلمة المرور الحالية", "Current password"], new_password: ["كلمة المرور الجديدة", "New password"],
+  confirm_password: ["تأكيد كلمة المرور", "Confirm password"], passwords_differ: ["كلمتا المرور غير متطابقتين", "Passwords do not match"],
+  save_password: ["حفظ كلمة المرور", "Save password"], password_saved: ["تم حفظ كلمة المرور", "Password saved"],
+  change_password: ["تغيير كلمة المرور", "Change password"],
+  // nav
+  nav_home: ["الرئيسية", "Home"], nav_me: ["ملفي", "My profile"], nav_leave: ["إجازاتي", "My leave"], nav_apply: ["طلب جديد", "New request"],
+  nav_approvals: ["الموافقات", "Approvals"], nav_staff: ["الموظفون", "Staff"], nav_requests: ["كل الطلبات", "All requests"],
+  nav_import: ["استيراد Excel", "Excel import"], nav_settings: ["الإعدادات", "Settings"], nav_users: ["المستخدمون", "Users"],
+  nav_audit: ["سجل التغييرات", "Audit log"], nav_notifications: ["الإشعارات", "Notifications"], nav_more: ["المزيد", "More"],
+  dev_badge: ["تجريبي", "DEV"],
+  // common
+  save: ["حفظ", "Save"], cancel: ["إلغاء", "Cancel"], back: ["رجوع", "Back"], edit: ["تعديل", "Edit"], delete: ["حذف", "Delete"],
+  close: ["إغلاق", "Close"], confirm: ["تأكيد", "Confirm"], search: ["بحث", "Search"], all: ["الكل", "All"], none: ["—", "—"],
+  loading: ["جارٍ التحميل…", "Loading…"], saved: ["تم الحفظ", "Saved"], error: ["حدث خطأ", "Something went wrong"],
+  offline: ["تعذر الاتصال بالخادم", "Cannot reach the server"], required: ["مطلوب", "Required"], optional: ["اختياري", "Optional"],
+  days: ["{n} يوم", "{n} days"], day_one: ["يوم واحد", "1 day"], hours: ["{n} ساعة", "{n} h"],
+  yes: ["نعم", "Yes"], no: ["لا", "No"], download: ["تنزيل", "Download"], open: ["فتح", "Open"], view_all: ["عرض الكل", "View all"],
+  no_results: ["لا توجد نتائج", "Nothing here yet"], forbidden: ["ليست لديك صلاحية", "You do not have permission"], not_found: ["غير موجود", "Not found"],
+  // roles & statuses
+  role_staff: ["موظف", "Staff"], role_hr: ["مدير الموارد البشرية", "HR Manager"], role_accounts: ["الحسابات", "Accounts"],
+  role_ceo: ["الرئيس التنفيذي", "CEO"], role_admin: ["مدير النظام", "Admin"], role_manager: ["مدير قسم", "Dept. manager"],
+  st_active: ["على رأس العمل", "Active"], st_on_leave: ["في إجازة", "On leave"], st_resigned: ["مستقيل", "Resigned"], st_terminated: ["منتهي الخدمة", "Terminated"],
+  rs_pending: ["بانتظار الموافقة", "Pending"], rs_approved: ["موافق عليه", "Approved"], rs_rejected: ["مرفوض", "Rejected"], rs_cancelled: ["ملغى", "Cancelled"],
+  ev_submitted: ["قدّم الطلب", "Submitted"], ev_approved: ["وافق", "Approved"], ev_rejected: ["رفض", "Rejected"], ev_cancelled: ["ألغى", "Cancelled"],
+  // leave types
+  lt_annual: ["إجازة سنوية", "Annual leave"], lt_early: ["مغادرة مبكرة", "Early leave"], lt_emergency: ["إجازة اضطرارية", "Emergency leave"],
+  lt_bereavement: ["إجازة عزاء", "Bereavement leave"], lt_sick: ["إجازة مرضية", "Sick leave"], lt_comp_day: ["عمل في يوم عطلة", "Worked on a holiday"],
+  lt_record_note: ["لا تُخصم من رصيد الإجازة السنوية.", "Does not affect your annual leave balance."],
+  lt_comp_note: ["يُضاف يوم واحد إلى رصيدك بعد الموافقة.", "One day is added to your balance once approved."],
+  // balance
+  bal_remaining: ["الرصيد المتبقي", "Remaining"], bal_available: ["المتاح للطلب", "Available to request"], bal_entitlement: ["استحقاق السنة", "This year's entitlement"],
+  bal_carried: ["مُرحّل", "Carried over"], bal_used: ["المستخدم", "Used"], bal_pending: ["قيد الموافقة", "Pending"], bal_extra: ["أيام إضافية", "Extra days"],
+  bal_adjustments: ["تعديلات", "Adjustments"], leave_year: ["سنة الإجازة من {d}", "Leave year from {d}"],
+  eligible_from: ["يمكنك طلب الإجازة السنوية والمغادرة من {d}", "You can request annual and early leave from {d}"],
+  probation_end: ["نهاية فترة التجربة", "Probation ends"], no_join_date: ["تاريخ التعيين غير مسجل", "Join date not recorded"],
+  by_type: ["حسب النوع هذه السنة", "By type this year"],
+  // home
+  hello: ["مرحباً {name}", "Hello {name}"], apply_leave: ["طلب إجازة", "Apply for leave"], recent_requests: ["آخر الطلبات", "Recent requests"],
+  pending_approvals: ["طلبات بانتظار موافقتك", "Requests awaiting your approval"], staff_count: ["الموظفون على رأس العمل", "Active staff"],
+  ids_expiring: ["بطاقات تنتهي خلال ٣٠ يوماً", "Civil IDs expiring in 30 days"], all_pending: ["طلبات قيد الموافقة", "Pending requests"],
+  needs_attention: ["بحاجة لاستكمال", "Needs attention"], missing_join: ["بدون تاريخ تعيين", "Missing join date"],
+  no_profile: ["حسابك غير مرتبط بملف موظف.", "Your login is not linked to a staff profile."],
+  // staff list / profile
+  staff_title: ["الموظفون", "Staff"], add_employee: ["إضافة موظف", "Add employee"], filter_dept: ["القسم", "Department"], filter_status: ["الحالة", "Status"],
+  sec_personal: ["البيانات الشخصية", "Personal"], sec_contact: ["التواصل", "Contact"], sec_job: ["الوظيفة", "Job"], sec_contract: ["العقد", "Contract"],
+  sec_documents: ["المستندات", "Documents"], sec_leave: ["الإجازات", "Leave"], sec_kpi: ["مؤشرات الأداء", "KPIs"],
+  kpi_later: ["سيتوفر في مرحلة لاحقة", "Coming in a later phase"], sec_ledger: ["حركة الرصيد", "Balance history"], sec_requests: ["سجل الطلبات", "Request history"],
+  f_name_ar: ["الاسم بالعربية", "Name (Arabic)"], f_name_en: ["الاسم بالإنجليزية", "Name (English)"], f_emp_no: ["الرقم الوظيفي", "Employee ID"],
+  f_emp_no_hint: ["اتركه فارغاً لإنشائه تلقائياً", "Leave empty to generate"], f_photo: ["الصورة", "Photo"],
+  f_civil_id: ["الرقم المدني", "Civil ID"], f_civil_id_expiry: ["انتهاء البطاقة المدنية", "Civil ID expiry"], f_nationality: ["الجنسية", "Nationality"],
+  f_dob: ["تاريخ الميلاد", "Date of birth"], f_mobile: ["الهاتف", "Mobile"], f_email: ["البريد الإلكتروني", "Email"], f_address: ["العنوان", "Address"],
+  f_emergency_name: ["جهة الاتصال للطوارئ", "Emergency contact"], f_emergency_relation: ["صلة القرابة", "Relationship"], f_emergency_phone: ["هاتف الطوارئ", "Emergency phone"],
+  f_department_id: ["القسم", "Department"], f_department: ["القسم", "Department"], f_job_title: ["المسمى الوظيفي", "Job title"], f_manager_employee_id: ["المدير المباشر", "Direct manager"],
+  f_join_date: ["تاريخ التعيين", "Join date"], f_contract_type: ["نوع العقد", "Contract type"], f_contract_end: ["نهاية العقد", "Contract end"],
+  f_status: ["الحالة", "Status"], f_opening_days: ["الرصيد الافتتاحي (أيام)", "Opening balance (days)"],
+  f_opening_hint: ["للموظفين الحاليين: الرصيد المتبقي اليوم. اتركه فارغاً لإضافة ٣٠ يوماً.", "For existing staff: today's remaining balance. Leave empty to credit 30 days."],
+  login_account: ["حساب الدخول", "Login"], create_login: ["إنشاء حساب دخول", "Create login"], no_login: ["لا يوجد حساب دخول", "No login yet"],
+  temp_password_title: ["كلمة مرور مؤقتة", "One-time password"],
+  temp_password_note: ["أعطها للموظف. ستظهر مرة واحدة فقط وسيُطلب منه تغييرها عند الدخول.", "Give it to the employee. It is shown only once and must be changed at first sign-in."],
+  adjust_balance: ["تعديل الرصيد", "Adjust balance"], adjust_amount: ["المقدار", "Amount"], adjust_add: ["إضافة", "Add"], adjust_deduct: ["خصم", "Deduct"],
+  adjust_unit_days: ["أيام", "Days"], adjust_unit_hours: ["ساعات", "Hours"], adjust_reason: ["السبب (مطلوب)", "Reason (required)"],
+  upload_document: ["رفع مستند", "Upload document"], doc_type: ["نوع المستند", "Document type"], doc_expiry: ["تاريخ الانتهاء", "Expiry"],
+  dt_civil_id: ["البطاقة المدنية", "Civil ID"], dt_passport: ["جواز السفر", "Passport"], dt_contract: ["العقد", "Contract"], dt_visa: ["التأشيرة", "Visa"],
+  dt_certificate: ["شهادة", "Certificate"], dt_medical: ["تقرير طبي", "Medical note"], dt_other: ["أخرى", "Other"],
+  change_photo: ["تغيير الصورة", "Change photo"], delete_file_q: ["حذف هذا الملف؟", "Delete this file?"],
+  lk_opening: ["رصيد افتتاحي", "Opening balance"], lk_annual_credit: ["استحقاق سنوي", "Yearly entitlement"], lk_cap_forfeit: ["سقوط ما فوق ٦٠ يوماً", "Above 60-day cap"],
+  lk_annual_leave: ["إجازة سنوية", "Annual leave"], lk_early_leave: ["مغادرة مبكرة", "Early leave"], lk_comp_credit: ["يوم إضافي", "Extra day"],
+  lk_reversal: ["إلغاء", "Reversal"], lk_adjustment: ["تعديل", "Adjustment"],
+  new_employee: ["موظف جديد", "New employee"], edit_employee: ["تعديل بيانات الموظف", "Edit employee"],
+  // requests
+  new_request: ["طلب جديد", "New request"], leave_type: ["نوع الطلب", "Request type"], start_date: ["من", "From"], end_date: ["إلى", "To"],
+  date: ["التاريخ", "Date"], leave_time: ["وقت المغادرة", "Leaving at"], reason: ["السبب", "Reason"], reason_optional: ["السبب (اختياري)", "Reason (optional)"],
+  worked_date: ["تاريخ يوم العمل", "Day worked"], submit_request: ["إرسال الطلب", "Submit request"], request_sent: ["تم إرسال الطلب", "Request submitted"],
+  this_request: ["هذا الطلب", "This request"], available_after: ["المتاح بعد هذا الطلب", "Available after this request"],
+  exceeds_balance: ["يتجاوز رصيدك المتاح", "Exceeds your available balance"], not_eligible: ["غير متاح قبل {d}", "Not available before {d}"],
+  medical_note: ["تقرير طبي (اختياري)", "Medical note (optional)"], attach: ["إرفاق", "Attach"], attachments: ["المرفقات", "Attachments"],
+  my_requests: ["طلباتي", "My requests"], all_requests: ["كل الطلبات", "All requests"], team_requests: ["طلبات القسم", "Team requests"],
+  request_details: ["تفاصيل الطلب", "Request details"], history: ["السجل", "History"], approver: ["المعتمد", "Approver"],
+  approve: ["موافقة", "Approve"], reject: ["رفض", "Reject"], cancel_request: ["إلغاء الطلب", "Cancel request"],
+  reject_reason: ["سبب الرفض", "Reason for rejection"], cancel_reason: ["سبب الإلغاء (اختياري)", "Reason (optional)"],
+  approve_q: ["الموافقة على هذا الطلب؟", "Approve this request?"], cancel_q: ["إلغاء هذا الطلب؟", "Cancel this request?"],
+  comment_optional: ["ملاحظة (اختياري)", "Comment (optional)"], approved_ok: ["تمت الموافقة", "Approved"], rejected_ok: ["تم الرفض", "Rejected"], cancelled_ok: ["تم الإلغاء", "Cancelled"],
+  no_approvals: ["لا توجد طلبات بانتظارك", "Nothing waiting for you"], current_balance: ["الرصيد الحالي", "Current balance"],
+  employee: ["الموظف", "Employee"], amount: ["المدة", "Amount"], submitted_at: ["تاريخ التقديم", "Submitted"], status: ["الحالة", "Status"],
+  route_dept: ["مدير القسم", "Department manager"], route_managers: ["اعتماد المديرين", "Managers' approver"], route_admin: ["مدير النظام", "Admin"],
+  // notifications
+  mark_all_read: ["تعليم الكل كمقروء", "Mark all as read"], no_notifications: ["لا توجد إشعارات", "No notifications"],
+  // import
+  import_title: ["استيراد الموظفين والأرصدة", "Import staff and balances"],
+  step_upload: ["رفع الملف", "Upload"], step_map: ["مطابقة الأعمدة", "Map columns"], step_preview: ["المعاينة", "Preview"], step_done: ["تم", "Done"],
+  choose_file: ["اختر ملف Excel أو CSV", "Choose an Excel or CSV file"], sheet: ["الورقة", "Sheet"], header_rows: ["صفوف العناوين", "Header rows"],
+  header_row_from: ["العناوين تبدأ في الصف", "Headers start on row"], header_rows_count: ["عدد صفوف العناوين", "Number of header rows"],
+  balance_as_of: ["الرصيد كما في تاريخ", "Balance as of"], data_rows_found: ["{n} صف بيانات (ينتهي عند أول صف بلا اسم)", "{n} data rows (ends at the first row without a name)"],
+  download_template: ["تنزيل نموذج", "Download template"], next: ["التالي", "Next"], column: ["العمود", "Column"], maps_to: ["يُطابق", "Maps to"],
+  ignore: ["تجاهل", "Ignore"], sample: ["مثال", "Sample"], run_preview: ["معاينة", "Preview"], create_logins: ["إنشاء حسابات دخول للموظفين", "Create logins for the staff"],
+  only_errors: ["الأخطاء فقط", "Errors only"], import_rows: ["استيراد {n} موظف", "Import {n} staff"], import_done: ["تم استيراد {n} موظف", "{n} staff imported"],
+  rows_ok: ["جاهز", "Ready"], rows_err: ["أخطاء (لن تُستورد)", "Errors (skipped)"], rows_warn: ["تنبيهات", "Warnings"],
+  download_logins: ["تنزيل بيانات الدخول (CSV)", "Download logins (CSV)"], logins_note: ["احفظ هذا الملف الآن؛ لن تظهر كلمات المرور مرة أخرى.", "Save this file now; the passwords are not shown again."],
+  need_name_column: ["طابق عمود الاسم أولاً", "Map a name column first"], import_again: ["استيراد ملف آخر", "Import another file"],
+  ic_missing_name: ["الاسم مفقود", "Name missing"], ic_duplicate_in_file: ["رقم مكرر في الملف", "Duplicate ID in file"], ic_exists: ["الرقم موجود مسبقاً", "ID already exists"],
+  ic_invalid_date: ["تاريخ غير صالح", "Invalid date"], ic_invalid_number: ["رقم غير صالح", "Not a number"], ic_negative_balance: ["رصيد سالب", "Negative balance"],
+  ic_over_cap: ["أكثر من ٦٠ يوماً (يُطبق الحد عند الاستحقاق القادم)", "Over 60 days (cap applies at next credit)"], ic_generated_id: ["رقم مُنشأ", "Generated ID"],
+  ic_missing_join_date: ["بدون تاريخ تعيين", "No join date"], ic_empty_balance: ["رصيد فارغ (٠)", "Empty balance (0)"], ic_unknown_department: ["قسم جديد سيُنشأ", "New department will be created"],
+  ic_civil_id_expired: ["البطاقة منتهية", "Civil ID expired"], ic_invalid_email: ["بريد غير صالح (سيُتجاهل)", "Invalid email (dropped)"], ic_unknown_status: ["حالة غير معروفة", "Unknown status"],
+  // settings / users / audit
+  departments: ["الأقسام", "Departments"], add_department: ["إضافة قسم", "Add department"], dept_name_ar: ["اسم القسم بالعربية", "Name (Arabic)"],
+  dept_name_en: ["اسم القسم بالإنجليزية", "Name (English)"], dept_approver: ["المعتمد للإجازات", "Leave approver"], no_approver: ["لم يُحدد (يذهب لمدير النظام)", "Not set (goes to Admin)"],
+  managers_approver: ["معتمد إجازات المديرين", "Managers' leave approver"], managers_approver_title: ["الصفة", "Title"],
+  title_ceo: ["الرئيس التنفيذي", "CEO"], title_chairman: ["رئيس مجلس الإدارة", "Chairman"], contract_types: ["أنواع العقود", "Contract types"],
+  contract_types_hint: ["نوع في كل سطر", "One per line"], staff_n: ["{n} موظف", "{n} staff"], active: ["نشط", "Active"], inactive: ["غير نشط", "Inactive"],
+  users_title: ["المستخدمون والصلاحيات", "Users and roles"], role: ["الصلاحية", "Role"], last_login: ["آخر دخول", "Last login"],
+  reset_password: ["إعادة تعيين كلمة المرور", "Reset password"], deactivate: ["إيقاف", "Deactivate"], activate: ["تفعيل", "Activate"],
+  add_user: ["إضافة مستخدم", "Add user"], link_employee: ["ربط بموظف", "Linked employee"], backup_download: ["تنزيل نسخة احتياطية", "Download backup"],
+  audit_title: ["سجل التغييرات", "Audit log"], at: ["الوقت", "When"], actor: ["بواسطة", "By"], action: ["الإجراء", "Action"], details: ["التفاصيل", "Details"],
+  load_more: ["تحميل المزيد", "Load more"],
+};
+
+let lang = "ar";
+export const getLang = () => lang;
+export function setLang(l) {
+  lang = l === "en" ? "en" : "ar";
+  document.documentElement.lang = lang;
+  document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+  try { localStorage.setItem("hr_lang", lang); } catch {}
+}
+export function t(key, vars) {
+  const e = D[key];
+  let s = e ? e[lang === "ar" ? 0 : 1] : key;
+  if (vars) for (const [k, v] of Object.entries(vars)) s = s.replaceAll(`{${k}}`, v);
+  return s;
+}
+export const has = (key) => key in D;
+/** Pick the name in the current language, falling back to the other. */
+export const nm = (o, base = "name") => (o ? (lang === "ar" ? o[`${base}_ar`] || o[`${base}_en`] : o[`${base}_en`] || o[`${base}_ar`]) || "" : "");

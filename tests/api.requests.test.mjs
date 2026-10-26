@@ -40,6 +40,7 @@ test("staff request goes to the department approver and notifies them", async ()
   assert.ok(n.data.unread >= 1);
   assert.ok(n.data.items.some((x) => x.link === `#/leave/${annualId}`));
   assert.ok(mails.some((m) => m.to === "tawfiq@nama.om" && /\[dev\]|\[test\]|إجازة|leave/i.test(m.subject)));
+  assert.equal((await tawfiq.c.get("/api/me")).data.pendingApprovals, 1);
   const ap = await tawfiq.c.get("/api/requests?scope=approvals");
   assert.deepEqual(ap.data.items.map((x) => x.id), [annualId]);
 });
