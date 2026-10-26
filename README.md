@@ -14,39 +14,10 @@ Designed by Eng. Hassan Al Riyami.
 To deploy, follow **[DEPLOY-DOKPLOY.md](DEPLOY-DOKPLOY.md)**.
 The design is in `docs/superpowers/specs/` and the build plan is in `docs/superpowers/plans/`.
 
-## What it does (phase 1)
+## What it does
 
-* **Roles:**
-
-  | Role | Can do |
-  |---|---|
-  | Staff | Own profile, balance, requests |
-  | Department manager | Approves their department, set in Settings |
-  | HR Manager | All profiles, edits staff, Excel import; cannot approve |
-  | Accounts | View only |
-  | CEO | Approves managers' leave |
-  | Admin | Everything |
-
-* **Approval routing:**
-  * Each department has an approving manager.
-  * Managers, HR and the CEO go to the **managers' leave approver**. That is the CEO now, and can be switched to the Chairman in Settings.
-  * The CEO's own leave goes to Admin.
-* **Leave rules:**
-  * Each leave year runs from the employee's join anniversary and gives 30 days. Unused days carry over.
-  * The balance is capped at 60 days. The cap is checked when the yearly credit is added, and the excess is recorded as forfeited.
-  * Annual leave counts calendar days.
-  * Early leave deducts hours until 17:00 (8 h = 1 day), in 30-minute steps.
-  * Probation is 3 months. Annual and early leave are allowed only after 6 months of service.
-  * Emergency, bereavement and sick leave are recorded and approved, but do not reduce the balance.
-  * "Worked on a holiday" adds 1 day once approved.
-  * A request can never be more than the remaining balance minus requests still pending.
-* **History:** balances are a ledger of entries (opening, yearly credit, cap, leave, reversal, adjustment), so every change records who made it and when. Every request keeps its full timeline.
-* **Notifications:** in the app, plus e-mail through Nama's own SMTP server.
-* **Excel import (HR/Admin):**
-  * Upload a file and map its columns. Two-row headers are supported.
-  * Preview the result, with errors and warnings shown for each row.
-  * Import the staff with their opening balances. Optionally create logins with one-time passwords.
-* **Interface:** Arabic first, with an English toggle. Works on phones. Green and gold Nama brand.
+The full, current list of features is in **[docs/FEATURES.md](docs/FEATURES.md)**: roles, leave rules (Oman Labour Law),
+permissions, the company calendar, profiles and documents (ID reading, expiry alerts), Staff Voice, Excel import and backups.
 
 ## What is inside
 
