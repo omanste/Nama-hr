@@ -1,7 +1,7 @@
 import { api } from "../api.js";
 import { t, setLang, getLang, nm } from "../i18n.js";
 import { h } from "../ui.js";
-import { loadMe, state } from "../app.js";
+import { loadMe, state, themeButton } from "../app.js";
 
 let preferUsername = false;
 
@@ -39,6 +39,8 @@ export async function render(el) {
   el.append(h("div", { class: "login-wrap" }, h("div", { class: "login-card" },
     h("div", { class: "brand" }, h("img", { src: "/logo-wordmark.png", alt: t("company") }), h("div", null, t("app_name"))),
     h("div", { class: "card" }, h("h1", { style: { marginBottom: "14px" } }, t("sign_in")), form),
-    h("button", { class: "btn small lang", type: "button", onclick: () => { setLang(getLang() === "ar" ? "en" : "ar"); dispatchEvent(new HashChangeEvent("hashchange")); } }, t("lang_toggle")))));
+    h("div", { class: "row", style: { justifyContent: "center" } },
+      h("button", { class: "btn small lang", type: "button", onclick: () => { setLang(getLang() === "ar" ? "en" : "ar"); dispatchEvent(new HashChangeEvent("hashchange")); } }, t("lang_toggle")),
+      themeButton("btn small lang")))));
   setTimeout(() => (useList ? who : user).focus(), 0);
 }

@@ -274,6 +274,7 @@ const D = {
   one_month: ["شهر واحد", "1 month"], n_months: ["{n} أشهر", "{n} months"],
   two_years: ["سنتان", "2 years"], two_months: ["شهران", "2 months"], n_years_11: ["{n} سنة", "{n} years"], n_months_11: ["{n} شهراً", "{n} months"], and_sep: [" و", " and "],
   less_than_month: ["أقل من شهر", "Less than a month"], not_started: ["لم يبدأ بعد", "Not started yet"],
+  theme_dark: ["الوضع الداكن", "Dark mode"], theme_light: ["الوضع الفاتح", "Light mode"],
 };
 
 let lang = "ar";

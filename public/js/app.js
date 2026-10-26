@@ -109,6 +109,7 @@ function header() {
       me.env === "dev" || me.env === "test" ? h("span", { class: "dev" }, t("dev_badge")) : null,
       h("span", { class: "spacer" }),
       h("a", { class: "hbtn bell", href: "#/notifications", "aria-label": t("nav_notifications") }, icon("bell"), h("span", { class: "count", hidden: !unread }, unread)),
+      themeButton("hbtn"),
       h("button", { class: "hbtn", type: "button", onclick: toggleLang, lang: getLang() === "ar" ? "en" : "ar" }, t("lang_toggle")),
       h("div", { class: "who" },
         h("span", { class: "who-name" }, nm(me.employee) || me.user.username, h("span", { class: "role" }, t("role_" + me.user.role))),
@@ -127,6 +128,17 @@ function bottomBar(path) {
     h("a", { href: "#/menu", "aria-current": path === "/menu" ? "page" : null }, h("span", { class: "ic" }, icon("more", 22)), h("span", null, t("nav_more"))));
 }
 const isCurrent = (href, path) => { const p = href.slice(1); return p === "/" ? path === "/" : path === p || path.startsWith(p + "/"); };
+
+/** Sun / moon button: switches light and dark (kept on this device). */
+export function themeButton(cls) {
+  const dark = () => window.hrTheme && window.hrTheme.current() === "dark";
+  const label = () => t(dark() ? "theme_light" : "theme_dark");
+  const b = h("button", { class: cls, type: "button", "aria-label": label(), title: label(), onclick: () => {
+    window.hrTheme && window.hrTheme.toggle();
+    b.textContent = dark() ? "☀️" : "🌙"; b.setAttribute("aria-label", label()); b.title = label();
+  } }, dark() ? "☀️" : "🌙");
+  return b;
+}
 
 async function toggleLang() {
   const next = getLang() === "ar" ? "en" : "ar";
