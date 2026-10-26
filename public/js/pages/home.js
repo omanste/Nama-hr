@@ -1,5 +1,6 @@
 import { api } from "../api.js";
 import { t, nm } from "../i18n.js";
+import { leaveSections } from "./profile.js";
 import { h, num, daysOf, dmy, badge, when, amountText, empty, todayIso } from "../ui.js";
 
 export const balanceHero = (leave, { apply = true } = {}) => h("section", { class: "card hero", "aria-label": t("bal_available") },
@@ -25,13 +26,8 @@ const tile = (n, label, href, cls = "") => h(href ? "a" : "div", { class: `card 
 export async function render(el, _p, { me, can }) {
   el.append(h("h1", null, t("hello", { name: nm(me.employee) || me.user.username })));
   const jobs = [];
-  if (me.employee) jobs.push(api.get(`/api/employees/${me.employee.id}`).then((p) => {
-    const notYet = p.leave.eligibleFrom && p.leave.eligibleFrom > todayIso();
-    return h("div", { class: "grid cols2" },
-      h("div", { class: "grid" }, balanceHero(p.leave), notYet ? h("div", { class: "note" }, t("eligible_from", { d: dmy(p.leave.eligibleFrom) })) : null),
-      h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("recent_requests")), h("a", { href: "#/leave" }, t("view_all"))),
-        p.requests.length ? h("div", { class: "list" }, p.requests.slice(0, 4).map((r) => requestItem(r))) : empty()));
-  }));
+  // my leave balance, leave by type, permissions and request history
+  if (me.employee) jobs.push(api.get(`/api/employees/${me.employee.id}`).then((p) => h("div", { class: "grid" }, leaveSections(p, { own: true, limit: 10 }))));
   else jobs.push(Promise.resolve(h("div", { class: "note" }, t("no_profile"))));
 
   const tiles = [];

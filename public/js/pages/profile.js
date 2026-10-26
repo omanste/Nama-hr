@@ -100,20 +100,8 @@ export async function render(el, params, { me, can, opts }) {
         can.edit() ? h("button", { class: "btn", type: "button", onclick: () => adjustDialog(e) }, t("adjust_balance")) : null,
         can.edit() ? h("button", { class: "btn", type: "button", onclick: () => encashDialog(e, p.files.filter((f) => f.doc_type === "consent")) }, t("encash")) : null)),
 
-    h("div", { class: "grid cols2" },
-      h("div", { class: "grid" },
-        balanceHero(L, { apply: own }),
-        L.eligibleFrom && L.eligibleFrom > todayIso() ? h("div", { class: "note" }, t("eligible_from", { d: dmy(L.eligibleFrom) })) : null,
-        !e.join_date ? h("div", { class: "note" }, t("no_join_date")) : null),
-      h("section", { class: "card" }, h("h2", null, t("by_type")),
-        h("dl", { class: "facts" }, Object.entries(L.byType).map(([k, v]) => h("div", null, h("dt", null, t("lt_" + k)), h("dd", { class: "num" }, isPermission(k) ? t("hours", { n: num(v / 60) }) : daysText(v))))),
-        h("dl", { class: "facts", style: { marginTop: "14px" } },
-          h("div", null, h("dt", null, t("f_join_date")), h("dd", null, dmy(e.join_date))),
-          h("div", null, h("dt", null, t("probation_end")), h("dd", null, dmy(L.probationEnd)))))),
-
-    permissionCard(p.permissions),
-    h("section", { class: "card" }, h("h2", null, t("sec_requests")),
-      p.requests.length ? h("div", { class: "list" }, p.requests.map((r) => requestItem(r))) : empty()),
+    // my own leave, permissions and requests live on the home page; HR still sees them on a colleague's profile
+    opts.me ? null : leaveSections(p, { own }),
 
     p.ledger ? h("section", { class: "card" }, h("h2", null, t("sec_ledger")),
       h("div", { class: "table-wrap" }, h("table", null,
@@ -266,4 +254,25 @@ function contactDialog(e) {
     h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), h("button", { class: "btn primary", type: "submit" }, t("save")))));
   dlg.addEventListener("close", () => dlg.remove());
   document.body.append(dlg); dlg.showModal();
+}
+
+/** Leave balance, leave by type, permissions and request history — used on the home page and on a colleague's profile. */
+export function leaveSections(p, { own = false, limit = 0 } = {}) {
+  const e = p.employee, L = p.leave;
+  const reqs = limit ? p.requests.slice(0, limit) : p.requests;
+  return [
+    h("div", { class: "grid cols2" },
+      h("div", { class: "grid" },
+        balanceHero(L, { apply: own }),
+        L.eligibleFrom && L.eligibleFrom > todayIso() ? h("div", { class: "note" }, t("eligible_from", { d: dmy(L.eligibleFrom) })) : null,
+        !e.join_date ? h("div", { class: "note" }, t("no_join_date")) : null),
+      h("section", { class: "card" }, h("h2", null, t("by_type")),
+        h("dl", { class: "facts" }, Object.entries(L.byType).map(([k, v]) => h("div", null, h("dt", null, t("lt_" + k)), h("dd", { class: "num" }, isPermission(k) ? t("hours", { n: num(v / 60) }) : daysText(v))))),
+        h("dl", { class: "facts", style: { marginTop: "14px" } },
+          h("div", null, h("dt", null, t("f_join_date")), h("dd", null, dmy(e.join_date))),
+          h("div", null, h("dt", null, t("probation_end")), h("dd", null, dmy(L.probationEnd)))))),
+
+    permissionCard(p.permissions),
+    h("section", { class: "card" }, h("h2", null, t("sec_requests")),
+      p.requests.length ? h("div", { class: "list" }, p.requests.map((r) => requestItem(r))) : empty())];
 }
