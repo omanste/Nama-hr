@@ -115,7 +115,8 @@ The balance is the **sum of ledger rows**. It is never edited directly.
 | `cap_forfeit` | − | Anniversary job (amount above 60 days) |
 | `annual_leave` | − | Approval of an annual-leave request |
 | `early_leave` | − | Approval of an early-leave request |
-| `reversal` | + | Cancelling an already-approved request |
+| `comp_credit` | + | Approval of a "worked on holiday" request (+1 day per date) |
+| `reversal` | ± | Cancelling an already-approved request (undoes its row) |
 | `adjustment` | ± | HR or Admin, with a required reason |
 
 Every row stores:
@@ -132,7 +133,8 @@ Future modules (attendance, payroll) add new `kind`s. The rest of the ledger des
 
 - Each employee's leave year starts on their **join-date anniversary**. Someone who joined on 29 February uses 28 February in non-leap years.
 - **New employee** (created in the app): an `annual_credit` of 30 days is posted for the leave year that starts on the join date.
-- **Imported employee:** the sheet's balance is posted as `opening`. The next `annual_credit` is posted on their next anniversary after the import date.
+- **Imported employee:** the sheet's *remaining* balance is posted as `opening`, as of the import date, even when it is above 60 days. The next `annual_credit` is posted on their next anniversary after the import date. The sheet's 1 January 2026 credit counts as their current leave year, so there is no double credit. The 60-day cap first applies at that next credit.
+- **Missing join date** (existing staff): no anniversary credit is posted, and the person appears on HR's "needs attention" list until a date is set. The 6-month rule is not enforced for them.
 - **Anniversary job** (daily, 00:05 Muscat):
   1. For each active employee whose anniversary is today, and who has no credit yet for the new leave year, post +30 days.
   2. If the total balance is then over 60 days, post a `cap_forfeit` for the excess.
@@ -144,11 +146,33 @@ Future modules (attendance, payroll) add new `kind`s. The rest of the ledger des
 Values are for the current leave year:
 - **Entitlement:** credits posted this leave year, either the annual credit or the opening balance from the import.
 - **Carried over:** the balance at the start of this leave year, before this year's credit. This is 0 for an imported opening balance.
+- **Extra days:** approved "worked on holiday" credits this leave year.
 - **Used:** approved annual and early leave this leave year, net of reversals.
 - **Adjustments:** shown only if not zero.
 - **Remaining:** the total ledger balance.
 - **Pending:** the total of submitted requests that are not yet decided.
 - **Available to request:** remaining minus pending.
+
+### Service rules
+
+- **Probation:** the first 3 months after the join date. The probation end date (join date + 3 months) is shown on the profile. On the end date HR gets an in-app reminder.
+- **Leave eligibility:** annual and early leave can only start on or after **join date + 6 months**. An earlier date is refused with "Leave is available from DD/MM/YYYY". Record-only types are allowed at any time.
+
+### Leave types
+
+| Type | Input | Effect on balance |
+|---|---|---|
+| `annual` | start and end date | − calendar days × 480 |
+| `early` | date and leave time | − (17:00 − time) |
+| `emergency` (اضطرارية) | start and end date | none (recorded only) |
+| `bereavement` (عزاء) | start and end date | none (recorded only) |
+| `sick` (مرضية) | start and end date, optional attachment (medical note) | none (recorded only) |
+| `comp_day` (worked on holiday) | the date worked, which must be today or earlier | + 1 day (480) |
+
+- Every type goes through the same approval routing and history.
+- Record-only types skip the balance check and the 6-month rule, but they do get overlap checks.
+- The profile shows totals per type for the current leave year, mirroring the sheet's columns.
+- A `comp_day` can only be claimed once per date.
 
 ### Annual leave
 
@@ -169,6 +193,8 @@ Values are for the current leave year:
 
 ### Balance check
 
+Applies to annual and early leave only.
+
 - **At submission:** request minutes ≤ remaining − pending. If not, the request is refused with "exceeds your available balance (X days)".
 - **At approval:** the check runs again (request minutes ≤ remaining − other pending requests). This catches balances that changed after the request was made.
 
@@ -176,10 +202,10 @@ Values are for the current leave year:
 
 `pending → approved | rejected | cancelled`, and an approved request can become `cancelled`.
 
-- **Approve:** in one transaction, the request is marked approved and its ledger deduction is posted.
+- **Approve:** in one transaction, the request is marked approved and its ledger row is posted (a deduction for annual or early leave, a `comp_credit` for a comp day, nothing for record-only types).
 - **Reject:** the rejection requires a comment.
 - **Cancel (pending):** by the requester, HR or Admin.
-- **Cancel (approved):** by its approver or Admin. This posts a `reversal`.
+- **Cancel (approved):** by its approver or Admin. This posts a `reversal` that undoes the ledger row, if there was one.
 
 Every transition writes a `request_events` row recording:
 - who acted
@@ -247,11 +273,14 @@ Accounts work like this:
 
 The import is a full page with four steps:
 
-1. **Upload:** an `.xlsx`, `.xls` or `.csv` file, parsed in the browser. Pick the sheet and the header row. A blank template can be downloaded.
+1. **Upload:** an `.xlsx`, `.xls` or `.csv` file, parsed in the browser. Pick the sheet, the header rows and the "balance as of" date (default: today). A blank template can be downloaded.
+   - The header can span 1 or 2 rows. Merged cells are filled across, and the two rows are joined into labels like "2026 / سنوية".
+   - Data ends at the first row with no name, so the extra-days table underneath the staff list is ignored.
 2. **Map columns:** each of the file's columns is mapped to a profile field or to *Opening balance (days)*, or ignored. Columns whose header names match a field are auto-matched, in Arabic or English. The mapping is remembered for next time.
 3. **Preview:** the server validates every row and returns errors and warnings per row and per cell.
-   - **Errors** (the row is skipped): missing Employee ID or both names, Employee ID duplicated in the file or already in the system, invalid dates, non-numeric balance, negative balance.
-   - **Warnings** (the row is imported): unknown department (it will be created), balance over 60 (it will be capped at 60, and the excess recorded as `cap_forfeit`), missing join date (no anniversary credit until one is set), civil ID already expired.
+   - **Employee ID:** if the column is unmapped or the cell is empty, an ID is generated (`NAMA-001`, `NAMA-002`…, continuing from the highest existing one). This is shown in the preview as "generated".
+   - **Errors** (the row is skipped): missing both names, Employee ID duplicated in the file or already in the system, invalid dates, non-numeric balance, negative balance.
+   - **Warnings** (the row is imported): unknown department (it will be created), balance over 60 (kept as is; the cap applies at the next anniversary credit), missing join date (no anniversary credit until one is set), empty balance (imported as 0), civil ID already expired.
    - Counts are shown, and rows can be filtered to errors only.
 4. **Commit:** one transaction creates the employees, the departments, the `opening` ledger rows and, optionally, their logins (username = employee ID, one-time password shown once on screen as a downloadable list). It ends with a summary and an entry in the audit log.
 
@@ -276,7 +305,7 @@ The import is a full page with four steps:
 - `departments`(id, name_ar, name_en, approver_employee_id, active)
 - `employees`(id, emp_no UNIQUE, name_ar, name_en, photo_file_id, civil_id, civil_id_expiry, nationality, dob, mobile, email, address, emergency_name, emergency_relation, emergency_phone, department_id, job_title, manager_employee_id, join_date, contract_type, contract_end, status, created_at, updated_at)
 - `files`(id, employee_id, kind, doc_type, name, mime, size, expiry, note, uploaded_by, uploaded_at)
-- `leave_requests`(id, employee_id, type `annual|early`, start_date, end_date, early_time, minutes, reason, status, approver_user_id, decided_by, decided_at, decision_comment, created_by, created_at)
+- `leave_requests`(id, employee_id, type `annual|early|emergency|bereavement|sick|comp_day`, start_date, end_date, early_time, minutes, reason, status, approver_user_id, decided_by, decided_at, decision_comment, created_by, created_at)
 - `request_events`(id, request_id, action, actor_user_id, at, comment)
 - `leave_ledger`(id, employee_id, kind, minutes, leave_year_start, request_id, note, created_by, created_at)
 - `notifications`(id, user_id, title_ar, title_en, body_ar, body_en, link, read_at, created_at)
@@ -317,13 +346,18 @@ Placeholders for later phases (none of these are created in phase 1):
 - KPIs: the empty profile section and future `kpi_*` tables.
 - Payroll: future tables reading employees and the ledger.
 - Microsoft sign-in: the provider interface in section 9.
-- Other leave types (sick, unpaid): `leave_requests.type` is an open list, and only annual-balance types post to the ledger.
+- More leave types (unpaid, maternity, Hajj): `leave_requests.type` is an open list. A new type is a config entry saying whether it deducts, adds or only records.
 
 ## 16. Confirmed decisions and assumptions
 
 | Item | Decision |
 |---|---|
 | Leave year | Join-date anniversary (confirmed) |
+| Probation / eligibility | 3-month probation; annual and early leave only from join + 6 months (confirmed) |
+| Imported balances over 60 | Kept; cap applies at next anniversary credit (confirmed) |
+| Emergency / bereavement / sick | Record-only types with approval (confirmed) |
+| Worked on holiday | Request + approval, +1 day each (confirmed) |
+| Import with no Employee ID | Generated `NAMA-###` |
 | Annual-leave day count | Calendar days (confirmed) |
 | Early-leave step | 30 minutes (confirmed) |
 | New joiner first credit | 30 days on join date |

@@ -67,6 +67,9 @@
 - `capForfeit(balanceAfterCredit) → number`, which is `max(0, balance − CAP)`
 - `summarize(ledgerRows, pendingMinutes, yearStart) → {entitlement, carried, used, adjustments, remaining, pending, available}`, all in minutes
 - `fmtDays(min) → "12.75"`
+- `TYPES = {annual:{effect:"deduct",range:true}, early:{effect:"deduct"}, emergency:{effect:"record",range:true}, bereavement:{effect:"record",range:true}, sick:{effect:"record",range:true}, comp_day:{effect:"credit"}}`
+- `requestMinutes(type, {start,end,date,time}) → number` (record types return the day count × 480 for reporting, but post nothing)
+- `eligibleFrom(joinDate) → "YYYY-MM-DD"|null` (join date + 6 months, with the day clamped to the month's end), and `probationEnd(joinDate)` (+ 3 months)
 
 - [ ] Write the tests:
   - `annualMinutes("2026-11-01","2026-11-05") === 2400`
@@ -80,12 +83,15 @@
   - `capForfeit(30000) === 1200`
   - `summarize`: carried 10 d + credit 30 d − used 5 d in the year → `{entitlement:14400, carried:4800, used:2400, remaining:16800}`
   - with pending 960 → `available:15840`
+  - `eligibleFrom("2026-08-31") === "2027-02-28"`, `probationEnd("2026-01-15") === "2026-04-15"`, `eligibleFrom(null) === null`
+  - `summarize` with a `comp_credit` of 480 → `extra:480`
 - [ ] Run `node --test tests/leave.test.mjs` → FAIL.
   - a 50-day carry with `cap_forfeit −20 d` in the year → `carried` is 30 d (after the cap) and `remaining` is 60 d
 - [ ] Implement it. Date maths uses UTC `Date` on ISO strings only, with no local-time parsing. Every ledger row has `leave_year_start`. The summary values are:
   - `carried`: the sum of rows with `leave_year_start < yearStart`, plus this year's `cap_forfeit`
   - `entitlement`: `annual_credit` + `opening` rows in the year
   - `used`: −(`annual_leave` + `early_leave` + `reversal`) in the year
+  - `extra`: `comp_credit` rows in the year
   - `adjustments`: `adjustment` rows in the year
   - `remaining`: the sum of all rows
 - [ ] Run → PASS. Commit `feat: leave rules engine`.
@@ -179,15 +185,18 @@
 **Interfaces (Consumes):** `annualMinutes`, `earlyMinutes`, `summarize` (Task 2), `approverFor` (Task 3), `perm.can` (Task 4)
 
 **Interfaces (Produces):**
-- `POST /api/requests {type:"annual", start, end, reason}` or `{type:"early", date, time, reason}`
-  - Validates the input, checks for overlaps, and checks the request against `available`. Errors: 400 `invalid`, 409 `overlap`, 409 `insufficient_balance` (message contains the available days).
+- `POST /api/requests {type, start, end, reason}` for range types (`annual | emergency | bereavement | sick`), `{type:"early", date, time, reason}`, or `{type:"comp_day", date, reason}`
+  - Validates the input and checks for overlaps (comp_day: once per date, not in the future).
+  - Deduct types are also checked against `available` and `eligibleFrom` (skipped when there is no join date).
+  - Errors: 400 `invalid`, 409 `overlap`, 409 `insufficient_balance` (message contains the available days), 409 `not_eligible_yet` (message contains the date).
+  - A sick request can carry an attachment afterwards: `POST /api/requests/:id/files`, with the same rules as Task 5's documents.
   - Stores `approver_user_id` from `approverFor`, writes the `submitted` event, and notifies.
 - `GET /api/requests?scope=mine|approvals|all&status=`
   - `approvals` = pending requests where I am the stored approver, or all pending requests for admin
   - `all` requires `employee.viewAll`
 - `GET /api/requests/:id` returns the request with its events.
 - `POST /api/requests/:id/approve {comment?}`
-  - Requires `perm.can(sess, "request.decide", req)`. Re-checks the balance, then in one `tx` sets the status and posts a ledger row of kind `annual_leave` or `early_leave` with `−minutes`.
+  - Requires `perm.can(sess, "request.decide", req)`. Re-checks the balance for deduct types, then in one `tx` sets the status and posts the ledger row: `annual_leave` or `early_leave` with `−minutes`, `comp_credit` with `+480`, or nothing for record types.
 - `POST /api/requests/:id/reject {comment}`. The comment is required.
 - `POST /api/requests/:id/cancel {comment?}`
   - For a pending request: the owner, HR or admin.
@@ -204,6 +213,8 @@
   - Tawfiq requests leave → approver = CEO.
   - Admin changes Sales' approver while a request is pending → the request keeps Tawfiq, and admin can still approve (Review Focus 4).
   - Rejecting without a comment → 400.
+  - An employee who joined 2 months ago: annual leave → 409 `not_eligible_yet`; sick leave → pending. Approving the sick leave changes no balance.
+  - comp_day for yesterday, once approved → remaining + 480. The same date again → 409 `overlap`; a future date → 400.
   - An overlapping annual request → 409 `overlap`.
   - The event history lists submitted and approved, with actor and time.
 - [ ] FAIL → implement → PASS. Commit `feat: leave requests, approvals, notifications`.
@@ -214,7 +225,7 @@
 
 **Interfaces (Produces):**
 - `runAnniversaries(db, today)` posts the missing credits from `dueCredits` (with `firstCreditFrom` = the day after the employee's `opening` row date, if they have one), followed by `capForfeit` rows. It notifies and returns a count.
-- `runExpiryCheck(db, today)` notifies HR users about civil IDs expiring within 30 days, at most once per employee per expiry date (tracked in settings key `expiry_notified`).
+- `runExpiryCheck(db, today)` notifies HR users about probation ending today, and about civil IDs expiring within 30 days, at most once per employee per expiry date (tracked in settings key `expiry_notified`).
 - `backup(db, dataDir, keepDays)` uses `VACUUM INTO /data/backups/hr-YYYY-MM-DD.db` and prunes old copies.
 - `scheduleJobs(db, env)` runs the anniversary and expiry checks at boot and every day at 00:05 Muscat, and the backup at `BACKUP_TIME` (default `02:00`).
 - `GET /api/admin/backup` (admin) downloads the current database file.
@@ -237,18 +248,23 @@
   - Arabic-Indic digits turned into ASCII
   - trimming
   - department matched by `name_en` or `name_ar`, case-insensitive
+  - an empty balance treated as 0 (warning `empty_balance`)
 - `validateRows(db, rows, mapping) → [{row, values, errors:[{field,code}], warnings:[{field,code}]}]`, using the codes in spec §10.
 - `POST /api/import/preview {rows, mapping}` and `POST /api/import/commit {rows, mapping, createLogins}` require `import.run`.
   - Commit runs validation again, and rows with errors are skipped.
   - In one `tx` it creates departments, employees and `opening` rows (capped, plus a `cap_forfeit`), and optionally users with a random 10-character temporary password and `must_change`.
   - It returns `{created, skipped, logins:[{emp_no, username, tempPassword}]}` and writes an audit entry.
-- Mapping fields are the spec §8 field keys plus `opening_days`.
+- Mapping fields are the spec §8 field keys plus `opening_days`. The payload also carries `asOf` (ISO date) for the opening rows.
+- An empty or unmapped `emp_no` gets `NAMA-###` (3 digits, continuing from the highest existing `NAMA-` number), with the warning `generated_id`.
+- Balances over 60 are kept, with no forfeit at import, and the warning `over_cap`.
+- The fixture `tests/fixtures/leave-sample.xlsx` is made up but copies the real sheet's layout: a 2-row merged header, Arabic names only, no ID column, some empty join dates and balances, and an extra-days table after a blank row. It is generated by `tests/fixtures/make-sample.mjs` with SheetJS. Real staff data is never committed.
 
 - [ ] Write the tests:
   - `normalizeRow` turns `45658` into `"2025-01-01"`, `"٢٥/١٢/٢٠٢٤"` into `"2024-12-25"`, and `" E001 "` into `"E001"` (Review Focus 3)
   - preview flags a duplicate ID in the file, an existing ID, a bad date and a negative balance as errors
-  - an unknown department and a balance of 75 are warnings
-  - commit creates N employees; the 75-day row has remaining 28800 plus a forfeit row
+  - an unknown department, a balance of 75, an empty ID and an empty balance are warnings
+  - commit creates N employees; the 75-day row has remaining 36000 and no forfeit; generated IDs are `NAMA-001`…
+  - a later anniversary job run caps that employee at 28800 with a forfeit
   - `createLogins` returns temporary passwords that work for login
   - accounts calling preview → 403
 - [ ] FAIL → implement → PASS. Commit `feat: excel import validation and commit`.
@@ -292,7 +308,8 @@
 **Files:** Create `public/js/pages/request-new.js`, `public/js/pages/requests.js`, `public/js/pages/request.js`, `public/js/pages/approvals.js`, `public/js/pages/notifications.js`
 
 - [ ] Request form (`#/leave/new`), a full page:
-  - the type toggles between annual and early
+  - type chooser: annual, early, emergency, bereavement, sick, worked on holiday (the form fields change with the type; sick allows a medical-note upload; record types show "does not affect your balance")
+  - before the eligibility date, annual and early are disabled and show "available from DD/MM/YYYY"
   - annual: start and end dates, with a live day count and "available after this request"
   - early: a date and a time select (09:30…16:30 in 30-minute steps), with live hours
   - the submit button is disabled when the request is over the available balance
@@ -308,7 +325,7 @@
 
 - [ ] Import (`#/import`), a full-page four-step wizard (spec §10):
   - SheetJS reads the file in the browser
-  - choose the sheet and header row
+  - choose the sheet, the header rows (1 or 2, with merged cells filled across), the "balance as of" date; data ends at the first row with no name
   - map columns, auto-matched against Arabic and English synonyms in `i18n.js`; the mapping is saved to settings `import_mapping`
   - preview table with red errors and gold warnings, and an "errors only" filter
   - commit, then download the temporary logins as a CSV
@@ -319,7 +336,7 @@
   - contract types
 - [ ] Users (`#/users`), admin only: list, role select, activate or deactivate, reset password (the temporary password is shown once).
 - [ ] Audit (`#/audit`): a filterable list.
-- [ ] Verify with Playwright: import a generated 5-row xlsx containing one error row → 4 created. Commit `feat: import wizard, settings, users, audit UI`.
+- [ ] Verify with Playwright: importing `tests/fixtures/leave-sample.xlsx` with header rows 1–2, name → `name_ar`, join date → `join_date` and the remaining column → `opening_days` shows the correct created count, generated IDs, and the extra-days block ignored. Commit `feat: import wizard, settings, users, audit UI`.
 
 ### Task 13: End-to-end smoke, docs, push
 
