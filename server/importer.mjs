@@ -10,7 +10,8 @@ import { postLedger } from "./ledger.mjs";
 
 const TEXT = ["emp_no", "name_ar", "name_en", "civil_id", "nationality", "mobile", "email", "address", "emergency_name", "emergency_relation", "emergency_phone", "job_title", "contract_type", "status", "department"];
 const DATES = ["civil_id_expiry", "dob", "join_date", "contract_end"];
-export const IMPORT_FIELDS = [...TEXT, ...LONG, ...DATES, "opening_days", "manager"];
+export const IMPORT_FIELDS = [...TEXT, ...LONG, ...DATES, "opening_days", "manager", "gender"];
+const GENDER_WORDS = { male: ["male", "m", "ذكر", "رجل"], female: ["female", "f", "أنثى", "انثى", "امرأة"] };
 
 const DIGITS = { "٠": 0, "١": 1, "٢": 2, "٣": 3, "٤": 4, "٥": 5, "٦": 6, "٧": 7, "٨": 8, "٩": 9, "۰": 0, "۱": 1, "۲": 2, "۳": 3, "۴": 4, "۵": 5, "۶": 6, "۷": 7, "۸": 8, "۹": 9 };
 const asciiDigits = (s) => s.replace(/[٠-٩۰-۹]/g, (d) => DIGITS[d]).replace(/[٫]/g, ".").replace(/[٬]/g, "");
@@ -94,6 +95,11 @@ export function validateRows(db, rawRows, mapping, today) {
     if (values.department && !findDept(values.department)) warnings.push({ field: "department", code: "unknown_department" });
     if (values.civil_id_expiry && values.civil_id_expiry < today) warnings.push({ field: "civil_id_expiry", code: "civil_id_expired" });
     if (values.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) { warnings.push({ field: "email", code: "invalid_email" }); values.email = null; }
+    if (values.gender) {
+      const g = Object.keys(GENDER_WORDS).find((k) => GENDER_WORDS[k].includes(norm(values.gender)));
+      if (!g) warnings.push({ field: "gender", code: "unknown_gender" });
+      values.gender = g || null;
+    }
     if (values.status) {
       const s = norm(values.status).replace(/\s+/g, "_");
       if (STATUSES.includes(s)) values.status = s; else { warnings.push({ field: "status", code: "unknown_status" }); values.status = "active"; }

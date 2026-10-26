@@ -2,8 +2,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { tx, getSetting, setSetting } from "./db.mjs";
-import { sendRaw, HttpError } from "./http.mjs";
+import { sendRaw, send, readJson, HttpError } from "./http.mjs";
 import { can } from "./perm.mjs";
+import { audit } from "./audit.mjs";
 import { ANNUAL, dueCredits, capForfeit, probationEnd, addDays, fmtDays, todayMuscat } from "./leave.mjs";
 import { postLedger, balanceOf } from "./ledger.mjs";
 import { notify } from "./notify.mjs";
@@ -24,27 +25,79 @@ export function runAnniversaries(ctx, today) {
     if (!start) continue;
     const due = dueCredits(emp.join_date, today, credited, addDays(start, 1));
     if (!due.length) continue;
-    let lastForfeit = 0;
+    // Art. 78: up to 30 days may be carried over, unless leave wasn't taken because of the work. Nothing is forfeited
+    // automatically: a balance over the cap opens an HR review (forfeit, or keep for work needs).
+    let over = 0;
     tx(db, () => {
       for (const ys of due) {
         postLedger(db, emp, { kind: "annual_credit", minutes: ANNUAL, date: ys, yearStart: ys, note: "Yearly entitlement" });
         credits++;
-        const over = capForfeit(balanceOf(db, emp.id));
-        if (over > 0) { postLedger(db, emp, { kind: "cap_forfeit", minutes: -over, date: ys, yearStart: ys, note: "Balance above 60 days" }); forfeits++; lastForfeit = over; }
+      }
+      over = cappedExcess(db, emp.id);
+      if (over > 0) {
+        const ins = db.prepare("INSERT OR IGNORE INTO cap_reviews(employee_id,year_start,excess,created_at) VALUES(?,?,?,?)").run(emp.id, due[due.length - 1], over, new Date().toISOString());
+        if (ins.changes) forfeits++; else over = 0;
       }
     });
+    if (over > 0) {
+      const hrUsers = db.prepare("SELECT id FROM users WHERE role IN ('hr','admin') AND active=1").all().map((r) => r.id);
+      notify(ctx, hrUsers, { title_ar: "رصيد يتجاوز الحد بحاجة لمراجعة", title_en: "Leave balance over the cap needs review", body_ar: `${emp.name_ar || emp.name_en}: ${fmtDays(over)} يوم فوق ٦٠`, body_en: `${emp.name_en || emp.name_ar}: ${fmtDays(over)} days over 60`, link: "#/cap-reviews", inAppOnly: true });
+    }
     const user = db.prepare("SELECT id FROM users WHERE employee_id=? AND active=1").get(emp.id);
     if (user) {
       const bal = fmtDays(balanceOf(db, emp.id));
       notify(ctx, [user.id], {
         title_ar: "تمت إضافة رصيد الإجازة السنوية", title_en: "Your yearly leave balance was added",
-        body_ar: `أضيف ٣٠ يوماً. رصيدك الآن ${bal} يوم${lastForfeit ? ` (سقط ${fmtDays(lastForfeit)} يوم فوق الحد ٦٠)` : ""}.`,
-        body_en: `30 days were added. Your balance is now ${bal} days${lastForfeit ? ` (${fmtDays(lastForfeit)} days above the 60-day cap were forfeited)` : ""}.`,
+        body_ar: `أضيف ٣٠ يوماً. رصيدك الآن ${bal} يوم.`,
+        body_en: `30 days were added. Your balance is now ${bal} days.`,
         link: "#/me",
       });
     }
   }
-  return { credits, forfeits };
+  return { credits, reviews: forfeits };
+}
+
+/** Days above the 60-day cap, not counting days earned by working on holidays (compensatory rest stays outside the cap). */
+export function cappedExcess(db, empId) {
+  const comp = db.prepare(`SELECT coalesce(sum(minutes),0) n FROM leave_ledger WHERE employee_id=? AND (kind='comp_credit'
+    OR (kind='reversal' AND request_id IN (SELECT id FROM leave_requests WHERE type='comp_day')))`).get(empId).n;
+  return capForfeit(balanceOf(db, empId) - comp);
+}
+
+export function registerCapReviews(api, ctx) {
+  const { db } = ctx;
+  api.get("/api/cap-reviews", (req, res) => {
+    if (!can(req.sess, "employee.viewAll")) throw new HttpError(403, "forbidden", "You do not have permission for this");
+    const status = req.query.get("status");
+    const items = db.prepare(`SELECT c.*, e.emp_no, e.name_ar, e.name_en, (SELECT coalesce(sum(minutes),0) FROM leave_ledger l WHERE l.employee_id=c.employee_id) balance
+      FROM cap_reviews c JOIN employees e ON e.id=c.employee_id ${status ? "WHERE c.status=?" : ""} ORDER BY c.status='pending' DESC, c.id DESC`).all(...(status ? [status] : []));
+    send(req, res, 200, { items });
+  });
+  api.post("/api/cap-reviews/:id", async (req, res) => {
+    if (!can(req.sess, "ledger.adjust")) throw new HttpError(403, "forbidden", "You do not have permission for this");
+    const { decision, reason } = await readJson(req);
+    if (!["keep", "forfeit"].includes(decision)) throw Object.assign(new HttpError(400, "invalid", "decision must be keep or forfeit"), { field: "decision" });
+    if (!String(reason || "").trim()) throw Object.assign(new HttpError(400, "invalid", "A reason is required"), { field: "reason" });
+    const out = tx(db, () => {
+      const r = db.prepare("SELECT * FROM cap_reviews WHERE id=?").get(Number(req.params.id));
+      if (!r) throw new HttpError(404, "not_found", "Review not found");
+      if (r.status !== "pending") throw new HttpError(409, "not_pending", "This review has already been decided");
+      const emp = db.prepare("SELECT * FROM employees WHERE id=?").get(r.employee_id);
+      let minutes = 0;
+      if (decision === "forfeit") {
+        minutes = Math.min(r.excess, cappedExcess(db, emp.id)); // never more than is over the cap today
+        if (minutes > 0) postLedger(db, emp, { kind: "cap_forfeit", minutes: -minutes, date: ctx.today(), yearStart: r.year_start, note: String(reason).trim().slice(0, 500), by: req.sess.user.id });
+      }
+      db.prepare("UPDATE cap_reviews SET status=?, reason=?, decided_by=?, decided_at=? WHERE id=?").run(decision === "keep" ? "kept" : "forfeited", String(reason).trim().slice(0, 500), req.sess.user.id, new Date().toISOString(), r.id);
+      audit(db, req.sess.user.id, `cap_review.${decision}`, "employee", emp.id, r, { decision, reason, minutes });
+      return { emp, minutes };
+    });
+    const user = db.prepare("SELECT id FROM users WHERE employee_id=? AND active=1").get(out.emp.id);
+    if (user) notify(ctx, [user.id], decision === "keep"
+      ? { title_ar: "تم الاحتفاظ برصيدك الزائد", title_en: "Your extra leave balance was kept", body_ar: String(reason), body_en: String(reason), link: "#/me" }
+      : { title_ar: "سقط جزء من رصيد الإجازة", title_en: "Part of your leave balance was forfeited", body_ar: `${fmtDays(out.minutes)} يوم — ${reason}`, body_en: `${fmtDays(out.minutes)} days — ${reason}`, link: "#/me" });
+    send(req, res, 200, { ok: true, forfeited: out.minutes });
+  });
 }
 
 /** Remind HR (in-app) about probation ending today and civil IDs expiring within 30 days — once per item. */
@@ -100,7 +153,7 @@ export function registerJobs(api, ctx) {
   const tick = () => {
     try {
       const today = todayMuscat();
-      if (state.daily !== today) { state.daily = today; const r = runAnniversaries(ctx, today); runExpiryCheck(ctx, today); if (r.credits) console.log(`Leave credits posted: ${r.credits}, forfeits: ${r.forfeits}`); }
+      if (state.daily !== today) { state.daily = today; const r = runAnniversaries(ctx, today); runExpiryCheck(ctx, today); if (r.credits) console.log(`Leave credits posted: ${r.credits}, balances over the cap for review: ${r.reviews}`); }
       if (state.backup !== today && muscatTime() >= (env.BACKUP_TIME || "02:00")) { state.backup = today; backup(ctx, today, Number(env.BACKUP_KEEP_DAYS || 14)); }
     } catch (e) { console.error("scheduled job failed:", e); }
   };

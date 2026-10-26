@@ -41,16 +41,20 @@ export async function render(el, _p, { me, can }) {
       const active = emps.items.filter((e) => e.status === "active" || e.status === "on_leave");
       const expiring = active.filter((e) => e.civil_id_expiry && e.civil_id_expiry <= soon);
       const noJoin = active.filter((e) => !e.join_date);
+      const under30 = active.filter((e) => e.under_30_in_2y);
       return h("div", { class: "grid" },
         h("div", { class: "grid tiles" }, tiles,
           tile(num(active.length), t("staff_count"), "#/staff"),
           tile(num(pend.items.length), t("all_pending"), "#/requests?status=pending", pend.items.length ? "warn" : ""),
           tile(num(expiring.length), t("ids_expiring"), null, expiring.length ? "alert" : "good"),
-          tile(num(noJoin.length), t("missing_join"), null, noJoin.length ? "warn" : "good")),
-        expiring.length || noJoin.length ? h("section", { class: "card" }, h("h2", null, t("needs_attention")),
+          tile(num(noJoin.length), t("missing_join"), null, noJoin.length ? "warn" : "good"),
+          tile(num(me.pendingCapReviews || 0), t("pending_reviews"), "#/cap-reviews", me.pendingCapReviews ? "warn" : "good"),
+          tile(num(under30.length), t("under_30_title"), null, under30.length ? "warn" : "good")),
+        expiring.length || noJoin.length || under30.length ? h("section", { class: "card" }, h("h2", null, t("needs_attention")),
           h("div", { class: "list" },
             expiring.map((e) => h("a", { class: "item", href: `#/staff/${e.id}` }, h("div", { class: "grow" }, h("div", { class: "title" }, nm(e)), h("div", { class: "meta" }, t("f_civil_id_expiry"), ": ", dmy(e.civil_id_expiry))))),
-            noJoin.map((e) => h("a", { class: "item", href: `#/staff/${e.id}/edit` }, h("div", { class: "grow" }, h("div", { class: "title" }, nm(e)), h("div", { class: "meta" }, t("no_join_date"))))))) : null);
+            noJoin.map((e) => h("a", { class: "item", href: `#/staff/${e.id}/edit` }, h("div", { class: "grow" }, h("div", { class: "title" }, nm(e)), h("div", { class: "meta" }, t("no_join_date"))))),
+            under30.map((e) => h("a", { class: "item", href: `#/staff/${e.id}` }, h("div", { class: "grow" }, h("div", { class: "title" }, nm(e)), h("div", { class: "meta" }, t("under_30_title"))))))) : null);
     }));
   } else if (tiles.length) jobs.push(Promise.resolve(h("div", { class: "grid tiles" }, tiles)));
   for (const node of await Promise.all(jobs)) el.append(node);

@@ -78,12 +78,12 @@ test("HR cannot approve; the department approver can, and the balance drops", as
   assert.equal((await tawfiq.c.post(`/api/requests/${annualId}/approve`, {})).status, 409);
 });
 
-test("early leave deducts hours once approved", async () => {
+test("early leave is recorded in hours and does not reduce annual leave", async () => {
   const r = await staff.c.post("/api/requests", { type: "early", date: "2026-11-10", time: "15:30" });
   assert.equal(r.status, 201);
   assert.equal(r.data.request.minutes, 90);
   assert.equal((await tawfiq.c.post(`/api/requests/${r.data.request.id}/approve`, {})).status, 200);
-  assert.equal(await remaining(hr.c, staff.emp.id), days(5) - 90);
+  assert.equal(await remaining(hr.c, staff.emp.id), days(5));
 });
 
 test("cancelling an approved request reverses its deduction", async () => {
@@ -91,7 +91,7 @@ test("cancelling an approved request reverses its deduction", async () => {
   const r = await tawfiq.c.post(`/api/requests/${annualId}/cancel`, { comment: "تغيير" });
   assert.equal(r.status, 200);
   assert.equal(r.data.request.status, "cancelled");
-  assert.equal(await remaining(hr.c, staff.emp.id), days(10) - 90);
+  assert.equal(await remaining(hr.c, staff.emp.id), days(10));
   const p = await hr.c.get(`/api/employees/${staff.emp.id}`);
   assert.ok(p.data.ledger.some((l) => l.kind === "reversal" && l.minutes === days(5)));
 });
@@ -99,7 +99,7 @@ test("cancelling an approved request reverses its deduction", async () => {
 test("owner may cancel a pending request", async () => {
   const r = await staff.c.post("/api/requests", { type: "annual", start: "2027-01-03", end: "2027-01-03" });
   assert.equal((await staff.c.post(`/api/requests/${r.data.request.id}/cancel`, {})).status, 200);
-  assert.equal(await remaining(hr.c, staff.emp.id), days(10) - 90);
+  assert.equal(await remaining(hr.c, staff.emp.id), days(10));
 });
 
 test("managers' leave goes to the CEO; the CEO's goes to admin", async () => {
@@ -141,20 +141,21 @@ test("approval re-checks the balance", async () => {
   await hr.c.post(`/api/employees/${staff.emp.id}/adjust`, { minutes: before - 480, note: "إرجاع" });
 });
 
-test("new joiners cannot take annual or early leave before six months; record types are fine", async () => {
+test("new joiners cannot take annual leave before six months; early leave and record types are fine", async () => {
   const a = await junior.c.post("/api/requests", { type: "annual", start: "2026-11-01", end: "2026-11-01" });
   assert.equal(a.status, 409); assert.equal(a.data.error, "not_eligible_yet");
   assert.match(a.data.message, /2027-02-20|20\/02\/2027/);
-  assert.equal((await junior.c.post("/api/requests", { type: "early", date: "2026-11-02", time: "16:00" })).data.error, "not_eligible_yet");
+  assert.equal((await junior.c.post("/api/requests", { type: "early", date: "2026-11-02", time: "16:00" })).status, 201);
   const s = await junior.c.post("/api/requests", { type: "sick", start: "2026-10-20", end: "2026-10-21", reason: "زكام" });
   assert.equal(s.status, 201);
   const before = await remaining(hr.c, junior.emp.id);
-  assert.equal((await tawfiq.c.post(`/api/requests/${s.data.request.id}/approve`, {})).status, 200);
-  assert.equal(await remaining(hr.c, junior.emp.id), before);
+  assert.equal((await tawfiq.c.post(`/api/requests/${s.data.request.id}/approve`, {})).data.error, "proof_required"); // Art. 47
   const pdf = Buffer.from("%PDF-1.4 note");
   const up = await junior.c.upload(`/api/requests/${s.data.request.id}/files?name=note.pdf`, pdf, "application/pdf");
   assert.equal(up.status, 201);
   assert.equal((await tawfiq.c.get(`/api/requests/${s.data.request.id}`)).data.files.length, 1);
+  assert.equal((await tawfiq.c.post(`/api/requests/${s.data.request.id}/approve`, {})).status, 200);
+  assert.equal(await remaining(hr.c, junior.emp.id), before);
 });
 
 test("worked-on-holiday adds one day once approved and only once per date", async () => {

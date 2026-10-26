@@ -11,7 +11,7 @@ import { getEmployee } from "./employees.mjs";
 export const MAX_FILE = 10 * 1024 * 1024;
 const IMAGES = ["image/jpeg", "image/png", "image/webp"];
 const DOCS = [...IMAGES, "application/pdf"];
-export const DOC_TYPES = ["civil_id", "passport", "contract", "visa", "certificate", "medical", "other"];
+export const DOC_TYPES = ["civil_id", "passport", "contract", "visa", "certificate", "medical", "consent", "other"];
 
 /** Store an uploaded body; returns the files row. Caller checks permissions. */
 export async function storeUpload(ctx, req, { employeeId, requestId = null, kind = "doc" }) {

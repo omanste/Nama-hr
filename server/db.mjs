@@ -51,6 +51,12 @@ const MIGRATIONS = [
    ALTER TABLE employees ADD COLUMN experience TEXT; ALTER TABLE employees ADD COLUMN languages TEXT;
    ALTER TABLE employees ADD COLUMN skills TEXT; ALTER TABLE employees ADD COLUMN certifications TEXT;
    ALTER TABLE employees ADD COLUMN main_tasks TEXT;`,
+  // 3: Oman Labour Law — gender (maternity/paternity/child care), statutory leave details, HR review of balances over the cap
+  `ALTER TABLE employees ADD COLUMN gender TEXT;
+   ALTER TABLE leave_requests ADD COLUMN relation TEXT; ALTER TABLE leave_requests ADD COLUMN event_date TEXT;
+   CREATE TABLE cap_reviews(id INTEGER PRIMARY KEY, employee_id INTEGER NOT NULL REFERENCES employees(id), year_start TEXT NOT NULL,
+     excess INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','forfeited','kept')),
+     reason TEXT, decided_by INTEGER, decided_at TEXT, created_at TEXT NOT NULL, UNIQUE(employee_id, year_start));`,
 ];
 
 export function openDb(dataDir) {

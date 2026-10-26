@@ -6,7 +6,7 @@ import { parseWorkbook } from "../sheet.js";
 
 const FIELDS = ["name_ar", "name_en", "emp_no", "department", "job_title", "manager", "join_date", "opening_days", "civil_id", "civil_id_expiry", "nationality", "dob",
   "mobile", "email", "address", "emergency_name", "emergency_relation", "emergency_phone", "contract_type", "contract_end", "status",
-  "education", "specialization", "experience", "languages", "skills", "certifications", "main_tasks"];
+  "education", "specialization", "experience", "languages", "skills", "certifications", "main_tasks", "gender"];
 
 // Header words that identify a field, most specific first. Matching ignores hamza/alef/ya/ta-marbuta differences.
 const SYNONYMS = {
@@ -23,6 +23,7 @@ const SYNONYMS = {
   mobile: ["الهاتف", "الجوال", "mobile", "phone"], email: ["البريد", "email", "e-mail"], address: ["العنوان", "address"],
   contract_type: ["نوع العقد", "contract type"], contract_end: ["نهايه العقد", "contract end"], status: ["الحاله", "status"],
   manager: ["المدير المباشر", "direct manager", "line manager", "reports to"],
+  gender: ["الجنس", "النوع", "gender", "sex"],
   education: ["اعلي مؤهل", "المؤهل العلمي", "educational qualification", "education"], specialization: ["التخصص", "specialization", "major"],
   experience: ["سنوات الخبره", "years of work experience", "years of experience"], languages: ["اللغات", "languages"],
   skills: ["المهارات", "key skills", "skills"], certifications: ["الدورات والشهادات", "certifications", "courses"],

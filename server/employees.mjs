@@ -3,15 +3,16 @@ import { nowIso, tx } from "./db.mjs";
 import { send, readJson, HttpError } from "./http.mjs";
 import { can, canViewEmployee, approvedDepartments } from "./perm.mjs";
 import { audit } from "./audit.mjs";
-import { isIsoDate, ANNUAL, DAY } from "./leave.mjs";
-import { postLedger, leaveSummary, ledgerRows, yearStartFor } from "./ledger.mjs";
+import { isIsoDate, ANNUAL, DAY, fmtDays, addDays } from "./leave.mjs";
+import { postLedger, leaveSummary, ledgerRows, yearStartFor, balanceOf, pendingMinutes } from "./ledger.mjs";
 import { tempPassword, hashPassword } from "./auth.mjs";
 
 export const STATUSES = ["active", "on_leave", "resigned", "terminated"];
 const TEXT = ["name_ar", "name_en", "civil_id", "nationality", "mobile", "address", "emergency_name", "emergency_relation", "emergency_phone", "job_title", "contract_type"];
 const DATES = ["civil_id_expiry", "dob", "join_date", "contract_end"];
 export const LONG = ["education", "specialization", "experience", "languages", "skills", "certifications", "main_tasks"];
-export const FIELDS = ["emp_no", ...TEXT, ...LONG, "email", ...DATES, "department_id", "manager_employee_id", "status"];
+export const FIELDS = ["emp_no", ...TEXT, ...LONG, "email", ...DATES, "department_id", "manager_employee_id", "status", "gender"];
+export const GENDERS = ["male", "female"];
 
 const bad = (field, message) => Object.assign(new HttpError(400, "invalid", message), { field });
 
@@ -33,6 +34,7 @@ export function cleanEmployee(db, body, cur = null) {
     if (k === "email" && v !== null && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) throw bad(k, "email is not valid");
     if (k === "status" && !STATUSES.includes(v ?? "active")) throw bad(k, "unknown status");
     if (k === "status" && v === null) v = "active";
+    if (k === "gender" && v !== null && !GENDERS.includes(v)) throw bad(k, "gender must be male or female");
     if ((k === "name_ar" || k === "name_en") && v === null) v = ""; // names are never NULL, just empty
     if (k === "department_id" && v !== null && !db.prepare("SELECT 1 FROM departments WHERE id=?").get(Number(v))) throw bad(k, "unknown department");
     if (k === "manager_employee_id" && v !== null) {
@@ -102,9 +104,13 @@ export function registerEmployees(api, ctx) {
     if (q) { where.push("(lower(e.name_en) LIKE ? OR e.name_ar LIKE ? OR lower(e.emp_no) LIKE ? OR lower(coalesce(e.job_title,'')) LIKE ?)"); args.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`); }
     if (req.query.get("dept")) { where.push("e.department_id=?"); args.push(Number(req.query.get("dept"))); }
     if (req.query.get("status")) { where.push("e.status=?"); args.push(req.query.get("status")); }
-    const items = db.prepare(`SELECT e.id,e.emp_no,e.name_ar,e.name_en,e.department_id,e.job_title,e.status,e.photo_file_id,e.join_date,e.civil_id_expiry,
-        (SELECT coalesce(sum(minutes),0) FROM leave_ledger l WHERE l.employee_id=e.id) remaining
-      FROM employees e ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY e.name_ar COLLATE NOCASE, e.name_en`).all(...args);
+    const today = ctx.today(), twoYearsAgo = addDays(today, -730);
+    const items = db.prepare(`SELECT e.id,e.emp_no,e.name_ar,e.name_en,e.department_id,e.job_title,e.status,e.photo_file_id,e.join_date,e.civil_id_expiry,e.gender,
+        (SELECT coalesce(sum(minutes),0) FROM leave_ledger l WHERE l.employee_id=e.id) remaining,
+        (SELECT coalesce(sum(minutes),0) FROM leave_requests r WHERE r.employee_id=e.id AND r.type='annual' AND r.status='approved' AND r.start_date>=? AND r.start_date<=?) annual_taken_2y
+      FROM employees e ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY e.name_ar COLLATE NOCASE, e.name_en`).all(twoYearsAgo, today, ...args);
+    // Art. 81: at least 30 days of annual leave every 2 years
+    for (const e of items) e.under_30_in_2y = !!e.join_date && e.join_date <= twoYearsAgo && e.annual_taken_2y < 30 * DAY;
     send(req, res, 200, { items });
   });
 
@@ -159,6 +165,24 @@ export function registerEmployees(api, ctx) {
     tx(db, () => {
       const id = postLedger(db, emp, { kind: "adjustment", minutes, date: ctx.today(), note: String(note).trim().slice(0, 500), by: req.sess.user.id });
       audit(db, req.sess.user.id, "ledger.adjust", "employee", emp.id, null, { ledger_id: id, minutes, note });
+    });
+    send(req, res, 200, { leave: leaveSummary(db, emp, ctx.today()) });
+  });
+
+  // Art. 81: unused leave may be paid in cash (basic wage) only with the worker's written consent, kept on file.
+  api.post("/api/employees/:id/encash", async (req, res) => {
+    need(req.sess, "ledger.adjust");
+    const emp = load(req.sess, req.params.id);
+    const { days, consent_file_id, note } = await readJson(req);
+    const doc = consent_file_id && db.prepare("SELECT * FROM files WHERE id=? AND employee_id=? AND doc_type='consent'").get(Number(consent_file_id), emp.id);
+    if (!doc) throw Object.assign(new HttpError(409, "consent_required", "Upload the employee's signed consent (document type: consent) first"), { field: "consent_file_id" });
+    const minutes = Math.round(Number(days) * DAY);
+    if (!Number.isFinite(minutes) || minutes <= 0) throw bad("days", "Enter the number of days");
+    const available = balanceOf(db, emp.id) - pendingMinutes(db, emp.id);
+    if (minutes > available) throw new HttpError(409, "insufficient_balance", `Only ${fmtDays(available)} days are available`);
+    tx(db, () => {
+      const id = postLedger(db, emp, { kind: "encashment", minutes: -minutes, date: ctx.today(), note: `Paid in cash (basic wage), consent file #${doc.id}${note ? " — " + String(note).slice(0, 300) : ""}`, by: req.sess.user.id });
+      audit(db, req.sess.user.id, "ledger.encash", "employee", emp.id, null, { ledger_id: id, minutes, consent_file_id: doc.id });
     });
     send(req, res, 200, { leave: leaveSummary(db, emp, ctx.today()) });
   });

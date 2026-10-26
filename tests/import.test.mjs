@@ -101,12 +101,14 @@ test("commit creates the valid rows with opening balances, departments and login
   assert.ok(t.db.prepare("SELECT 1 FROM audit_log WHERE action='import.commit'").get());
 });
 
-test("the 60-day cap applies at the next anniversary, not at import", async () => {
+test("imported balances over 60 are kept; HR reviews them at the next anniversary", async () => {
   const e = (await hr.c.get("/api/employees?q=اليقظان")).data.items[0];
   runAnniversaries(t.app.ctx, "2026-10-31");
   assert.equal((await hr.c.get(`/api/employees/${e.id}`)).data.leave.remaining, 106 * 480);
   runAnniversaries(t.app.ctx, "2026-11-01");
-  assert.equal((await hr.c.get(`/api/employees/${e.id}`)).data.leave.remaining, 28800);
+  assert.equal((await hr.c.get(`/api/employees/${e.id}`)).data.leave.remaining, 136 * 480);
+  const rv = (await hr.c.get("/api/cap-reviews?status=pending")).data.items.find((x) => x.employee_id === e.id);
+  assert.equal(rv.excess, 76 * 480);
 });
 
 test("re-importing the same names with generated IDs continues numbering", async () => {
@@ -176,4 +178,13 @@ test("qualification fields import with long text", async () => {
   assert.equal(p.languages, "Arabic, English");
   assert.equal(p.skills, skills.trim());
   assert.equal(p.main_tasks, "Sales follow-up");
+});
+
+test("gender imports from Arabic or English words", async () => {
+  const m = { emp_no: 0, name_ar: 1, gender: 2 };
+  const r = await hr.c.post("/api/import/preview", { rows: [["G1", "أ", "ذكر"], ["G2", "ب", "Female"], ["G3", "ج", "؟"]], mapping: m });
+  assert.equal(r.data.rows[0].values.gender, "male");
+  assert.equal(r.data.rows[1].values.gender, "female");
+  assert.equal(r.data.rows[2].values.gender, null);
+  assert.ok(r.data.rows[2].warnings.some((w) => w.code === "unknown_gender"));
 });

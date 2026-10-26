@@ -5,7 +5,7 @@ import { registerFiles } from "./files.mjs";
 import { registerAdmin } from "./admin.mjs";
 import { registerNotifications } from "./notify.mjs";
 import { registerRequests } from "./requests.mjs";
-import { registerJobs } from "./jobs.mjs";
+import { registerJobs, registerCapReviews } from "./jobs.mjs";
 import { registerImport } from "./importer.mjs";
 import { registerAudit } from "./audit.mjs";
 
@@ -17,6 +17,7 @@ export async function registerModules(api, ctx) {
   registerNotifications(api, ctx);
   registerRequests(api, ctx);
   registerJobs(api, ctx);
+  registerCapReviews(api, ctx);
   registerImport(api, ctx);
   registerAudit(api, ctx);
 }

@@ -23,6 +23,7 @@ const ROUTES = [
   ["/settings", "settings"],
   ["/users", "users"],
   ["/audit", "audit"],
+  ["/cap-reviews", "cap-reviews"],
   ["/menu", "menu"],
 ].map(([pattern, page, opts = {}]) => {
   const keys = [];
@@ -48,7 +49,7 @@ function navItems() {
   if (can.staffList()) items.push(["#/staff", "nav_staff", "people"]);
   if (me.isApprover && !can.viewAll()) items.push(["#/team", "team_requests", "list"]);
   if (can.viewAll()) items.push(["#/requests", "nav_requests", "list"]);
-  if (can.edit()) items.push(["#/import", "nav_import", "upload"]);
+  if (can.edit()) items.push(["#/cap-reviews", "nav_cap_reviews", "clock", me.pendingCapReviews], ["#/import", "nav_import", "upload"]);
   if (can.admin()) items.push(["#/settings", "nav_settings", "gear"], ["#/users", "nav_users", "key"]);
   if (can.viewAll()) items.push(["#/audit", "nav_audit", "clock"]);
   return items;

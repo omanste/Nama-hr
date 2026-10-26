@@ -22,6 +22,11 @@ export async function render(el, _p, { can }) {
   const mgr = select("managers", people, settings.managers_approver_employee_id);
   const title = select("title", [["ceo", t("title_ceo")], ["chairman", t("title_chairman")]], settings.managers_approver_title);
   const types = h("textarea", { rows: 4 }); types.value = settings.contract_types.join("\n");
+  const HALF = []; for (let m = 10 * 60; m <= 20 * 60; m += 30) HALF.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${m % 60 ? "30" : "00"}`);
+  const dayEnd = select("work_day_end", HALF.map((x) => [x, x]), settings.work_day_end);
+  const rStart = h("input", { type: "date", value: settings.ramadan_start || "" });
+  const rEnd = h("input", { type: "date", value: settings.ramadan_end || "" });
+  const rDayEnd = select("ramadan_day_end", HALF.map((x) => [x, x]), settings.ramadan_day_end);
 
   el.append(pageHead(t("nav_settings"), h("a", { class: "btn", href: "/api/admin/backup" }, t("backup_download"))),
     h("section", { class: "card" }, h("h2", null, t("departments")),
@@ -32,6 +37,10 @@ export async function render(el, _p, { can }) {
     h("section", { class: "card" }, h("h2", null, t("managers_approver")),
       h("div", { class: "fields" }, field(t("managers_approver"), mgr), field(t("managers_approver_title"), title)),
       h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", { managers_approver_employee_id: mgr.value ? Number(mgr.value) : null, managers_approver_title: title.value })) }, t("save")))),
+    h("section", { class: "card" }, h("h2", null, t("ramadan")),
+      h("p", { class: "sub" }, t("ramadan_hint")),
+      h("div", { class: "fields" }, field(t("work_day_end"), dayEnd), field(t("ramadan_start"), rStart), field(t("ramadan_end"), rEnd), field(t("ramadan_day_end"), rDayEnd)),
+      h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", { work_day_end: dayEnd.value, ramadan_start: rStart.value || null, ramadan_end: rEnd.value || null, ramadan_day_end: rDayEnd.value })) }, t("save")))),
     h("section", { class: "card" }, h("h2", null, t("contract_types")),
       field(t("contract_types"), types, { hint: t("contract_types_hint") }),
       h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", { contract_types: types.value.split("\n").map((x) => x.trim()).filter(Boolean) })) }, t("save")))));

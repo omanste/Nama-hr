@@ -6,15 +6,80 @@ export const CAP = 60 * DAY;       // total balance cap, applied when a yearly c
 export const MAX_RANGE_DAYS = 60;
 export const DAY_END = 17 * 60;    // 17:00
 
-/** effect: "deduct" reduces the balance, "credit" adds to it, "record" is history only. */
+/** Leave types. effect: "deduct" reduces the annual balance, "credit" adds to it, "record" is history only.
+ * Limits follow Oman's Labour Law (Royal Decree 53/2023, articles 78–84) — see docs/compliance/.
+ *   maxDays: per request (per birth for maternity/paternity) · yearCap: per calendar year · once: once in the whole service
+ *   proof: a document must be attached before approval (Art. 84; Art. 47 for sickness) · paid: false = without wage */
 export const TYPES = {
-  annual: { effect: "deduct", range: true },
-  early: { effect: "deduct" },
-  emergency: { effect: "record", range: true },
-  bereavement: { effect: "record", range: true },
-  sick: { effect: "record", range: true },
+  annual: { effect: "deduct", range: true, maxDays: 60 },
+  early: { effect: "record", hours: true },                       // company permission, recorded in hours (not annual leave)
+  emergency: { effect: "record", range: true, maxDays: 60 },      // company benefit; not in the 2023 law
+  sick: { effect: "record", range: true, proof: true, yearCap: 182, maxDays: 182 },
+  bereavement: { effect: "record", range: true, proof: true, relation: "list" },
+  marriage: { effect: "record", range: true, proof: true, maxDays: 3, once: true },
+  paternity: { effect: "record", range: true, proof: true, maxDays: 7, gender: "male", event: "birth" },
+  maternity: { effect: "record", range: true, proof: true, maxDays: 98, gender: "female", event: "birth" },
+  hajj: { effect: "record", range: true, proof: true, maxDays: 15, once: true, minServiceMonths: 12 },
+  exam: { effect: "record", range: true, proof: true, yearCap: 15, maxDays: 15, omani: true },
+  patient_care: { effect: "record", range: true, proof: true, yearCap: 15, maxDays: 15, omani: true, relation: "text" },
+  childcare: { effect: "record", range: true, maxDays: 365, gender: "female", paid: false },
+  unpaid: { effect: "record", range: true, maxDays: 365, paid: false },
   comp_day: { effect: "credit" },
 };
+
+/** Art. 84: days of paid bereavement leave by relation. A widow's leave (iddah) is for women. */
+export const BEREAVEMENT_DAYS = {
+  wife: 10, son: 10, daughter: 10,
+  father: 3, mother: 3, grandfather: 3, grandmother: 3, brother: 3, sister: 3,
+  uncle: 2, aunt: 2,
+  husband_muslim: 130, husband_other: 14,
+};
+
+/** Art. 82: sick-leave pay by cumulative day of the year — {percent: days}. */
+export function sickPayBands(priorDays, days) {
+  const out = { 100: 0, 75: 0, 50: 0, 35: 0 };
+  for (let d = priorDays + 1; d <= Math.min(priorDays + days, 182); d++) out[d <= 21 ? 100 : d <= 35 ? 75 : d <= 70 ? 50 : 35]++;
+  return out;
+}
+
+export class RuleError extends Error {
+  constructor(code, message, field) { super(message); this.code = code; this.field = field; }
+}
+const isOmani = (nat) => /oman|عمان|عماني/i.test(String(nat || ""));
+
+/** Check one request against the legal limits. used = {inYear, ever, forEvent} days already requested (pending or approved). */
+export function checkLeaveRules(type, { emp, start, end, relation, eventDate, used = {} }) {
+  const T = TYPES[type];
+  const days = daysBetweenInclusive(start, end);
+  if (T.gender && emp.gender !== T.gender) {
+    if (!emp.gender) throw new RuleError("gender_required", "HR must record the employee's gender first");
+    throw new RuleError("not_entitled", "This leave is not available for this employee", "type");
+  }
+  if (T.omani && !isOmani(emp.nationality)) throw new RuleError("not_entitled", "This leave is for Omani staff (Art. 84)", "type");
+  if (T.minServiceMonths) {
+    const from = isIsoDate(emp.join_date) ? addMonths(emp.join_date, T.minServiceMonths) : null;
+    if (!from || start < from) throw new RuleError("not_eligible_yet", `Available after ${T.minServiceMonths} months of service${from ? ` (${from})` : ""}`, "start");
+  }
+  if (T.once && used.ever > 0) throw new RuleError("already_taken", "This leave can be taken once during the service", "type");
+  let max = T.maxDays;
+  if (T.relation === "list") {
+    if (!(relation in BEREAVEMENT_DAYS)) throw new RuleError("invalid", "Choose the relation", "relation");
+    if (relation.startsWith("husband") && emp.gender === "male") throw new RuleError("not_entitled", "This leave is for a widow", "relation");
+    if (relation === "wife" && emp.gender === "female") throw new RuleError("not_entitled", "Choose the correct relation", "relation");
+    max = BEREAVEMENT_DAYS[relation];
+  }
+  if (T.relation === "text" && !String(relation || "").trim()) throw new RuleError("invalid", "Name the patient's relation to you", "relation");
+  if (T.event) {
+    if (!isIsoDate(eventDate)) throw new RuleError("invalid", "Enter the date of birth", "event_date");
+    // paternity: from the birth up to the child's 98th day · maternity: starts at most 14 days before the birth
+    const ok = type === "paternity" ? start >= eventDate && end <= addDays(eventDate, 97) : start >= addDays(eventDate, -14);
+    if (!ok) throw new RuleError("outside_window", type === "paternity" ? "Paternity leave must be taken within 98 days of the birth" : "Maternity leave can start at most 14 days before the birth", "start");
+    if (days + (used.forEvent || 0) > max) throw new RuleError("too_long", `At most ${max} days`, "end");
+  }
+  if (max && days > max) throw new RuleError("too_long", `At most ${max} days`, "end");
+  if (T.yearCap && days + (used.inYear || 0) > T.yearCap) throw new RuleError("year_limit", `At most ${T.yearCap} days a year (${Math.max(0, T.yearCap - (used.inYear || 0))} left)`, "end");
+  return days;
+}
 
 const ISO = /^(\d{4})-(\d{2})-(\d{2})$/;
 export function parseIso(s) {
@@ -50,27 +115,29 @@ export function daysBetweenInclusive(start, end) {
   return Math.round((b - a) / 86400000) + 1;
 }
 
-export function annualMinutes(start, end) {
+export function annualMinutes(start, end, maxDays = MAX_RANGE_DAYS) {
   const days = daysBetweenInclusive(start, end);
   if (days < 1) throw new RangeError("end date is before start date");
-  if (days > MAX_RANGE_DAYS) throw new RangeError(`range is longer than ${MAX_RANGE_DAYS} days`);
+  if (days > Math.max(maxDays, MAX_RANGE_DAYS)) throw new RangeError(`range is longer than ${Math.max(maxDays, MAX_RANGE_DAYS)} days`);
   return days * DAY;
 }
 
-export function earlyMinutes(time) {
+/** Minutes from the leave time to the end of the working day (17:00, or the Ramadan end time). 30-minute steps, from 09:30. */
+export function earlyMinutes(time, dayEnd = DAY_END) {
   const m = /^(\d{2}):(\d{2})$/.exec(String(time || ""));
   if (!m) throw new RangeError("invalid time");
   const t = +m[1] * 60 + +m[2];
-  if (+m[2] % 30 !== 0 || t < 9 * 60 + 30 || t > 16 * 60 + 30) throw new RangeError("time must be 09:30–16:30 in 30-minute steps");
-  return DAY_END - t;
+  if (+m[2] % 30 !== 0 || t < 9 * 60 + 30 || t > dayEnd - 30) throw new RangeError("time must be from 09:30 to 30 minutes before the end of the day, in 30-minute steps");
+  return dayEnd - t;
 }
 
-export function requestMinutes(type, { start, end, time } = {}) {
+export function requestMinutes(type, { start, end, time, dayEnd } = {}) {
   const T = TYPES[type];
   if (!T) throw new RangeError("unknown leave type");
-  if (type === "early") return earlyMinutes(time);
+  if (type === "early") return earlyMinutes(time, dayEnd);
   if (type === "comp_day") return DAY;
-  return annualMinutes(start, end);
+  // the per-type legal limits (maxDays, relation, yearCap) are checked by checkLeaveRules; this only bounds a request to a year
+  return annualMinutes(start, end, type === "annual" ? MAX_RANGE_DAYS : 366);
 }
 
 export function anniversaryOn(joinDate, year) {

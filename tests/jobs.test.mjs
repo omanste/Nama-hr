@@ -28,20 +28,20 @@ test("29 February joiner gets missed credits on 28 February, once", async () => 
   assert.deepEqual(kinds(e.id).map((k) => k.leave_year_start), ["2024-02-29"]);
   runAnniversaries(ctx, "2026-03-01");
   assert.deepEqual(kinds(e.id).filter((k) => k.kind === "annual_credit").map((k) => k.leave_year_start), ["2024-02-29", "2025-02-28", "2026-02-28"]);
-  assert.equal(balance(e.id), 3 * 14400 - capOver(3 * 14400));
+  assert.equal(balance(e.id), 3 * 14400, "no automatic forfeit (Art. 78) — HR reviews the excess");
+  assert.equal(t.db.prepare("SELECT excess FROM cap_reviews WHERE employee_id=?").get(e.id).excess, capOver(3 * 14400));
   const n = runAnniversaries(ctx, "2026-03-01");
   assert.equal(n.credits, 0);
 });
 const capOver = (b) => Math.max(0, b - 28800);
 
-test("a credit that takes the balance over 60 days forfeits the excess", async () => {
+test("a credit that takes the balance over 60 days opens an HR review for the excess", async () => {
   const e = await create({ emp_no: "L2", name_ar: "رصيد كبير", join_date: "2020-06-01", opening_days: 50 }, "2026-05-01");
   runAnniversaries(ctx, "2026-06-01");
-  const rows = kinds(e.id);
-  assert.deepEqual(rows.map((r) => r.kind), ["opening", "annual_credit", "cap_forfeit"]);
-  assert.equal(rows[2].minutes, -20 * 480);
-  assert.equal(rows[2].leave_year_start, "2026-06-01");
-  assert.equal(balance(e.id), 28800);
+  assert.deepEqual(kinds(e.id).map((r) => r.kind), ["opening", "annual_credit"]);
+  const rv = t.db.prepare("SELECT * FROM cap_reviews WHERE employee_id=?").get(e.id);
+  assert.equal(rv.excess, 20 * 480); assert.equal(rv.year_start, "2026-06-01"); assert.equal(rv.status, "pending");
+  assert.equal(balance(e.id), 80 * 480);
 });
 
 test("imported staff get their first credit on the next anniversary after the import", async () => {
@@ -53,12 +53,13 @@ test("imported staff get their first credit on the next anniversary after the im
   assert.equal(balance(e.id), 12 * 480 + 14400);
 });
 
-test("imported balance over 60 is kept until the next credit, then capped", async () => {
+test("imported balance over 60 is kept; the next credit opens an HR review", async () => {
   const e = await create({ emp_no: "L4", name_ar: "١٠٦ يوم", join_date: "2020-11-01", opening_days: 106 }, "2026-10-26");
   runAnniversaries(ctx, "2026-10-31");
   assert.equal(balance(e.id), 106 * 480);
   runAnniversaries(ctx, "2026-11-01");
-  assert.equal(balance(e.id), 28800);
+  assert.equal(balance(e.id), 136 * 480);
+  assert.equal(t.db.prepare("SELECT excess FROM cap_reviews WHERE employee_id=?").get(e.id).excess, 76 * 480);
 });
 
 test("no join date or resigned staff get no credit", async () => {
@@ -109,6 +110,7 @@ test("staff created in the app with an old join date get no back-filled credits"
   assert.equal(balance(e.id), 14400);
   runAnniversaries(ctx, "2027-05-05");
   assert.equal(balance(e.id), 28800);
+  assert.equal(t.db.prepare("SELECT count(*) n FROM cap_reviews WHERE employee_id=?").get(e.id).n, 0, "exactly 60 is not over the cap");
 });
 
 test("correcting a join date does not give a second credit for the same year", async () => {

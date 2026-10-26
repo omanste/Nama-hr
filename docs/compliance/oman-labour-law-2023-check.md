@@ -86,3 +86,28 @@ Legend: ✅ the portal meets the law · ⚠️ partly / needs a setting · ❌ g
 - Ministry of Labour: https://mol.gov.om/laborlaw · https://www.mol.gov.om/pages/Employee-Rights-And-Duties
 - Royal Decree 52/2023 (Social Protection Law): https://decree.om/2023/rd20230052/
 - Commentary (secondary): https://blog.decree.om/2026/annual-leave-in-oman-carry-over-postponement-and-compensation/ · https://blog.decree.om/2026/leave-under-omans-labour-law-a-complete-breakdown/ · https://blog.decree.om/2026/bereavement-leave-in-oman-who-qualifies-and-for-how-long · https://blog.decree.om/2025/probation-periods-in-oman-what-you-need-to-know/ · https://omanlawblog.curtis.com/2023/08/introduction-to-key-changes-in-new-oman.html
+
+## 7. Implemented (2026-10-26, branch `dev`)
+
+All items in A, B and C from section 6 are now in the portal:
+
+1. **No automatic forfeit.** A balance over 60 days at an anniversary opens a **balance review** for HR (*Balance reviews* page). HR records either "keep — work needs" or "forfeit", with a reason. If HR forfeits, the amount is at most what is over the cap on the day of the decision. Days earned by working on a holiday are not counted towards the cap. Imported balances (106, 92, 74 days…) are kept until HR decides.
+2. **Statutory leaves**, each with its legal limits; the server refuses anything over them:
+   - marriage, paternity, maternity
+   - bereavement, where the days follow the relation and the widow's leave is for women
+   - Hajj, exam leave, accompanying a patient
+   - child care (unpaid) and special unpaid leave
+
+   The employee profile now has a **gender** field (maternity, paternity, child care). Its **nationality** decides eligibility for exam leave and patient accompaniment (Omani staff only).
+3. **Proof before approval** for sick leave (medical certificate) and for the Art. 84 leaves. The approvals list shows "no document".
+4. **Sick leave:** at most 182 days a calendar year. The request page shows the pay split (100 / 75 / 50 / 35%).
+5. **Ramadan hours** in Settings: the dates and the end of the working day. Early leave is measured to that time.
+6. **Early leave** is recorded in hours only. It is **no longer deducted** from annual leave, and the 6-month rule no longer applies to it.
+7. **The 2-year rule:** HR's home page lists anyone who hasn't taken 30 days of annual leave in the last 2 years.
+8. **Postponement:** the approver can postpone a pending annual leave by at most 6 months. This approves it on the new dates and records the change.
+9. **Cash for unused leave:** HR can pay leave days in cash. This needs the employee's signed consent uploaded as a "consent" document first.
+
+Still open, for the legal adviser:
+- whether official holidays inside annual leave count as leave days
+- the holiday-work pay rate
+- the wage figures for cash payments and sick pay, which will be handled in the payroll phase

@@ -5,6 +5,7 @@ import { can } from "./perm.mjs";
 import { audit } from "./audit.mjs";
 import { createUser, ROLES, getEmployee } from "./employees.mjs";
 import { tempPassword, setPassword } from "./auth.mjs";
+import { isIsoDate } from "./leave.mjs";
 
 export const DEFAULT_CONTRACT_TYPES = ["Unlimited", "Limited", "Probation", "Part-time"];
 export function readSettings(db) {
@@ -12,6 +13,10 @@ export function readSettings(db) {
     managers_approver_employee_id: getSetting(db, "managers_approver_employee_id", null),
     managers_approver_title: getSetting(db, "managers_approver_title", "ceo"),
     contract_types: getSetting(db, "contract_types", DEFAULT_CONTRACT_TYPES),
+    work_day_end: getSetting(db, "work_day_end", "17:00"),
+    ramadan_start: getSetting(db, "ramadan_start", null),
+    ramadan_end: getSetting(db, "ramadan_end", null),
+    ramadan_day_end: getSetting(db, "ramadan_day_end", "15:00"),
   };
 }
 
@@ -71,7 +76,11 @@ export function registerAdmin(api, ctx) {
   api.put("/api/settings", async (req, res) => {
     need(req.sess, "settings.edit");
     const b = await readJson(req);
-    const allowed = ["managers_approver_employee_id", "managers_approver_title", "contract_types"];
+    const allowed = ["managers_approver_employee_id", "managers_approver_title", "contract_types", "work_day_end", "ramadan_start", "ramadan_end", "ramadan_day_end"];
+    for (const k of ["work_day_end", "ramadan_day_end"]) if (k in b && !/^(1[0-9]|2[0-3]):(00|30)$/.test(String(b[k]))) throw invalid(k, "time must be HH:MM (on the hour or half hour)");
+    for (const k of ["ramadan_start", "ramadan_end"]) if (k in b && b[k] !== null && b[k] !== "" && !isIsoDate(b[k])) throw invalid(k, "must be a date");
+    if ("ramadan_start" in b && b.ramadan_start === "") b.ramadan_start = null;
+    if ("ramadan_end" in b && b.ramadan_end === "") b.ramadan_end = null;
     for (const k of Object.keys(b)) if (!allowed.includes(k)) throw invalid(k, `unknown setting ${k}`);
     if ("managers_approver_employee_id" in b && b.managers_approver_employee_id !== null && !getEmployee(db, b.managers_approver_employee_id)) throw invalid("managers_approver_employee_id", "unknown employee");
     if ("managers_approver_title" in b && !["ceo", "chairman"].includes(b.managers_approver_title)) throw invalid("managers_approver_title", "title must be ceo or chairman");

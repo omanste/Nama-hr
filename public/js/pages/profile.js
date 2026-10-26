@@ -4,7 +4,7 @@ import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, e
 import { balanceHero, requestItem } from "./home.js";
 import { render as rerender } from "../app.js";
 
-const DOC_TYPES = ["civil_id", "passport", "contract", "visa", "certificate", "medical", "other"];
+const DOC_TYPES = ["civil_id", "passport", "contract", "visa", "certificate", "medical", "consent", "other"];
 
 export async function render(el, params, { me, can, opts }) {
   const id = opts.me ? me.employee?.id : params.id;
@@ -28,7 +28,8 @@ export async function render(el, params, { me, can, opts }) {
       h("div", { class: "grow" }, h("h1", null, nm(e)), h("div", { class: "sub" }, [e.emp_no, e.job_title, nm(p.department)].filter(Boolean).join(" · ")), h("div", { class: "row", style: { marginTop: "6px" } }, badge(e.status, "st_"))),
       h("div", { class: "row" },
         can.edit() ? h("a", { class: "btn", href: `#/staff/${e.id}/edit` }, t("edit")) : null,
-        can.edit() ? h("button", { class: "btn", type: "button", onclick: () => adjustDialog(e) }, t("adjust_balance")) : null)),
+        can.edit() ? h("button", { class: "btn", type: "button", onclick: () => adjustDialog(e) }, t("adjust_balance")) : null,
+        can.edit() ? h("button", { class: "btn", type: "button", onclick: () => encashDialog(e, p.files.filter((f) => f.doc_type === "consent")) }, t("encash")) : null)),
 
     h("div", { class: "grid cols2" },
       h("div", { class: "grid" },
@@ -54,7 +55,7 @@ export async function render(el, params, { me, can, opts }) {
 
     h("div", { class: "grid cols2" },
       h("section", { class: "card" }, h("h2", null, t("sec_personal")), facts([
-        ["f_name_ar", e.name_ar], ["f_name_en", e.name_en], ["f_emp_no", e.emp_no], ["f_nationality", e.nationality], ["f_dob", dmy(e.dob)],
+        ["f_name_ar", e.name_ar], ["f_name_en", e.name_en], ["f_emp_no", e.emp_no], ["f_gender", e.gender ? t("g_" + e.gender) : ""], ["f_nationality", e.nationality], ["f_dob", dmy(e.dob)],
         ["f_civil_id", e.civil_id], ["f_civil_id_expiry", dmy(e.civil_id_expiry)]])),
       h("section", { class: "card" }, h("h2", null, t("sec_contact")), facts([
         ["f_mobile", e.mobile && h("a", { href: `tel:${e.mobile}`, dir: "ltr" }, e.mobile)], ["f_email", e.email && h("a", { href: `mailto:${e.email}` }, e.email)], ["f_address", e.address],
@@ -136,4 +137,22 @@ function adjustDialog(e) {
     h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), h("button", { class: "btn primary", type: "submit" }, t("save")))));
   dlg.addEventListener("close", () => dlg.remove());
   document.body.append(dlg); dlg.showModal(); amount.focus();
+}
+
+function encashDialog(e, consents) {
+  const daysIn = h("input", { type: "number", min: "0.5", step: "0.5", required: true, inputmode: "decimal" });
+  const consent = select("consent", consents.map((f) => [f.id, `${f.name} · ${dateTime(f.uploaded_at)}`]), consents[0] && consents[0].id);
+  const err = h("div", { class: "form-error" });
+  const dlg = h("dialog", { class: "dialog" }, h("form", { class: "form", onsubmit: async (ev) => {
+    ev.preventDefault();
+    try { await api.post(`/api/employees/${e.id}/encash`, { days: Number(daysIn.value), consent_file_id: consent.value ? Number(consent.value) : null }); dlg.close(); toast(t("saved")); rerender(); }
+    catch (er) { err.textContent = errText(er); }
+  } },
+    h("h2", null, t("encash"), " · ", nm(e)),
+    h("p", { class: "sub" }, t("encash_note")),
+    consents.length ? h("div", { class: "fields" }, field(t("encash_days"), daysIn), field(t("consent_doc"), consent)) : h("div", { class: "note bad" }, t("err_consent_required")),
+    err,
+    h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), consents.length ? h("button", { class: "btn primary", type: "submit" }, t("save")) : null)));
+  dlg.addEventListener("close", () => dlg.remove());
+  document.body.append(dlg); dlg.showModal();
 }

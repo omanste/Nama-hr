@@ -375,3 +375,10 @@ These changes were added after the spec was approved, for importing the staff qu
 - **Import column "Direct manager".** Matched by employee ID or exact name (Arabic or English), against the file or existing staff. A manager the import can't find gives the warning `unknown_manager` and is left empty.
 - **Departments written "English | Arabic".** A value like "Sales | المبيعات" creates or matches one department with both names.
 - **Re-import protection.** A row without an employee ID is refused (`already_exists`) when someone with the same name and join date is already in the system.
+
+## 18. Addendum (2026-10-26): Oman Labour Law compliance
+
+The leave rules follow Royal Decree 53/2023. `docs/compliance/oman-labour-law-2023-check.md` is the reference, and it **replaces** these parts of §6:
+- **Cap forfeit:** HR reviews the excess. Nothing is forfeited automatically.
+- **Early leave:** recorded in hours only. It is not deducted and is not subject to the 6-month rule.
+- **Leave types:** the statutory types are added, with their legal limits and a supporting document required before approval.

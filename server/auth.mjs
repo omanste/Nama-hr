@@ -130,7 +130,8 @@ export function registerAuth(api, ctx) {
     const pendingApprovals = s.user.role === "admin"
       ? db.prepare("SELECT count(*) n FROM leave_requests WHERE status='pending'").get().n
       : db.prepare("SELECT count(*) n FROM leave_requests WHERE status='pending' AND approver_user_id=?").get(s.user.id).n;
-    send(req, res, 200, { user: publicUser(s.user), employee: s.employee, isApprover: s.isApprover, pendingApprovals, env: ctx.appEnv });
+    const pendingCapReviews = ["hr", "admin"].includes(s.user.role) ? db.prepare("SELECT count(*) n FROM cap_reviews WHERE status='pending'").get().n : 0;
+    send(req, res, 200, { user: publicUser(s.user), employee: s.employee, isApprover: s.isApprover, pendingApprovals, pendingCapReviews, env: ctx.appEnv });
   });
 
   api.post("/api/me/password", async (req, res) => {

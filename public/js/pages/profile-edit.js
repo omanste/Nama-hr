@@ -19,6 +19,7 @@ export async function render(el, params, { can }) {
       field(t("f_name_ar"), inp("name_ar", { dir: "rtl" }), { req: true }),
       field(t("f_name_en"), inp("name_en", { dir: "ltr" })),
       field(t("f_emp_no"), inp("emp_no", { dir: "ltr" }), { hint: isNew ? t("f_emp_no_hint") : null }),
+      field(t("f_gender"), select("gender", [["", "—"], ["male", t("g_male")], ["female", t("g_female")]], e.gender)),
       field(t("f_nationality"), inp("nationality")),
       field(t("f_dob"), date("dob")),
       field(t("f_civil_id"), inp("civil_id", { dir: "ltr", inputmode: "numeric" })),
