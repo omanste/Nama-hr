@@ -2,6 +2,7 @@ import { api } from "../api.js";
 import { t, nm } from "../i18n.js";
 import { h, field, select, toast, errText, pageHead } from "../ui.js";
 import { render as rerender } from "../app.js";
+import { holidayEditor } from "../holidays.js";
 
 export async function render(el, _p, { can }) {
   if (!can.admin()) throw { status: 403 };
@@ -27,7 +28,7 @@ export async function render(el, _p, { can }) {
   const rStart = h("input", { type: "date", value: settings.ramadan_start || "" });
   const rEnd = h("input", { type: "date", value: settings.ramadan_end || "" });
   const rDayEnd = select("ramadan_day_end", HALF.map((x) => [x, x]), settings.ramadan_day_end);
-  const hol = h("textarea", { rows: 6, dir: "auto" }); hol.value = (settings.official_holidays || []).map((x) => `${x.date} ${x.name}`).join("\n");
+  const hol = holidayEditor(settings.official_holidays || []);
   const freeH = h("input", { type: "number", min: 0, max: 40, step: 0.5, value: settings.early_free_hours_month ?? 4 });
 
   el.append(pageHead(t("nav_settings"), h("a", { class: "btn", href: "/api/admin/backup" }, t("backup_download"))),
@@ -44,10 +45,10 @@ export async function render(el, _p, { can }) {
       h("div", { class: "fields" }, field(t("work_day_end"), dayEnd), field(t("ramadan_start"), rStart), field(t("ramadan_end"), rEnd), field(t("ramadan_day_end"), rDayEnd)),
       h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", { work_day_end: dayEnd.value, ramadan_start: rStart.value || null, ramadan_end: rEnd.value || null, ramadan_day_end: rDayEnd.value })) }, t("save")))),
     h("section", { class: "card" }, h("h2", null, t("official_holidays")),
-      field(t("official_holidays"), hol, { hint: t("official_holidays_hint") }),
+      hol.el,
       field(t("early_free_hours"), freeH),
-      h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", {
-        official_holidays: hol.value.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => { const [date, ...rest] = l.split(/\s+/); return { date, name: rest.join(" ") }; }),
+      h("div", { class: "row end", style: { marginTop: "12px" } }, h("span", { class: "sub" }, t("holidays_save_hint")), h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", {
+        official_holidays: hol.value(),
         early_free_hours_month: Number(freeH.value),
       })) }, t("save")))),
     h("section", { class: "card" }, h("h2", null, t("contract_types")),

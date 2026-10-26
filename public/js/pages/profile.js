@@ -1,10 +1,28 @@
 import { api } from "../api.js";
-import { t, nm } from "../i18n.js";
+import { t, nm, getLang } from "../i18n.js";
+import { countryName } from "../countries.js";
 import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, errText, confirm, select, field, backLink, todayIso } from "../ui.js";
 import { balanceHero, requestItem } from "./home.js";
 import { render as rerender } from "../app.js";
 
 const DOC_TYPES = ["civil_id", "passport", "contract", "visa", "certificate", "medical", "consent", "other"];
+// staff may add their own papers; contracts and payout consents stay with HR (server enforces the same)
+const SELF_DOC_TYPES = ["civil_id", "passport", "visa", "certificate", "medical", "other"];
+const DOC_ACCEPT = "application/pdf,image/png,image/jpeg,image/webp";
+
+async function uploadDoc(e, f, docType, expiry) {
+  if (!f) return;
+  const qs = new URLSearchParams({ kind: "doc", doc_type: docType, name: f.name || `${docType}.jpg` });
+  if (expiry) qs.set("expiry", expiry);
+  try { await api.upload(`/api/employees/${e.id}/files?${qs}`, f); toast(t("saved")); rerender(); } catch (er) { toast(errText(er), "bad"); }
+}
+/** Two buttons: open the phone camera (scan) or pick a file. */
+function pickButtons(onFile, { scanLabel = t("scan_camera"), fileLabel = t("upload_file") } = {}) {
+  const picker = (attrs) => h("input", { type: "file", hidden: true, ...attrs, onchange: (ev) => { const f = ev.target.files[0]; ev.target.value = ""; onFile(f); } });
+  return h("div", { class: "row" },
+    h("label", { class: "btn" }, "📷 ", scanLabel, picker({ accept: "image/*", capture: "environment" })),
+    h("label", { class: "btn" }, "📎 ", fileLabel, picker({ accept: DOC_ACCEPT })));
+}
 
 export async function render(el, params, { me, can, opts }) {
   const id = opts.me ? me.employee?.id : params.id;
@@ -12,6 +30,7 @@ export async function render(el, params, { me, can, opts }) {
   const p = await api.get(`/api/employees/${id}`);
   const e = p.employee, L = p.leave;
   const own = me.employee && me.employee.id === e.id;
+  const mayUpload = can.edit() || own;
   const facts = (pairs) => h("dl", { class: "facts" }, pairs.map(([k, v]) => h("div", null, h("dt", null, t(k)), h("dd", { dir: "auto" }, v || "—"))));
 
   const photo = can.edit()
@@ -55,8 +74,8 @@ export async function render(el, params, { me, can, opts }) {
 
     h("div", { class: "grid cols2" },
       h("section", { class: "card" }, h("h2", null, t("sec_personal")), facts([
-        ["f_name_ar", e.name_ar], ["f_name_en", e.name_en], ["f_emp_no", e.emp_no], ["f_gender", e.gender ? t("g_" + e.gender) : ""], ["f_nationality", e.nationality], ["f_dob", dmy(e.dob)],
-        ["f_civil_id", e.civil_id], ["f_civil_id_expiry", dmy(e.civil_id_expiry)]])),
+        ["f_name_ar", e.name_ar], ["f_name_en", e.name_en], ["f_emp_no", e.emp_no], ["f_gender", e.gender ? t("g_" + e.gender) : ""], ["f_nationality", countryName(e.nationality, getLang())], ["f_dob", dmy(e.dob)],
+        ["f_civil_id", e.civil_id], ["f_civil_id_expiry", dmy(e.civil_id_expiry)]]), civilIdCard(p, e, mayUpload)),
       h("section", { class: "card" }, h("h2", null, t("sec_contact")), facts([
         ["f_mobile", e.mobile && h("a", { href: `tel:${e.mobile}`, dir: "ltr" }, e.mobile)], ["f_email", e.email && h("a", { href: `mailto:${e.email}` }, e.email)], ["f_address", e.address],
         ["f_emergency_name", e.emergency_name], ["f_emergency_relation", e.emergency_relation], ["f_emergency_phone", e.emergency_phone && h("span", { dir: "ltr" }, e.emergency_phone)]])),
@@ -70,22 +89,28 @@ export async function render(el, params, { me, can, opts }) {
     h("section", { class: "card" }, h("h2", null, t("sec_qualifications")), h("dl", { class: "facts" },
       ["education", "specialization", "experience", "languages", "certifications"].map((k) => h("div", null, h("dt", null, t("f_" + k)), h("dd", { dir: "auto" }, e[k] || "—"))),
       ["skills", "main_tasks"].map((k) => h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("f_" + k)), h("dd", { dir: "auto", style: { whiteSpace: "pre-line" } }, e[k] || "—"))))),
-    documents(p, e, can),
+    documents(p, e, can, mayUpload),
     h("section", { class: "card kpi-placeholder" }, h("h2", null, t("sec_kpi")), h("p", null, t("kpi_later"))));
 }
 
-function documents(p, e, can) {
+/** Civil ID copy: front/back scans or a PDF, shown as thumbnails right under the ID number. */
+function civilIdCard(p, e, mayUpload) {
+  const ids = p.files.filter((f) => f.kind === "doc" && f.doc_type === "civil_id");
+  return h("div", { style: { marginTop: "14px" } },
+    h("h3", null, t("civil_id_copy")),
+    ids.length ? h("div", { class: "id-thumbs" }, ids.map((f) => h("a", { href: `/api/files/${f.id}`, target: "_blank", rel: "noopener", title: f.name },
+      f.mime.startsWith("image/") ? h("img", { src: `/api/files/${f.id}`, alt: t("dt_civil_id"), loading: "lazy" }) : h("span", { class: "pdf" }, "PDF")))) : h("p", { class: "sub" }, t("civil_id_missing")),
+    mayUpload ? h("div", { style: { marginTop: "8px" } }, pickButtons((f) => uploadDoc(e, f, "civil_id", e.civil_id_expiry))) : null);
+}
+
+function documents(p, e, can, mayUpload) {
   const docs = p.files.filter((f) => f.kind === "doc");
-  const type = select("doc_type", DOC_TYPES.map((d) => [d, t("dt_" + d)]), "civil_id");
+  const types = can.edit() ? DOC_TYPES : SELF_DOC_TYPES;
+  const type = select("doc_type", types.map((d) => [d, t("dt_" + d)]), "passport");
   const expiry = h("input", { type: "date", name: "expiry" });
-  const file = h("input", { type: "file", name: "file", accept: "application/pdf,image/png,image/jpeg,image/webp", required: true });
-  const upload = can.edit() ? h("form", { class: "fields", style: { marginTop: "14px" }, onsubmit: async (ev) => {
-    ev.preventDefault();
-    const f = file.files[0]; if (!f) return;
-    const qs = new URLSearchParams({ kind: "doc", doc_type: type.value, name: f.name });
-    if (expiry.value) qs.set("expiry", expiry.value);
-    try { await api.upload(`/api/employees/${e.id}/files?${qs}`, f); toast(t("saved")); rerender(); } catch (er) { toast(errText(er), "bad"); }
-  } }, field(t("doc_type"), type), field(t("doc_expiry"), expiry), field(t("upload_document"), file), h("div", { class: "field", style: { alignSelf: "end" } }, h("button", { class: "btn primary", type: "submit" }, t("upload_document")))) : null;
+  const upload = mayUpload ? h("div", { class: "fields", style: { marginTop: "14px" } },
+    field(t("doc_type"), type), field(t("doc_expiry"), expiry),
+    h("div", { class: "field", style: { alignSelf: "end" } }, pickButtons((f) => uploadDoc(e, f, type.value, expiry.value)))) : null;
   return h("section", { class: "card" }, h("h2", null, t("sec_documents")),
     docs.length ? h("div", { class: "list" }, docs.map((f) => h("div", { class: "item" },
       h("div", { class: "grow" }, h("div", { class: "title" }, h("a", { href: `/api/files/${f.id}`, target: "_blank", rel: "noopener" }, f.name)),

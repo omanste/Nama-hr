@@ -13,6 +13,8 @@ export const MAX_FILE = 10 * 1024 * 1024;
 const IMAGES = ["image/jpeg", "image/png", "image/webp"];
 const DOCS = [...IMAGES, "application/pdf"];
 export const DOC_TYPES = ["civil_id", "passport", "contract", "visa", "certificate", "medical", "consent", "other"];
+// what staff may upload to their own profile; contracts and payout consents stay with HR
+export const SELF_DOC_TYPES = ["civil_id", "passport", "visa", "certificate", "medical", "other"];
 
 /** Store an uploaded body; returns the files row. Caller checks permissions. */
 export async function storeUpload(ctx, req, { employeeId, requestId = null, kind = "doc" }) {
@@ -39,10 +41,11 @@ export function registerFiles(api, ctx) {
   const forbidden = () => new HttpError(403, "forbidden", "You do not have permission for this");
 
   api.post("/api/employees/:id/files", async (req, res) => {
-    if (!can(req.sess, "employee.edit")) throw forbidden();
     const emp = getEmployee(db, req.params.id);
-    if (!emp) throw new HttpError(404, "not_found", "Employee not found");
     const kind = req.query.get("kind") === "photo" ? "photo" : "doc";
+    const ownDoc = !!emp && emp.id === req.sess.user.employee_id && kind === "doc" && SELF_DOC_TYPES.includes(req.query.get("doc_type") || "other");
+    if (!can(req.sess, "employee.edit") && !ownDoc) throw forbidden();
+    if (!emp) throw new HttpError(404, "not_found", "Employee not found");
     const file = await storeUpload(ctx, req, { employeeId: emp.id, kind });
     tx(db, () => {
       if (kind === "photo") db.prepare("UPDATE employees SET photo_file_id=?,updated_at=? WHERE id=?").run(file.id, nowIso(), emp.id);

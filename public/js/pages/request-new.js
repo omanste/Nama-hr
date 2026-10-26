@@ -1,6 +1,7 @@
 // New request: annual, early leave, sick, and the statutory special leaves of Oman's Labour Law (Art. 78–84).
 import { api } from "../api.js";
 import { t, nm } from "../i18n.js";
+import { isOmani } from "../countries.js";
 import { h, field, select, toast, errText, showFieldError, backLink, daysText, num, dmy, todayIso, empty } from "../ui.js";
 
 // mirrors server/leave.mjs TYPES (the server enforces every limit; this only guides the form)
@@ -14,7 +15,6 @@ const RULES = {
 };
 const GROUPS = [["grp_main", ["annual", "early", "sick", "emergency", "comp_day"]], ["grp_special", ["bereavement", "marriage", "paternity", "maternity", "hajj", "exam", "patient_care"]], ["grp_unpaid", ["childcare", "unpaid"]]];
 const BEREAVEMENT = { wife: 10, son: 10, daughter: 10, father: 3, mother: 3, grandfather: 3, grandmother: 3, brother: 3, sister: 3, uncle: 2, aunt: 2, husband_muslim: 130, husband_other: 14 };
-const isOmani = (n) => /oman|عمان|عماني/i.test(String(n || ""));
 const hm = (s) => { const [a, b] = String(s).split(":").map(Number); return a * 60 + b; };
 const clock = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 const dayCount = (a, b) => (a && b ? Math.round((Date.parse(b) - Date.parse(a)) / 864e5) + 1 : 0);

@@ -7,6 +7,7 @@ import { audit } from "./audit.mjs";
 import { isIsoDate, DAY, CAP } from "./leave.mjs";
 import { cleanEmployee, insertEmployee, nextEmpNo, createUser, STATUSES, LONG } from "./employees.mjs";
 import { postLedger } from "./ledger.mjs";
+import { toCountryCode } from "../public/js/countries.js";
 
 const TEXT = ["emp_no", "name_ar", "name_en", "civil_id", "nationality", "mobile", "email", "address", "emergency_name", "emergency_relation", "emergency_phone", "job_title", "contract_type", "status", "department"];
 const DATES = ["civil_id_expiry", "dob", "join_date", "contract_end"];
@@ -48,6 +49,7 @@ export function normalizeRow(raw, mapping) {
       if (!Number.isFinite(n)) issues.push({ field, code: "invalid_number" }); else values[field] = n;
     } else {
       values[field] = asciiDigitsIfId(field, String(v).replace(/\s+/g, " ").trim());
+      if (field === "nationality") values[field] = toCountryCode(values[field]);
     }
   }
   return { values, issues };

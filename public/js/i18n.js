@@ -200,6 +200,15 @@ const D = {
   death_date: ["تاريخ الوفاة", "Date of death"], child_birth_date: ["تاريخ ميلاد الطفل", "Child's date of birth"], bal_encashed: ["صُرف نقداً", "Paid in cash"],
   err_weak_password: ["كلمة المرور قصيرة (٨ أحرف على الأقل)", "Password too short (at least 8 characters)"], err_wrong_password: ["كلمة المرور الحالية غير صحيحة", "Current password is wrong"],
   err_same_password: ["اختر كلمة مرور مختلفة", "Choose a different password"], err_no_profile: ["حسابك غير مرتبط بملف موظف", "Your login is not linked to a staff profile"],
+  // documents, civil ID scan, holiday calendar
+  scan_camera: ["تصوير بالكاميرا", "Scan with camera"], upload_file: ["رفع ملف", "Upload file"],
+  civil_id_copy: ["صورة البطاقة المدنية", "Civil ID copy"], civil_id_missing: ["لم تُرفع صورة البطاقة بعد — صوّر الوجهين أو ارفع ملف PDF.", "No ID copy yet — scan both sides or upload a PDF."],
+  holiday_from: ["من تاريخ", "From"], holiday_to: ["إلى تاريخ", "To"], holiday_to_hint: ["اتركه فارغاً ليوم واحد", "Leave empty for one day"],
+  holiday_name: ["اسم العطلة", "Holiday name"], holiday_name_ph: ["مثل: عيد الفطر", "e.g. Eid Al Fitr"], holiday_add: ["إضافة", "Add"],
+  hol_status: ["الحالة", "Status"], holiday_past: ["مضت", "Passed"], in_days: ["بعد {n} يوم", "In {n} days"], today: ["اليوم", "Today"],
+  weekday: ["يوم الأسبوع", "Day"], weekend: ["عطلة نهاية الأسبوع", "Weekend"], holidays_count: ["{n} يوم عطلة", "{n} holiday days"],
+  holidays_none_year: ["لا توجد عطلات مسجلة لعام {y}", "No holidays added for {y}"], err_end_before_start: ["تاريخ النهاية قبل البداية", "End date is before the start"],
+  holidays_save_hint: ["اضغط «حفظ» لاعتماد التغييرات", "Press Save to keep your changes"],
 };
 
 let lang = "ar";

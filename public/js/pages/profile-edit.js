@@ -1,5 +1,6 @@
 import { api } from "../api.js";
-import { t, nm } from "../i18n.js";
+import { t, nm, getLang } from "../i18n.js";
+import { countryOptions, countryName } from "../countries.js";
 import { h, field, select, toast, errText, showFieldError, backLink } from "../ui.js";
 
 const STATUSES = ["active", "on_leave", "resigned", "terminated"];
@@ -20,7 +21,7 @@ export async function render(el, params, { can }) {
       field(t("f_name_en"), inp("name_en", { dir: "ltr" })),
       field(t("f_emp_no"), inp("emp_no", { dir: "ltr" }), { hint: isNew ? t("f_emp_no_hint") : null }),
       field(t("f_gender"), select("gender", [["", "—"], ["male", t("g_male")], ["female", t("g_female")]], e.gender)),
-      field(t("f_nationality"), inp("nationality")),
+      field(t("f_nationality"), select("nationality", [["", "—"], ...(e.nationality && !/^[A-Z]{2}$/.test(e.nationality) ? [[e.nationality, countryName(e.nationality)]] : []), ...countryOptions(getLang())], e.nationality)),
       field(t("f_dob"), date("dob")),
       field(t("f_civil_id"), inp("civil_id", { dir: "ltr", inputmode: "numeric" })),
       field(t("f_civil_id_expiry"), date("civil_id_expiry")))),

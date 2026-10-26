@@ -214,3 +214,23 @@ td.cell-err{outline:2px solid var(--bad);outline-offset:-2px}
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 [dir="rtl"] dl.facts dd{text-align:right} [dir="ltr"] dl.facts dd{text-align:left}
+/* civil ID scans */
+.id-thumbs{display:flex;flex-wrap:wrap;gap:8px}
+.id-thumbs a{display:grid;place-items:center;width:132px;height:84px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface-2)}
+.id-thumbs img{width:100%;height:100%;object-fit:cover}
+.id-thumbs .pdf{font-weight:600;color:var(--muted)}
+label.btn{cursor:pointer}
+/* official holidays: year calendar */
+.year-cal{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,148px),1fr));gap:10px;margin-top:16px}
+@media (max-width:600px){.year-cal .month{padding:6px}.year-cal .mgrid{font-size:11px}.year-cal .d{padding:3px 0}}
+.year-cal .month{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--surface)}
+.year-cal .mname{font-weight:600;margin-bottom:6px;color:var(--brand)}
+.year-cal .mgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;font-size:12px;font-variant-numeric:tabular-nums}
+.year-cal .wk{color:var(--muted);font-size:11px;padding-bottom:2px}
+.year-cal .d{padding:4px 0;border-radius:6px}
+.year-cal .d.we{color:var(--muted);background:var(--surface-2)}
+.year-cal .d.hol{background:var(--gold, #c9a227);color:#1d1d1b;font-weight:700;cursor:help}
+.year-cal .d.today{outline:2px solid var(--brand);outline-offset:-2px}
+i.key{display:inline-block;width:12px;height:12px;border-radius:3px;margin-inline-end:6px;vertical-align:-1px}
+i.key.hol{background:var(--gold, #c9a227)} i.key.we{background:var(--surface-2);border:1px solid var(--line)} i.key.today{outline:2px solid var(--brand);outline-offset:-2px}
+tr.muted td{color:var(--muted)}

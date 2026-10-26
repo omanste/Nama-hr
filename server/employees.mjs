@@ -6,6 +6,7 @@ import { audit } from "./audit.mjs";
 import { isIsoDate, ANNUAL, DAY, fmtDays, addDays } from "./leave.mjs";
 import { postLedger, leaveSummary, ledgerRows, yearStartFor, balanceOf, pendingMinutes } from "./ledger.mjs";
 import { tempPassword, hashPassword } from "./auth.mjs";
+import { toCountryCode } from "../public/js/countries.js";
 
 export const STATUSES = ["active", "on_leave", "resigned", "terminated"];
 const TEXT = ["name_ar", "name_en", "civil_id", "nationality", "mobile", "address", "emergency_name", "emergency_relation", "emergency_phone", "job_title", "contract_type"];
@@ -36,6 +37,7 @@ export function cleanEmployee(db, body, cur = null) {
     if (k === "status" && v === null) v = "active";
     if (k === "gender" && v !== null && !GENDERS.includes(v)) throw bad(k, "gender must be male or female");
     if ((k === "name_ar" || k === "name_en") && v === null) v = ""; // names are never NULL, just empty
+    if (k === "nationality" && v !== null) v = toCountryCode(v); // stored as a country code, e.g. "OM"
     if (k === "department_id" && v !== null && !db.prepare("SELECT 1 FROM departments WHERE id=?").get(Number(v))) throw bad(k, "unknown department");
     if (k === "manager_employee_id" && v !== null) {
       if (!db.prepare("SELECT 1 FROM employees WHERE id=?").get(Number(v))) throw bad(k, "unknown manager");

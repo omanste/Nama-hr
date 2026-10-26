@@ -1,4 +1,5 @@
 /* Leave rules — pure functions, no I/O. All amounts are integer minutes; dates are ISO "YYYY-MM-DD". */
+import { isOmani } from "../public/js/countries.js";
 
 export const DAY = 480;            // 8-hour working day, 09:00–17:00
 export const ANNUAL = 30 * DAY;    // yearly entitlement
@@ -45,7 +46,6 @@ export function sickPayBands(priorDays, days) {
 export class RuleError extends Error {
   constructor(code, message, field) { super(message); this.code = code; this.field = field; }
 }
-const isOmani = (nat) => /oman|عمان|عماني/i.test(String(nat || ""));
 
 /** Check one request against the legal limits. used = {inYear, ever, forEvent} days already requested (pending or approved). */
 export function checkLeaveRules(type, { emp, start, end, relation, eventDate, used = {} }) {
