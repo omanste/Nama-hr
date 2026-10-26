@@ -52,7 +52,6 @@ export async function render(el, _p, { me, can }) {
     panel.replaceChildren(h("section", { class: "card" },
       h("div", { class: "card-head" }, h("h2", null, L.title, " ", h("span", { class: "badge" }, num(L.items.length))), L.href ? h("a", { href: L.href }, t("view_all")) : null),
       pager(L.items, L.row)));
-    panel.scrollIntoView({ behavior: "smooth", block: "start" });
   }
   const tileBtn = (key, n, label, cls = "") => h("button", { class: `card tile ${cls}`, type: "button", "data-key": key, "aria-pressed": "false", onclick: () => open(key) }, h("div", { class: "n" }, num(n)), h("div", { class: "l" }, label));
   const reqRow = (r) => requestItem(r, true);
@@ -72,7 +71,7 @@ export async function render(el, _p, { me, can }) {
         caps: { title: t("pending_reviews"), items: caps.items, row: (c) => person({ id: c.employee_id, ...c }, `${t("excess")}: ${daysText(c.excess)}`, "#/cap-reviews"), href: "#/cap-reviews" },
         under30: { title: t("under_30_title"), items: under30, row: (e) => person(e, t("under_30_title")) },
       });
-      const tilesBox = h("div", { class: "grid tiles" },
+      const tilesBox = h("div", { class: "grid tiles home-tiles" },
         can.approve() ? tileBtn("approvals", appr.items.length, t("pending_approvals"), appr.items.length ? "warn" : "") : null,
         tileBtn("staff", active.length, t("staff_count")),
         tileBtn("pending", pend.items.length, t("all_pending"), pend.items.length ? "warn" : ""),
@@ -85,7 +84,7 @@ export async function render(el, _p, { me, can }) {
   } else if (can.approve()) {
     jobs.push(api.get("/api/requests?scope=approvals").then((appr) => {
       lists.approvals = { title: t("pending_approvals"), items: appr.items, row: reqRow, href: "#/approvals" };
-      return h("div", { class: "grid" }, h("div", { class: "grid tiles" }, tileBtn("approvals", appr.items.length, t("pending_approvals"), appr.items.length ? "warn" : "")), panel);
+      return h("div", { class: "grid" }, h("div", { class: "grid tiles home-tiles" }, tileBtn("approvals", appr.items.length, t("pending_approvals"), appr.items.length ? "warn" : "")), panel);
     }));
   }
   for (const node of await Promise.all(jobs)) el.append(node);

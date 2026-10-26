@@ -333,3 +333,12 @@ button.tile{font:inherit;text-align:start;cursor:pointer;width:100%}
 button.tile[aria-pressed="true"]{outline:2px solid var(--brand);outline-offset:-2px}
 .pager{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:center;margin-top:14px}
 .pager .btn[aria-current="page"]{background:var(--brand);color:var(--brand-fg);border-color:var(--brand)}
+/* home: the row of boxes stays under the top bar while a long list scrolls (desktop; on phones it would cover the screen) */
+@media (min-width:900px){
+  .home-tiles{position:sticky;top:56px;z-index:20;background:var(--bg);padding:8px 0;margin-top:-8px;box-shadow:0 8px 12px -12px rgba(0,0,0,.25)}
+}
+@media (min-width:900px){
+  .home-tiles{grid-template-columns:repeat(auto-fit,minmax(118px,1fr))}
+  .home-tiles .tile{padding:10px 12px}
+  .home-tiles .tile .n{font-size:22px}
+}
