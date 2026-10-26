@@ -79,7 +79,7 @@ function autoMap(labels) {
 
 export async function render(el, _p, { can }) {
   if (!can.edit()) throw { status: 403 };
-  const S = { step: 1, file: null, wb: null, sheet: null, start: 0, count: 1, asOf: todayIso(), labels: [], data: [], mapping: {}, preview: null, onlyErrors: false, createLogins: false, result: null };
+  const S = { step: 1, file: null, wb: null, sheet: null, start: 0, count: 1, asOf: todayIso(), labels: [], data: [], mapping: {}, preview: null, onlyErrors: false, createLogins: false, result: null, mode: "add" };
   const body = h("div", { class: "grid" });
   const steps = h("ol", { class: "steps" });
   el.append(h("h1", null, t("import_title")), steps, body);
@@ -108,7 +108,7 @@ export async function render(el, _p, { can }) {
       const startIn = h("input", { type: "number", min: 1, value: S.start + 1, onchange: (e) => { S.start = Math.max(0, Number(e.target.value) - 1); recompute(); drawOpts(); } });
       const countSel = select("count", [["1", "1"], ["2", "2"]], S.count, { onchange: (e) => { S.count = Number(e.target.value); recompute(); drawOpts(); } });
       const asOf = h("input", { type: "date", value: S.asOf, onchange: (e) => { S.asOf = e.target.value || todayIso(); } });
-      opts.replaceChildren(field(t("sheet"), sheetSel), field(t("header_row_from"), startIn), field(t("header_rows_count"), countSel), field(t("balance_as_of"), asOf),
+      opts.replaceChildren(field(t("sheet"), sheetSel), field(t("header_row_from"), startIn), field(t("header_rows_count"), countSel), S.mode === "add" ? field(t("balance_as_of"), asOf) : null,
         h("div", { class: "field full" }, h("div", { class: "table-wrap" }, h("table", null, h("tbody", null,
           h("tr", null, S.labels.map((l) => h("th", null, l || "—"))),
           S.data.slice(0, 3).map((r) => h("tr", null, S.labels.map((_, c) => h("td", null, r[c] ?? "")))))))));
@@ -129,6 +129,11 @@ export async function render(el, _p, { can }) {
         S.sheet = S.wb.SheetNames[0]; detect(); drawOpts(); nextBtn.disabled = false; info.textContent = f.name;
       } catch (e) { toast(errText(e), "bad"); }
     });
+    // add new staff, or update people already in the portal (matched by employee ID, else exact name)
+    const modeBox = h("div", { class: "grid" }, [["add", "import_mode_add", "import_mode_add_hint"], ["update", "import_mode_update", "import_mode_update_hint"]].map(([k, label, hint]) =>
+      h("label", { class: "read-row" }, h("input", { type: "radio", name: "mode", value: k, checked: S.mode === k, onchange: () => { S.mode = k; S.preview = null; drawOpts(); } }),
+        h("div", { class: "grow" }, h("b", null, t(label)), h("div", { class: "sub" }, t(hint))))));
+    body.append(h("section", { class: "card" }, h("h2", null, t("import_mode")), modeBox));
     body.append(h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("choose_file")), h("button", { class: "btn small", type: "button", onclick: downloadTemplate }, t("download_template"))),
       fileIn, info, h("div", { style: { marginTop: "14px" } }, opts)),
       h("div", { class: "form-actions" }, nextBtn));
@@ -156,7 +161,7 @@ export async function render(el, _p, { can }) {
       err,
       h("div", { class: "form-actions" }, h("button", { class: "btn", type: "button", onclick: () => go(1) }, t("back")),
         h("button", { class: "btn primary", type: "button", onclick: () => {
-          if (S.mapping.name_ar === undefined && S.mapping.name_en === undefined) { err.textContent = t("need_name_column"); return; }
+          if (S.mapping.name_ar === undefined && S.mapping.name_en === undefined && !(S.mode === "update" && S.mapping.emp_no !== undefined)) { err.textContent = t("need_name_column"); return; }
           api.put("/api/import/mapping", { headers: S.labels, mapping: S.mapping }).catch(() => {});
           S.preview = null; go(3);
         } }, t("run_preview"))));
@@ -165,7 +170,7 @@ export async function render(el, _p, { can }) {
   // ---- step 3
   async function stepPreview() {
     body.append(h("div", { class: "loading" }, t("loading")));
-    try { S.preview = S.preview || await api.post("/api/import/preview", { rows: S.data, mapping: S.mapping, asOf: S.asOf }); }
+    try { S.preview = S.preview || await api.post("/api/import/preview", { rows: S.data, mapping: S.mapping, asOf: S.asOf, mode: S.mode }); }
     catch (e) { clear(body).append(h("div", { class: "note bad" }, errText(e)), h("button", { class: "btn", type: "button", onclick: () => go(2) }, t("back"))); return; }
     clear(body);
     const P = S.preview;
@@ -186,22 +191,22 @@ export async function render(el, _p, { can }) {
         h("div", { class: "card tile good" }, h("div", { class: "n" }, num(P.summary.ok)), h("div", { class: "l" }, t("rows_ok"))),
         h("div", { class: "card tile alert" }, h("div", { class: "n" }, num(P.summary.errors)), h("div", { class: "l" }, t("rows_err"))),
         h("div", { class: "card tile warn" }, h("div", { class: "n" }, num(P.summary.warnings)), h("div", { class: "l" }, t("rows_warn")))),
-      h("p", { class: "sub" }, t("data_rows_found", { n: num(P.summary.total) }), " · ", t("balance_as_of"), " ", dmy(S.asOf)),
+      h("p", { class: "sub" }, t("data_rows_found", { n: num(P.summary.total) }), S.mode === "add" ? [" · ", t("balance_as_of"), " ", dmy(S.asOf)] : [" · ", t("import_mode_update_hint")]),
       h("label", { class: "row" }, h("input", { type: "checkbox", checked: S.onlyErrors, onchange: (e) => { S.onlyErrors = e.target.checked; draw(); } }), t("only_errors")),
       h("div", { class: "table-wrap keep-table" }, h("table", null, h("thead", null, h("tr", null, h("th", null, "#"), cols.map((f) => h("th", null, t("f_" + f))), h("th", null, t("details")))), table)),
-      logins,
+      S.mode === "add" ? logins : null,
       h("div", { class: "form-actions" }, h("button", { class: "btn", type: "button", onclick: () => go(2) }, t("back")),
         h("button", { class: "btn primary", type: "button", disabled: !P.summary.ok, onclick: async (e) => {
           e.target.disabled = true;
-          try { S.result = await api.post("/api/import/commit", { rows: S.data, mapping: S.mapping, asOf: S.asOf, createLogins: S.createLogins }); go(4); }
+          try { S.result = await api.post("/api/import/commit", { rows: S.data, mapping: S.mapping, asOf: S.asOf, createLogins: S.createLogins, mode: S.mode }); go(4); }
           catch (er) { e.target.disabled = false; toast(errText(er), "bad"); }
-        } }, t("import_rows", { n: num(P.summary.ok) }))));
+        } }, t(S.mode === "update" ? "update_rows" : "import_rows", { n: num(P.summary.ok) }))));
   }
 
   // ---- step 4
   function stepDone() {
     const R = S.result;
-    body.append(h("section", { class: "card" }, h("h2", null, t("import_done", { n: num(R.created) })),
+    body.append(h("section", { class: "card" }, h("h2", null, S.mode === "update" ? t("update_done", { n: num(R.updated) }) : t("import_done", { n: num(R.created) })),
       R.skipped ? h("p", { class: "sub" }, `${t("rows_err")}: ${num(R.skipped)}`) : null,
       R.logins.length ? h("div", { class: "grid", style: { marginTop: "12px" } }, h("div", { class: "note" }, t("logins_note")),
         h("button", { class: "btn gold", type: "button", onclick: () => downloadLogins(R.logins) }, t("download_logins"))) : null),

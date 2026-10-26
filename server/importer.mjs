@@ -77,7 +77,8 @@ const deptMatches = (d, value) => {
   return (ar && norm(d.name_ar) === norm(ar)) || (en && (norm(d.name_en) === norm(en) || norm(d.name_ar) === norm(en)));
 };
 
-export function validateRows(db, rawRows, mapping, today) {
+export function validateRows(db, rawRows, mapping, today, mode = "add") {
+  if (mode === "update") return validateUpdates(db, rawRows, mapping, today);
   const rows = cutAtFirstNameless(rawRows, mapping);
   const depts = db.prepare("SELECT id,name_ar,name_en FROM departments").all();
   const people = db.prepare("SELECT emp_no, name_ar, name_en, join_date FROM employees").all();
@@ -121,6 +122,38 @@ export function validateRows(db, rawRows, mapping, today) {
   return { rows: out, findDept };
 }
 
+/** Update mode: each row changes an existing person (matched by employee ID, else by exact name); empty cells change nothing. */
+function validateUpdates(db, rawRows, mapping, today) {
+  const hasKey = (r) => Array.isArray(r) && ["emp_no", "name_ar", "name_en"].some((f) => mapping[f] !== undefined && mapping[f] !== null && mapping[f] !== "" && String(r[mapping[f]] ?? "").trim());
+  const i0 = rawRows.findIndex((r) => !hasKey(r));
+  const rows = i0 === -1 ? rawRows : rawRows.slice(0, i0);
+  const people = db.prepare("SELECT id, emp_no, name_ar, name_en FROM employees").all();
+  const depts = db.prepare("SELECT id,name_ar,name_en FROM departments").all();
+  const findDept = (name) => depts.find((d) => deptMatches(d, name));
+  const out = rows.map((raw, i) => {
+    const { values, issues } = normalizeRow(raw, mapping);
+    const errors = [...issues].filter((e) => e.field !== "opening_days"), warnings = [];
+    delete values.opening_days; // balances never change through an update import
+    let target = values.emp_no ? people.filter((p) => norm(p.emp_no) === norm(values.emp_no)) : [];
+    if (!target.length && !values.emp_no) target = people.filter((p) => (values.name_ar && norm(p.name_ar) === norm(values.name_ar)) || (values.name_en && norm(p.name_en) === norm(values.name_en)));
+    if (target.length !== 1) errors.push({ field: values.emp_no ? "emp_no" : "name_ar", code: target.length ? "ambiguous_match" : "no_match" });
+    else values._target = target[0].id;
+    if (values.department && !findDept(values.department)) warnings.push({ field: "department", code: "unknown_department" });
+    if (values.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) { warnings.push({ field: "email", code: "invalid_email" }); values.email = null; }
+    if (values.gender) {
+      const g = Object.keys(GENDER_WORDS).find((k) => GENDER_WORDS[k].includes(norm(values.gender)));
+      if (!g) warnings.push({ field: "gender", code: "unknown_gender" });
+      values.gender = g || null;
+    }
+    if (values.status) {
+      const s = norm(values.status).replace(/\s+/g, "_");
+      if (STATUSES.includes(s)) values.status = s; else { warnings.push({ field: "status", code: "unknown_status" }); values.status = null; }
+    }
+    return { row: i, values, errors, warnings, update: true };
+  });
+  return { rows: out, findDept };
+}
+
 const summary = (rows) => ({ total: rows.length, ok: rows.filter((r) => !r.errors.length).length, errors: rows.filter((r) => r.errors.length).length, warnings: rows.filter((r) => r.warnings.length).length });
 
 export function registerImport(api, ctx) {
@@ -130,7 +163,8 @@ export function registerImport(api, ctx) {
     const b = await readJson(req, 20 * 1024 * 1024);
     if (!Array.isArray(b.rows) || !b.mapping || typeof b.mapping !== "object") throw new HttpError(400, "invalid", "rows and mapping are required");
     if (b.rows.length > 5000) throw new HttpError(400, "invalid", "At most 5000 rows per import");
-    if (!["name_ar", "name_en"].some((f) => b.mapping[f] !== undefined && b.mapping[f] !== null && b.mapping[f] !== "")) throw new HttpError(400, "invalid", "Map a name column first");
+    const keys = b.mode === "update" ? ["emp_no", "name_ar", "name_en"] : ["name_ar", "name_en"];
+    if (!keys.some((f) => b.mapping[f] !== undefined && b.mapping[f] !== null && b.mapping[f] !== "")) throw new HttpError(400, "invalid", b.mode === "update" ? "Map the employee ID or a name column first" : "Map a name column first");
     const asOf = b.asOf || ctx.today();
     if (!isIsoDate(asOf)) throw new HttpError(400, "invalid", "asOf must be a date");
     return { ...b, asOf };
@@ -139,7 +173,7 @@ export function registerImport(api, ctx) {
   api.post("/api/import/preview", async (req, res) => {
     need(req.sess);
     const b = await input(req);
-    const { rows } = validateRows(db, b.rows, b.mapping, ctx.today());
+    const { rows } = validateRows(db, b.rows, b.mapping, ctx.today(), b.mode);
     send(req, res, 200, { rows, summary: summary(rows) });
   });
 
@@ -147,6 +181,31 @@ export function registerImport(api, ctx) {
     need(req.sess);
     const b = await input(req);
     const by = req.sess.user.id;
+    if (b.mode === "update") {
+      const result = tx(db, () => {
+        const { rows, findDept } = validateRows(db, b.rows, b.mapping, ctx.today(), "update");
+        let updated = 0;
+        const all = db.prepare("SELECT id, emp_no, name_ar, name_en FROM employees").all();
+        for (const r of rows) {
+          if (r.errors.length) continue;
+          const { _target: id, department, manager, emp_no, ...rest } = r.values;
+          const fields = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== null && v !== undefined && v !== ""));
+          if (department) { const d = findDept(department); if (d) fields.department_id = d.id; }
+          if (manager) { const m = all.find((e) => norm(e.emp_no) === norm(manager)) || all.find((e) => norm(e.name_ar) === norm(manager) || norm(e.name_en) === norm(manager)); if (m && m.id !== id) fields.manager_employee_id = m.id; }
+          const cur = db.prepare("SELECT * FROM employees WHERE id=?").get(id);
+          const values = cleanEmployee(db, fields, cur);
+          const cols = Object.keys(values).filter((c) => String(values[c] ?? "") !== String(cur[c] ?? ""));
+          if (!cols.length) continue;
+          db.prepare(`UPDATE employees SET ${cols.map((c) => `${c}=?`).join(",")},updated_at=? WHERE id=?`).run(...cols.map((c) => values[c]), new Date().toISOString(), id);
+          audit(db, by, "employee.update", "employee", id, Object.fromEntries(cols.map((c) => [c, cur[c]])), Object.fromEntries(cols.map((c) => [c, values[c]])));
+          updated++;
+        }
+        const s = summary(rows);
+        audit(db, by, "import.update", "import", null, null, { ...s, updated });
+        return { created: 0, updated, skipped: s.errors, departments: 0, logins: [] };
+      });
+      return send(req, res, 200, result);
+    }
     const result = tx(db, () => {
       const { rows, findDept } = validateRows(db, b.rows, b.mapping, ctx.today());
       const createdDepts = [];

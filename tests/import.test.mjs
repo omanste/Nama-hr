@@ -188,3 +188,30 @@ test("gender imports from Arabic or English words", async () => {
   assert.equal(r.data.rows[2].values.gender, null);
   assert.ok(r.data.rows[2].warnings.some((w) => w.code === "unknown_gender"));
 });
+
+test("update import: matches by employee ID (or exact name), changes only filled cells, never balances", async () => {
+  const { boot, adminClient } = await import("./helpers.mjs");
+  const t2 = await boot({ FAKE_TODAY: "2026-10-26" });
+  try {
+    const a = await adminClient(t2.base);
+    const e = (await a.post("/api/employees", { emp_no: "NAMA-006", name_ar: "أحمد العبيداني", name_en: "Ahmed", join_date: "2022-01-01", main_tasks: "تحصيل الايجارات", mobile: "9000", opening_days: 12 })).data.employee;
+    const before = (await a.get(`/api/employees/${e.id}`)).data.leave.remaining;
+    const mapping = { emp_no: 0, main_tasks: 1, mobile: 2, dob: 3, opening_days: 4 };
+    const rows = [["NAMA-006", "Rent collection | تحصيل الإيجارات", "", "1990-05-01", "99"], ["NAMA-999", "x", "", "", ""], ["", "", "", "", ""]];
+    const p = (await a.post("/api/import/preview", { rows, mapping, mode: "update" })).data;
+    assert.equal(p.summary.ok, 1); assert.equal(p.summary.errors, 1);
+    assert.equal(p.rows[1].errors[0].code, "no_match");
+    const c = (await a.post("/api/import/commit", { rows, mapping, mode: "update" })).data;
+    assert.equal(c.updated, 1); assert.equal(c.created, 0);
+    const after = (await a.get(`/api/employees/${e.id}`)).data;
+    assert.equal(after.employee.main_tasks, "Rent collection | تحصيل الإيجارات");
+    assert.equal(after.employee.dob, "1990-05-01");
+    assert.equal(after.employee.mobile, "9000");           // empty cell → unchanged
+    assert.equal(after.leave.remaining, before);           // balances never change
+    assert.equal((await a.get("/api/employees")).data.items.length, 1); // nobody was added
+    // without an employee ID column, an exact name works
+    const byName = (await a.post("/api/import/commit", { rows: [["أحمد العبيداني", "+968 1"]], mapping: { name_ar: 0, mobile: 1 }, mode: "update" })).data;
+    assert.equal(byName.updated, 1);
+    assert.equal((await a.get(`/api/employees/${e.id}`)).data.employee.mobile, "+968 1");
+  } finally { await t2.close(); }
+});

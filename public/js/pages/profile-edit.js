@@ -1,5 +1,5 @@
 import { api } from "../api.js";
-import { t, nm, getLang } from "../i18n.js";
+import { t, nm, getLang, splitLangs, joinLangs } from "../i18n.js";
 import { countryOptions, countryName } from "../countries.js";
 import { h, field, select, toast, errText, showFieldError, backLink } from "../ui.js";
 
@@ -14,6 +14,14 @@ export async function render(el, params, { can }) {
   const e = cur ? cur.employee : { status: "active" };
   const inp = (name, attrs = {}) => h("input", { name, value: e[name] ?? "", ...attrs });
   const date = (name) => inp(name, { type: "date" });
+  // text that can be written in both languages: an Arabic box and an English box side by side
+  const both = (k, { long = false } = {}) => {
+    const v = splitLangs(e[k]);
+    const box = (lang) => { const c = long ? h("textarea", { name: `${k}__${lang}`, rows: 3, maxlength: 2000, dir: lang === "ar" ? "rtl" : "ltr" }) : h("input", { name: `${k}__${lang}`, dir: lang === "ar" ? "rtl" : "ltr" }); c.value = v[lang]; return c; };
+    return h("div", { class: "field full bilingual", "data-field": k }, h("label", null, t("f_" + k)),
+      h("div", { class: "pair" }, h("div", null, h("span", { class: "lang-tag" }, "عربي"), box("ar")), h("div", null, h("span", { class: "lang-tag" }, "English"), box("en"))),
+      h("div", { class: "field-err" }));
+  };
   const contractTypes = [...new Set([...(settings.contract_types || []), ...(e.contract_type ? [e.contract_type] : [])])];
   const form = h("form", { class: "form", novalidate: true, onsubmit: (ev) => save(ev, form, isNew, e) },
     h("section", { class: "card" }, h("h2", null, t("sec_personal")), h("div", { class: "fields" },
@@ -34,7 +42,7 @@ export async function render(el, params, { can }) {
       field(t("f_emergency_phone"), inp("emergency_phone", { type: "tel", dir: "ltr" })))),
     h("section", { class: "card" }, h("h2", null, t("sec_job")), h("div", { class: "fields" },
       field(t("f_department_id"), select("department_id", [["", "—"], ...depts.items.map((d) => [d.id, nm(d)])], e.department_id)),
-      field(t("f_job_title"), inp("job_title"), { hint: t("both_lang_hint") }),
+      both("job_title"),
       field(t("f_manager_employee_id"), select("manager_employee_id", [["", "—"], ...emps.items.filter((x) => x.id !== e.id).map((x) => [x.id, `${nm(x)} (${x.emp_no})`])], e.manager_employee_id)),
       field(t("f_join_date"), date("join_date")),
       field(t("f_status"), select("status", STATUSES.map((s) => [s, t("st_" + s)]), e.status)),
@@ -43,8 +51,9 @@ export async function render(el, params, { can }) {
       field(t("f_contract_type"), select("contract_type", [["", "—"], ...contractTypes.map((c) => [c, c])], e.contract_type)),
       field(t("f_contract_end"), date("contract_end")))),
     h("section", { class: "card" }, h("h2", null, t("sec_qualifications")), h("div", { class: "fields" },
-      ["education", "specialization", "experience", "languages"].map((k) => field(t("f_" + k), inp(k), { hint: t("both_lang_hint") })),
-      ["certifications", "skills", "main_tasks"].map((k) => { const ta = h("textarea", { name: k, rows: 3, maxlength: 4000 }); ta.value = e[k] || ""; return field(t("f_" + k), ta, { full: true, hint: t("both_lang_hint") }); }))),
+      h("p", { class: "sub full", style: { margin: 0 } }, t("both_boxes_hint")),
+      ["education", "specialization", "experience", "languages"].map((k) => both(k)),
+      ["certifications", "skills", "main_tasks"].map((k) => both(k, { long: true })))),
     h("div", { class: "form-actions" },
       h("a", { class: "btn", href: isNew ? "#/staff" : `#/staff/${e.id}` }, t("cancel")),
       h("button", { class: "btn primary", type: "submit" }, t("save"))));
@@ -54,6 +63,8 @@ export async function render(el, params, { can }) {
 async function save(ev, form, isNew, e) {
   ev.preventDefault();
   const data = Object.fromEntries(new FormData(form).entries());
+  // two-language fields are stored as "English | عربي"
+  for (const k of Object.keys(data)) if (k.endsWith("__ar")) { const f = k.slice(0, -4); data[f] = joinLangs(data[k], data[f + "__en"]); delete data[k]; delete data[f + "__en"]; }
   if (!data.name_ar.trim() && !data.name_en.trim()) { showFieldError(form, "name_ar", t("required")); return; }
   if (!isNew) delete data.opening_days;
   else if (data.opening_days === "") delete data.opening_days;

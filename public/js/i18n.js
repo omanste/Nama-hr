@@ -293,6 +293,14 @@ const D = {
   delete_q: ["حذف؟", "Delete?"],
   err_blocked_days: ["لا يمكن طلب إجازة في هذه الأيام", "Leave can't be booked on these days"],
   birthdays_soon: ["أعياد ميلاد قريبة 🎂", "Birthdays coming up 🎂"], birthday_in: ["{name} — {d} ({n})", "{name} — {d} ({n})"], in_n_days: ["بعد {n} أيام", "in {n} days"], tomorrow: ["غداً", "tomorrow"],
+  // import: update existing staff
+  import_mode: ["نوع الاستيراد", "What to do"], import_mode_add: ["إضافة موظفين جدد", "Add new staff"],
+  import_mode_add_hint: ["ينشئ ملفاً لكل صف ويضيف الرصيد الافتتاحي.", "Creates a profile for each row, with its opening balance."],
+  import_mode_update: ["تحديث بيانات موظفين حاليين", "Update existing staff"],
+  import_mode_update_hint: ["يطابق بالرقم الوظيفي (أو الاسم)، ويغيّر فقط الخانات المعبأة. لا يغيّر الأرصدة.", "Matches by employee ID (or exact name) and changes only the filled cells. Balances are never changed."],
+  update_rows: ["تحديث {n} موظف", "Update {n} staff"], update_done: ["تم تحديث {n} موظف", "{n} staff updated"],
+  ic_no_match: ["لا يوجد موظف مطابق", "No matching staff"], ic_ambiguous_match: ["أكثر من موظف بنفس الاسم — استخدم الرقم الوظيفي", "More than one person has this name — use the employee ID"],
+  both_boxes_hint: ["اكتب كل خانة بالعربية والإنجليزية ليظهر الملف بلغة واحدة حسب اختيار المستخدم.", "Fill each field in Arabic and English so the profile reads in one language, whichever the person chooses."],
 };
 
 let lang = "ar";
@@ -320,31 +328,40 @@ const ANSWERS = {
 };
 const AR_TO_EN = Object.fromEntries(Object.entries(ANSWERS).map(([en, ar]) => [ar, en.replace(/^\w/, (c) => c.toUpperCase())]));
 const isArabic = (x) => /[\u0600-\u06FF]/.test(x);
-function oneItem(x) {
+function oneItem(x, L) {
   const parts = x.split(/\s*\|\s*/).filter(Boolean);
   if (parts.length === 2) { // "English | عربي"
     const ar = parts.find(isArabic), en = parts.find((y) => !isArabic(y));
-    return lang === "ar" ? ar || parts[1] : en || parts[0];
+    return L === "ar" ? ar || parts[1] : en || parts[0];
   }
-  if (lang === "ar") return ANSWERS[x.toLowerCase()] || x;
+  if (L === "ar") return ANSWERS[x.toLowerCase()] || x;
   return AR_TO_EN[x] || x;
 }
-/** Show free text in the current language: picks one side of "English | عربي" pairs and translates the fixed questionnaire answers. */
-export function tx(value) {
+/** Show free text in a language (the current one by default): picks one side of "English | عربي" pairs and translates the fixed questionnaire answers. */
+export function tx(value, L = lang) {
   if (value === null || value === undefined || value === "") return "";
   const s = String(value);
   // a whole field written in both languages: "English text | النص العربي"
   const halves = s.split(/\s+\|\s+/);
   if (halves.length === 2 && isArabic(halves[0]) !== isArabic(halves[1])) {
-    return halves.find((x) => isArabic(x) === (lang === "ar"));
+    return halves.find((x) => isArabic(x) === (L === "ar"));
   }
   if (!s.includes("|") && !Object.keys(ANSWERS).some((k) => s.toLowerCase().includes(k)) && !Object.keys(AR_TO_EN).some((k) => s.includes(k))) return s;
   return s.split("\n").map((line) => {
     const items = line.split(/\s*[,،]\s*/);
-    const out = items.map((y) => (y.trim() ? oneItem(y.trim()) : y));
-    return out.join(lang === "ar" ? "، " : ", ");
+    const out = items.map((y) => (y.trim() ? oneItem(y.trim(), L) : y));
+    return out.join(L === "ar" ? "، " : ", ");
   }).join("\n");
 }
+/** For the edit form: the Arabic and the English version of a stored value (text written in one language only fills that one). */
+export function splitLangs(value) {
+  if (value === null || value === undefined || value === "") return { ar: "", en: "" };
+  const ar = tx(value, "ar"), en = tx(value, "en");
+  if (ar !== en) return { ar, en };
+  return isArabic(String(value)) ? { ar: String(value), en: "" } : { ar: "", en: String(value) };
+}
+/** Store both languages as "English | عربي" (or just the one that was filled). */
+export const joinLangs = (ar, en) => { ar = String(ar || "").trim(); en = String(en || "").trim(); return ar && en ? `${en} | ${ar}` : ar || en; };
 export const nm = (o, base = "name") => (o ? (lang === "ar" ? o[`${base}_ar`] || o[`${base}_en`] : o[`${base}_en`] || o[`${base}_ar`]) || "" : "");
 /** Both translations of a key, e.g. to recognise either language in an uploaded file. */
 export const both = (key) => D[key] || [key];
