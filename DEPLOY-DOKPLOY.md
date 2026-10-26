@@ -94,9 +94,16 @@ After your first sign-in you must choose a new password. You can then delete `AD
       * The list ends at the first row with no name, so the extra-days table under the staff list is ignored.
    5. Tick **Create logins** if you want accounts now, then **Import**.
    6. Download the one-time passwords CSV and hand them out. Each person must choose their own password when they first sign in.
-4. **Settings → Managers' leave approver:** pick the CEO, with title *CEO*. Later you can switch this to the Chairman.
+4. **Settings → Managers' leave approver:** first add **Ishaq Al Hoqani** as an employee (role *CEO* in Users), then pick him with title *CEO*. Later you can switch this to the Chairman.
 5. **Users:** give HR, Accounts and CEO logins their roles.
 6. Complete each profile (English name, department, civil ID…) through **Staff → Edit**. The home page lists staff with a missing join date.
+
+### Before go-live: Oman Labour Law settings
+* **Settings → Official holidays:** enter this year's official holidays. They aren't deducted when they fall inside annual leave.
+* **Settings → Ramadan hours:** enter the Ramadan dates and the end of the working day.
+* **Profiles:** fill in **gender** (needed for maternity, paternity and child-care leave) and **nationality** (exam leave and accompanying a patient are for Omani staff).
+* **Balance reviews:** decide each balance over 60 days, either *keep — work needs* or *forfeit*, with a reason.
+* Give `docs/compliance/oman-labour-law-2023-check.md` to the legal adviser.
 
 ## 4. Production (later)
 

@@ -120,3 +120,12 @@ Still open, for the legal adviser:
 | Emergency leave (not in the 2023 law) | **Taken from annual leave.** Like annual leave, it can't be taken in the first 6 months. | Request type "Emergency leave" |
 | Early leave | **Free hours each month** (default 4, set in Settings). Extra hours are taken from annual leave at 8 h = 1 day. | Settings → Free early-leave hours |
 | Work on a rest day or official holiday (Art. 71) | **The employee chooses** +1 day of leave, or payment. Payment is recorded for payroll at the rate the legal adviser confirms. | Request type "Worked on a holiday" |
+
+## 9. Confirmed by management (2026-10-26)
+
+- **Working hours:** 09:00–17:00 with a 1-hour break, which is 7 actual hours. That is within Art. 70: at most 8 actual hours a day and 6 continuous hours.
+- **CEO:** Ishaq Al Hoqani. Before go-live, add him as an employee with the **CEO** role and set him as the *managers' leave approver* in Settings.
+- **Open points for Nama's legal adviser:**
+  - the pay rate for work on a rest day or holiday (100% extra, or 200%)
+  - how sick pay is split between Nama and the Social Protection Fund
+  - checking this whole document against the official Arabic text of Royal Decree 53/2023
