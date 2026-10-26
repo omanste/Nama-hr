@@ -40,6 +40,9 @@ export async function render(el, params, { can }) {
     h("section", { class: "card" }, h("h2", null, t("sec_contract")), h("div", { class: "fields" },
       field(t("f_contract_type"), select("contract_type", [["", "—"], ...contractTypes.map((c) => [c, c])], e.contract_type)),
       field(t("f_contract_end"), date("contract_end")))),
+    h("section", { class: "card" }, h("h2", null, t("sec_qualifications")), h("div", { class: "fields" },
+      ["education", "specialization", "experience", "languages"].map((k) => field(t("f_" + k), inp(k))),
+      ["certifications", "skills", "main_tasks"].map((k) => { const ta = h("textarea", { name: k, rows: 3, maxlength: 4000 }); ta.value = e[k] || ""; return field(t("f_" + k), ta, { full: true }); }))),
     h("div", { class: "form-actions" },
       h("a", { class: "btn", href: isNew ? "#/staff" : `#/staff/${e.id}` }, t("cancel")),
       h("button", { class: "btn primary", type: "submit" }, t("save"))));

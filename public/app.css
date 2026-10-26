@@ -213,3 +213,4 @@ tr.has-err td{background:color-mix(in srgb,var(--bad-soft) 60%,transparent)}
 td.cell-err{outline:2px solid var(--bad);outline-offset:-2px}
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+[dir="rtl"] dl.facts dd{text-align:right} [dir="ltr"] dl.facts dd{text-align:left}

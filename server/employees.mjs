@@ -10,7 +10,8 @@ import { tempPassword, hashPassword } from "./auth.mjs";
 export const STATUSES = ["active", "on_leave", "resigned", "terminated"];
 const TEXT = ["name_ar", "name_en", "civil_id", "nationality", "mobile", "address", "emergency_name", "emergency_relation", "emergency_phone", "job_title", "contract_type"];
 const DATES = ["civil_id_expiry", "dob", "join_date", "contract_end"];
-export const FIELDS = ["emp_no", ...TEXT, "email", ...DATES, "department_id", "manager_employee_id", "status"];
+export const LONG = ["education", "specialization", "experience", "languages", "skills", "certifications", "main_tasks"];
+export const FIELDS = ["emp_no", ...TEXT, ...LONG, "email", ...DATES, "department_id", "manager_employee_id", "status"];
 
 const bad = (field, message) => Object.assign(new HttpError(400, "invalid", message), { field });
 
@@ -32,13 +33,14 @@ export function cleanEmployee(db, body, cur = null) {
     if (k === "email" && v !== null && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) throw bad(k, "email is not valid");
     if (k === "status" && !STATUSES.includes(v ?? "active")) throw bad(k, "unknown status");
     if (k === "status" && v === null) v = "active";
+    if ((k === "name_ar" || k === "name_en") && v === null) v = ""; // names are never NULL, just empty
     if (k === "department_id" && v !== null && !db.prepare("SELECT 1 FROM departments WHERE id=?").get(Number(v))) throw bad(k, "unknown department");
     if (k === "manager_employee_id" && v !== null) {
       if (!db.prepare("SELECT 1 FROM employees WHERE id=?").get(Number(v))) throw bad(k, "unknown manager");
       if (cur && Number(v) === cur.id) throw bad(k, "an employee cannot be their own manager");
     }
     if ((k === "department_id" || k === "manager_employee_id") && v !== null) v = Number(v);
-    if (typeof v === "string" && v.length > 300) throw bad(k, `${k} is too long`);
+    if (typeof v === "string" && v.length > (LONG.includes(k) ? 4000 : 300)) throw bad(k, `${k} is too long`);
     out[k] = v;
   }
   const merged = { ...(cur || {}), ...out };

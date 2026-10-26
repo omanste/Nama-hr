@@ -166,3 +166,21 @@ test("employee list supports search and filters", async () => {
   assert.ok(d.data.items.every((e) => e.department_id === sales.id));
   assert.ok(typeof d.data.items[0].remaining === "number");
 });
+
+test("qualifications are saved on the profile; long text up to 4000 characters", async () => {
+  const long = "x".repeat(3000);
+  const r = await hr.c.put(`/api/employees/${staff.emp.id}`, { education: "Diploma", specialization: "QS", experience: "4–6 years", languages: "Arabic", skills: long, certifications: "", main_tasks: long });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.employee.skills.length, 3000);
+  assert.equal(r.data.employee.certifications, null);
+  assert.equal((await hr.c.put(`/api/employees/${staff.emp.id}`, { skills: "x".repeat(4001) })).status, 400);
+  assert.equal((await hr.c.put(`/api/employees/${staff.emp.id}`, { job_title: "x".repeat(301) })).status, 400);
+});
+
+test("an empty name in the other language is accepted (form sends empty strings)", async () => {
+  const r = await hr.c.post("/api/employees", { name_ar: "اسم فقط", name_en: "", emp_no: "" });
+  assert.equal(r.status, 201);
+  assert.equal(r.data.employee.name_en, "");
+  const r2 = await hr.c.post("/api/employees", { name_ar: "", name_en: "English only" });
+  assert.equal(r2.status, 201);
+});

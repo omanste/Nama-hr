@@ -46,6 +46,11 @@ const MIGRATIONS = [
    CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
    CREATE TABLE audit_log(id INTEGER PRIMARY KEY, at TEXT NOT NULL, actor_user_id INTEGER, action TEXT NOT NULL,
      entity TEXT, entity_id TEXT, before TEXT, after TEXT);`,
+  // 2: qualifications (from the staff questionnaire)
+  `ALTER TABLE employees ADD COLUMN education TEXT; ALTER TABLE employees ADD COLUMN specialization TEXT;
+   ALTER TABLE employees ADD COLUMN experience TEXT; ALTER TABLE employees ADD COLUMN languages TEXT;
+   ALTER TABLE employees ADD COLUMN skills TEXT; ALTER TABLE employees ADD COLUMN certifications TEXT;
+   ALTER TABLE employees ADD COLUMN main_tasks TEXT;`,
 ];
 
 export function openDb(dataDir) {

@@ -366,3 +366,12 @@ Placeholders for later phases (none of these are created in phase 1):
 | CEO's own leave | Approved / recorded by Admin |
 | HR adjustments | Allowed with mandatory reason, audited |
 | 60-day cap | Applied at each anniversary credit (and at import); excess forfeited and recorded |
+
+## 17. Addendum (2026-10-26): staff questionnaire import
+
+These changes were added after the spec was approved, for importing the staff questionnaire (a Google Form export).
+
+- **Qualifications on the profile.** New text fields: education, specialization, years of experience, languages, skills, courses & certifications, main tasks. They can be edited by HR and Admin, and imported. Skills and main tasks hold up to 4000 characters; other text fields up to 300.
+- **Import column "Direct manager".** Matched by employee ID or exact name (Arabic or English), against the file or existing staff. A manager the import can't find gives the warning `unknown_manager` and is left empty.
+- **Departments written "English | Arabic".** A value like "Sales | المبيعات" creates or matches one department with both names.
+- **Re-import protection.** A row without an employee ID is refused (`already_exists`) when someone with the same name and join date is already in the system.

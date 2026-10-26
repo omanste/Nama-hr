@@ -136,3 +136,44 @@ test("re-importing the same sheet without IDs flags people who already exist", a
   assert.ok(r.data.rows[1].errors.some((e) => e.code === "already_exists"));
   assert.deepEqual(r.data.rows[2].errors, []);
 });
+
+test("departments written 'English | Arabic' become one department with both names", async () => {
+  const m = { name_ar: 0, department: 1, emp_no: 2 };
+  const r = await hr.c.post("/api/import/commit", { rows: [["أ", "Collections and Contracts | التحصيل والعقود", "D1"], ["ب", "التحصيل والعقود", "D2"], ["ج", "Sales | المبيعات", "D3"]], mapping: m });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.departments, 1);
+  const d = (await hr.c.get("/api/departments")).data.items.find((x) => x.name_ar === "التحصيل والعقود");
+  assert.equal(d.name_en, "Collections and Contracts");
+  const emps = (await hr.c.get("/api/employees?q=D")).data.items.filter((e) => ["D1", "D2"].includes(e.emp_no));
+  assert.ok(emps.every((e) => e.department_id === d.id));
+  const sales = (await hr.c.get("/api/employees?q=D3")).data.items[0];
+  assert.equal((await hr.c.get("/api/departments")).data.items.find((x) => x.id === sales.department_id).name_en, "Sales");
+});
+
+test("direct manager is matched by employee ID or exact name, from the file or existing staff", async () => {
+  const m = { emp_no: 0, name_ar: 1, name_en: 2, manager: 3 };
+  const rows = [["M1", "مدير", "Boss", ""], ["M2", "موظف أ", "", "M1"], ["M3", "موظف ب", "", "boss"], ["M4", "موظف ج", "", "D1"], ["M5", "موظف د", "", "Unknown Person"]];
+  const p = await hr.c.post("/api/import/preview", { rows, mapping: m });
+  assert.ok(p.data.rows[4].warnings.some((w) => w.code === "unknown_manager"));
+  assert.deepEqual(p.data.rows[1].warnings.filter((w) => w.code === "unknown_manager"), []);
+  await hr.c.post("/api/import/commit", { rows, mapping: m });
+  const id = async (no) => (await hr.c.get(`/api/employees?q=${no}`)).data.items.find((e) => e.emp_no === no).id;
+  const mgrOf = async (no) => (await hr.c.get(`/api/employees/${await id(no)}`)).data.employee.manager_employee_id;
+  assert.equal(await mgrOf("M2"), await id("M1"));
+  assert.equal(await mgrOf("M3"), await id("M1"));
+  assert.equal(await mgrOf("M4"), await id("D1"));
+  assert.equal(await mgrOf("M5"), null);
+});
+
+test("qualification fields import with long text", async () => {
+  const skills = "Communication | التواصل, ".repeat(40);
+  const m = { emp_no: 0, name_ar: 1, education: 2, specialization: 3, experience: 4, languages: 5, skills: 6, certifications: 7, main_tasks: 8 };
+  const r = await hr.c.post("/api/import/commit", { rows: [["Q1", "مؤهل", "Bachelor’s Degree | بكالوريوس", "Information System", "1–3 years", "Arabic, English", skills, "PMP", "Sales follow-up"]], mapping: m });
+  assert.equal(r.data.created, 1);
+  const e = (await hr.c.get("/api/employees?q=Q1")).data.items.find((x) => x.emp_no === "Q1");
+  const p = (await hr.c.get(`/api/employees/${e.id}`)).data.employee;
+  assert.equal(p.education, "Bachelor’s Degree | بكالوريوس");
+  assert.equal(p.languages, "Arabic, English");
+  assert.equal(p.skills, skills.trim());
+  assert.equal(p.main_tasks, "Sales follow-up");
+});

@@ -66,6 +66,10 @@ const D = {
   f_join_date: ["تاريخ التعيين", "Join date"], f_contract_type: ["نوع العقد", "Contract type"], f_contract_end: ["نهاية العقد", "Contract end"],
   f_status: ["الحالة", "Status"], f_opening_days: ["الرصيد الافتتاحي (أيام)", "Opening balance (days)"],
   f_opening_hint: ["للموظفين الحاليين: الرصيد المتبقي اليوم. اتركه فارغاً لإضافة ٣٠ يوماً.", "For existing staff: today's remaining balance. Leave empty to credit 30 days."],
+  sec_qualifications: ["المؤهلات والخبرات", "Qualifications"], f_education: ["أعلى مؤهل علمي", "Highest qualification"],
+  f_specialization: ["التخصص", "Specialization"], f_experience: ["سنوات الخبرة", "Years of experience"], f_languages: ["اللغات", "Languages"],
+  f_skills: ["المهارات", "Key skills"], f_certifications: ["الدورات والشهادات", "Courses & certifications"], f_main_tasks: ["المهام الرئيسية", "Main tasks"],
+  f_manager: ["المدير المباشر (رقم أو اسم)", "Direct manager (ID or name)"],
   login_account: ["حساب الدخول", "Login"], create_login: ["إنشاء حساب دخول", "Create login"], no_login: ["لا يوجد حساب دخول", "No login yet"],
   temp_password_title: ["كلمة مرور مؤقتة", "One-time password"],
   temp_password_note: ["أعطها للموظف. ستظهر مرة واحدة فقط وسيُطلب منه تغييرها عند الدخول.", "Give it to the employee. It is shown only once and must be changed at first sign-in."],
@@ -114,6 +118,7 @@ const D = {
   ic_over_cap: ["أكثر من ٦٠ يوماً (يُطبق الحد عند الاستحقاق القادم)", "Over 60 days (cap applies at next credit)"], ic_generated_id: ["رقم مُنشأ", "Generated ID"],
   ic_missing_join_date: ["بدون تاريخ تعيين", "No join date"], ic_empty_balance: ["رصيد فارغ (٠)", "Empty balance (0)"], ic_unknown_department: ["قسم جديد سيُنشأ", "New department will be created"],
   ic_already_exists: ["موجود مسبقاً (نفس الاسم وتاريخ التعيين)", "Already exists (same name and join date)"],
+  ic_unknown_manager: ["المدير غير موجود (سيُترك فارغاً)", "Manager not found (left empty)"],
   ic_civil_id_expired: ["البطاقة منتهية", "Civil ID expired"], ic_invalid_email: ["بريد غير صالح (سيُتجاهل)", "Invalid email (dropped)"], ic_unknown_status: ["حالة غير معروفة", "Unknown status"],
   // settings / users / audit
   departments: ["الأقسام", "Departments"], add_department: ["إضافة قسم", "Add department"], dept_name_ar: ["اسم القسم بالعربية", "Name (Arabic)"],
@@ -156,3 +161,5 @@ export function t(key, vars) {
 export const has = (key) => key in D;
 /** Pick the name in the current language, falling back to the other. */
 export const nm = (o, base = "name") => (o ? (lang === "ar" ? o[`${base}_ar`] || o[`${base}_en`] : o[`${base}_en`] || o[`${base}_ar`]) || "" : "");
+/** Both translations of a key, e.g. to recognise either language in an uploaded file. */
+export const both = (key) => D[key] || [key];

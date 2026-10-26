@@ -1,11 +1,12 @@
 // Excel import wizard: upload → map columns → preview (server validates) → import.
 import { api } from "../api.js";
-import { t, nm } from "../i18n.js";
+import { t, nm, both } from "../i18n.js";
 import { h, clear, field, select, toast, errText, todayIso, dmy, num } from "../ui.js";
 import { parseWorkbook } from "../sheet.js";
 
-const FIELDS = ["name_ar", "name_en", "emp_no", "department", "job_title", "join_date", "opening_days", "civil_id", "civil_id_expiry", "nationality", "dob",
-  "mobile", "email", "address", "emergency_name", "emergency_relation", "emergency_phone", "contract_type", "contract_end", "status"];
+const FIELDS = ["name_ar", "name_en", "emp_no", "department", "job_title", "manager", "join_date", "opening_days", "civil_id", "civil_id_expiry", "nationality", "dob",
+  "mobile", "email", "address", "emergency_name", "emergency_relation", "emergency_phone", "contract_type", "contract_end", "status",
+  "education", "specialization", "experience", "languages", "skills", "certifications", "main_tasks"];
 
 // Header words that identify a field, most specific first. Matching ignores hamza/alef/ya/ta-marbuta differences.
 const SYNONYMS = {
@@ -21,6 +22,11 @@ const SYNONYMS = {
   nationality: ["الجنسيه", "nationality"], dob: ["تاريخ الميلاد", "date of birth", "dob", "birth date"],
   mobile: ["الهاتف", "الجوال", "mobile", "phone"], email: ["البريد", "email", "e-mail"], address: ["العنوان", "address"],
   contract_type: ["نوع العقد", "contract type"], contract_end: ["نهايه العقد", "contract end"], status: ["الحاله", "status"],
+  manager: ["المدير المباشر", "direct manager", "line manager", "reports to"],
+  education: ["اعلي مؤهل", "المؤهل العلمي", "educational qualification", "education"], specialization: ["التخصص", "specialization", "major"],
+  experience: ["سنوات الخبره", "years of work experience", "years of experience"], languages: ["اللغات", "languages"],
+  skills: ["المهارات", "key skills", "skills"], certifications: ["الدورات والشهادات", "certifications", "courses"],
+  main_tasks: ["المهام والمسؤوليات", "main tasks", "responsibilities"],
 };
 const norm = (s) => String(s ?? "").toLowerCase().replace(/[ً-ْـ]/g, "").replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه").replace(/\s+/g, " ").trim();
 
@@ -55,7 +61,13 @@ function headerLabels(grid, merges, start, count) {
 }
 function autoMap(labels) {
   const map = {}, used = new Set();
+  for (const f of FIELDS) {
+    const names = both("f_" + f); // labels of this app's own template, in either language
+    const i = labels.findIndex((l, idx) => !used.has(idx) && names.some((n) => norm(l) === norm(n)));
+    if (i !== -1) { map[f] = i; used.add(i); }
+  }
   for (const [f, syns] of Object.entries(SYNONYMS)) {
+    if (map[f] !== undefined) continue;
     for (const syn of syns) {
       const i = labels.findIndex((l, idx) => !used.has(idx) && norm(l).includes(norm(syn)));
       if (i !== -1) { map[f] = i; used.add(i); break; }
@@ -156,7 +168,7 @@ export async function render(el, _p, { can }) {
     catch (e) { clear(body).append(h("div", { class: "note bad" }, errText(e)), h("button", { class: "btn", type: "button", onclick: () => go(2) }, t("back"))); return; }
     clear(body);
     const P = S.preview;
-    const cols = ["emp_no", "name_ar", "name_en", "department", "join_date", "opening_days"].filter((f) => f === "emp_no" || S.mapping[f] !== undefined);
+    const cols = ["emp_no", "name_ar", "name_en", "department", "manager", "join_date", "opening_days"].filter((f) => f === "emp_no" || S.mapping[f] !== undefined);
     const firstData = S.start + S.count + 1;
     const table = h("tbody");
     const draw = () => table.replaceChildren(...P.rows.filter((r) => !S.onlyErrors || r.errors.length).map((r) => {

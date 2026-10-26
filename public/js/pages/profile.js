@@ -12,7 +12,7 @@ export async function render(el, params, { me, can, opts }) {
   const p = await api.get(`/api/employees/${id}`);
   const e = p.employee, L = p.leave;
   const own = me.employee && me.employee.id === e.id;
-  const facts = (pairs) => h("dl", { class: "facts" }, pairs.map(([k, v]) => h("div", null, h("dt", null, t(k)), h("dd", null, v || "—"))));
+  const facts = (pairs) => h("dl", { class: "facts" }, pairs.map(([k, v]) => h("div", null, h("dt", null, t(k)), h("dd", { dir: "auto" }, v || "—"))));
 
   const photo = can.edit()
     ? h("label", { class: "photo-edit", title: t("change_photo"), style: { cursor: "pointer" } }, avatar(e, 72),
@@ -66,6 +66,9 @@ export async function render(el, params, { me, can, opts }) {
           p.login ? h("div", { class: "sub" }, `${p.login.username} · ${t("role_" + p.login.role)}${p.login.active ? "" : " · " + t("inactive")}`)
             : h("div", { class: "row" }, h("span", { class: "sub" }, t("no_login")), can.edit() ? h("button", { class: "btn small", type: "button", onclick: () => createLogin(e) }, t("create_login")) : null)) : null)),
 
+    h("section", { class: "card" }, h("h2", null, t("sec_qualifications")), h("dl", { class: "facts" },
+      ["education", "specialization", "experience", "languages", "certifications"].map((k) => h("div", null, h("dt", null, t("f_" + k)), h("dd", { dir: "auto" }, e[k] || "—"))),
+      ["skills", "main_tasks"].map((k) => h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("f_" + k)), h("dd", { dir: "auto", style: { whiteSpace: "pre-line" } }, e[k] || "—"))))),
     documents(p, e, can),
     h("section", { class: "card kpi-placeholder" }, h("h2", null, t("sec_kpi")), h("p", null, t("kpi_later"))));
 }
