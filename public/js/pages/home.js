@@ -1,7 +1,7 @@
 import { api } from "../api.js";
-import { t, nm } from "../i18n.js";
+import { t, nm, tx } from "../i18n.js";
 import { leaveSections } from "./profile.js";
-import { h, num, daysOf, dmy, badge, when, amountText, empty, todayIso } from "../ui.js";
+import { h, num, daysOf, daysText, dmy, badge, when, amountText, empty, todayIso, avatar, pager } from "../ui.js";
 
 export const balanceHero = (leave, { apply = true } = {}) => h("section", { class: "card hero", "aria-label": t("bal_available") },
   h("div", { class: "lbl" }, t("bal_available")),
@@ -21,7 +21,6 @@ export const requestItem = (r, showName = false) => h("a", { class: "item", href
     h("div", { class: "meta" }, when(r), " · ", amountText(r))),
   badge(r.status));
 
-const tile = (n, label, href, cls = "") => h(href ? "a" : "div", { class: `card tile ${cls}`, href }, h("div", { class: "n" }, n), h("div", { class: "l" }, label));
 
 export async function render(el, _p, { me, can }) {
   el.append(h("h1", null, t("hello", { name: nm(me.employee) || me.user.username })));
@@ -40,29 +39,54 @@ export async function render(el, _p, { me, can }) {
   if (me.employee) jobs.push(api.get(`/api/employees/${me.employee.id}`).then((p) => h("div", { class: "grid" }, leaveSections(p, { own: true, limit: 10 }))));
   else jobs.push(Promise.resolve(h("div", { class: "note" }, t("no_profile"))));
 
-  const tiles = [];
-  if (can.approve()) tiles.push(tile(num(me.pendingApprovals), t("pending_approvals"), "#/approvals", me.pendingApprovals ? "warn" : ""));
+  // tiles: tap one to list its records right below (50 a page)
+  const panel = h("div");
+  const person = (e, meta, href = `#/staff/${e.id}`, extra = null) => h("a", { class: "item", href }, avatar(e, 36), h("div", { class: "grow" }, h("div", { class: "title" }, nm(e)), h("div", { class: "meta" }, meta)), extra);
+  const lists = {};
+  let current = null;
+  function open(key) {
+    current = current === key ? null : key;
+    for (const b of el.querySelectorAll(".tile[data-key]")) b.setAttribute("aria-pressed", String(b.dataset.key === current));
+    if (!current) { panel.replaceChildren(); return; }
+    const L = lists[current];
+    panel.replaceChildren(h("section", { class: "card" },
+      h("div", { class: "card-head" }, h("h2", null, L.title, " ", h("span", { class: "badge" }, num(L.items.length))), L.href ? h("a", { href: L.href }, t("view_all")) : null),
+      pager(L.items, L.row)));
+    panel.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  const tileBtn = (key, n, label, cls = "") => h("button", { class: `card tile ${cls}`, type: "button", "data-key": key, "aria-pressed": "false", onclick: () => open(key) }, h("div", { class: "n" }, num(n)), h("div", { class: "l" }, label));
+  const reqRow = (r) => requestItem(r, true);
   if (can.viewAll()) {
-    jobs.push(Promise.all([api.get("/api/employees"), api.get("/api/requests?scope=all&status=pending"), api.get("/api/expiring")]).then(([emps, pend, exp]) => {
+    jobs.push(Promise.all([api.get("/api/employees"), api.get("/api/requests?scope=all&status=pending"), api.get("/api/expiring"),
+      can.approve() ? api.get("/api/requests?scope=approvals") : Promise.resolve({ items: [] }), api.get("/api/cap-reviews?status=pending")]).then(([emps, pend, exp, appr, caps]) => {
       const active = emps.items.filter((e) => e.status === "active" || e.status === "on_leave");
-      const expiring = exp.items;
       const noJoin = active.filter((e) => !e.join_date);
       const under30 = active.filter((e) => e.under_30_in_2y);
-      return h("div", { class: "grid" },
-        h("div", { class: "grid tiles" }, tiles,
-          tile(num(active.length), t("staff_count"), "#/staff"),
-          tile(num(pend.items.length), t("all_pending"), "#/requests?status=pending", pend.items.length ? "warn" : ""),
-          tile(num(expiring.length), t("ids_expiring"), null, expiring.length ? "alert" : "good"),
-          tile(num(noJoin.length), t("missing_join"), null, noJoin.length ? "warn" : "good"),
-          tile(num(me.pendingCapReviews || 0), t("pending_reviews"), "#/cap-reviews", me.pendingCapReviews ? "warn" : "good"),
-          tile(num(under30.length), t("under_30_title"), null, under30.length ? "warn" : "good")),
-        expiring.length || noJoin.length || under30.length ? h("section", { class: "card" }, h("h2", null, t("needs_attention")),
-          h("div", { class: "list" },
-            expiring.map((x) => h("a", { class: "item", href: `#/staff/${x.employee.id}` }, h("div", { class: "grow" }, h("div", { class: "title" }, nm(x.employee)), h("div", { class: "meta" }, t("dt_" + x.what), " · ", dmy(x.expiry))),
-              h("span", { class: `badge ${x.days <= 0 ? "b-rejected" : "b-pending"}` }, x.days <= 0 ? t("doc_expired") : t("in_days", { n: num(x.days) })))),
-            noJoin.map((e) => h("a", { class: "item", href: `#/staff/${e.id}/edit` }, h("div", { class: "grow" }, h("div", { class: "title" }, nm(e)), h("div", { class: "meta" }, t("no_join_date"))))),
-            under30.map((e) => h("a", { class: "item", href: `#/staff/${e.id}` }, h("div", { class: "grow" }, h("div", { class: "title" }, nm(e)), h("div", { class: "meta" }, t("under_30_title"))))))) : null);
+      Object.assign(lists, {
+        approvals: { title: t("pending_approvals"), items: appr.items, row: reqRow, href: "#/approvals" },
+        staff: { title: t("staff_count"), items: active, row: (e) => person(e, [e.emp_no, tx(e.job_title)].filter(Boolean).join(" · "), `#/staff/${e.id}`, h("span", { class: "num" }, daysText(e.remaining))), href: "#/staff" },
+        pending: { title: t("all_pending"), items: pend.items, row: reqRow, href: "#/requests?status=pending" },
+        expiring: { title: t("ids_expiring"), items: exp.items, row: (x) => person(x.employee, [t("dt_" + x.what), dmy(x.expiry)].join(" · "), `#/staff/${x.employee.id}`,
+          h("span", { class: `badge ${x.days <= 0 ? "b-rejected" : "b-pending"}` }, x.days <= 0 ? t("doc_expired") : t("in_days", { n: num(x.days) }))) },
+        nojoin: { title: t("missing_join"), items: noJoin, row: (e) => person(e, t("no_join_date"), `#/staff/${e.id}/edit`) },
+        caps: { title: t("pending_reviews"), items: caps.items, row: (c) => person({ id: c.employee_id, ...c }, `${t("excess")}: ${daysText(c.excess)}`, "#/cap-reviews"), href: "#/cap-reviews" },
+        under30: { title: t("under_30_title"), items: under30, row: (e) => person(e, t("under_30_title")) },
+      });
+      const tilesBox = h("div", { class: "grid tiles" },
+        can.approve() ? tileBtn("approvals", appr.items.length, t("pending_approvals"), appr.items.length ? "warn" : "") : null,
+        tileBtn("staff", active.length, t("staff_count")),
+        tileBtn("pending", pend.items.length, t("all_pending"), pend.items.length ? "warn" : ""),
+        tileBtn("expiring", exp.items.length, t("ids_expiring"), exp.items.length ? "alert" : "good"),
+        tileBtn("nojoin", noJoin.length, t("missing_join"), noJoin.length ? "warn" : "good"),
+        tileBtn("caps", caps.items.length, t("pending_reviews"), caps.items.length ? "warn" : "good"),
+        tileBtn("under30", under30.length, t("under_30_title"), under30.length ? "warn" : "good"));
+      return h("div", { class: "grid" }, tilesBox, h("p", { class: "sub", style: { margin: 0 } }, t("tiles_hint")), panel);
     }));
-  } else if (tiles.length) jobs.push(Promise.resolve(h("div", { class: "grid tiles" }, tiles)));
+  } else if (can.approve()) {
+    jobs.push(api.get("/api/requests?scope=approvals").then((appr) => {
+      lists.approvals = { title: t("pending_approvals"), items: appr.items, row: reqRow, href: "#/approvals" };
+      return h("div", { class: "grid" }, h("div", { class: "grid tiles" }, tileBtn("approvals", appr.items.length, t("pending_approvals"), appr.items.length ? "warn" : "")), panel);
+    }));
+  }
   for (const node of await Promise.all(jobs)) el.append(node);
 }

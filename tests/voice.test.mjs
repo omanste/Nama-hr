@@ -110,3 +110,22 @@ test("a manager without a login yet still receives it, and sees it at first sign
     assert.deepEqual(r.items, []); assert.deepEqual(r.missing, ["manager", "hr", "ceo"]);
   } finally { await t2.close(); }
 });
+
+test("Admin hides a message (then only Admin sees it) or deletes it for good", async () => {
+  const m = (await send(s.c, { to: "manager", subject: "مخفية" })).data.message;
+  assert.equal((await mgr.c.post(`/api/voice/${m.id}/hide`, {})).status, 403);
+  assert.equal((await admin.post(`/api/voice/${m.id}/hide`, {})).status, 200);
+  for (const c of [s.c, mgr.c]) {
+    assert.equal((await c.get(`/api/voice/${m.id}`)).status, 403);
+    assert.ok(!(await c.get("/api/voice?box=sent")).data.items.concat((await c.get("/api/voice?box=inbox")).data.items).some((x) => x.id === m.id));
+  }
+  assert.equal((await admin.get(`/api/voice/${m.id}`)).data.message.hidden, 1);
+  assert.equal((await admin.post(`/api/voice/${m.id}/hide`, { hidden: false })).status, 200);
+  assert.equal((await mgr.c.get(`/api/voice/${m.id}`)).status, 200);
+  const f = (await s.c.upload(`/api/voice/${m.id}/files?name=a.pdf`, Buffer.from("%PDF-1.4"), "application/pdf")).data.file;
+  await mgr.c.post(`/api/voice/${m.id}/reply`, { body: "رد" });
+  assert.equal((await mgr.c.del(`/api/voice/${m.id}`)).status, 403);
+  assert.equal((await admin.del(`/api/voice/${m.id}`)).status, 200);
+  assert.equal((await admin.get(`/api/voice/${m.id}`)).status, 404);
+  assert.equal((await fetch(`${t.base}/api/files/${f.id}`, { headers: { cookie: admin.cookie } })).status, 404);
+});

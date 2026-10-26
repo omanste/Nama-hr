@@ -27,7 +27,7 @@ export async function render(el, _p, { me, query }) {
       h("div", { class: "grow" },
         h("div", { class: "title" }, m.subject),
         h("div", { class: "meta" }, t("vc_" + m.category), " · ", box === "inbox" ? nm(m) : recipientText(m), " · ", dateTime(m.updated_at), m.replies ? ` · ${t("replies_n", { n: m.replies })}` : "")),
-      voiceBadge(m.status)))) : empty(box === "inbox" ? t("voice_inbox_empty") : t("voice_sent_empty")));
+      m.hidden ? h("span", { class: "badge b-rejected" }, t("voice_hidden")) : null, voiceBadge(m.status)))) : empty(box === "inbox" ? t("voice_inbox_empty") : t("voice_sent_empty")));
   }
   status.addEventListener("change", load); cat.addEventListener("change", load);
   el.append(pageHead(t("nav_voice"), me.employee ? h("a", { class: "btn primary", href: "#/voice/new" }, t("voice_new")) : null),

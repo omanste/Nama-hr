@@ -91,6 +91,8 @@ const MIGRATIONS = [
   `CREATE TABLE calendar_events(id INTEGER PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('blocked','event')), start_date TEXT NOT NULL, end_date TEXT NOT NULL,
      name TEXT NOT NULL, created_by INTEGER, created_at TEXT NOT NULL);
    CREATE INDEX ce_dates ON calendar_events(start_date, end_date);`,
+  // 14: Admin can hide a Staff Voice message (then only Admin sees it)
+  `ALTER TABLE voice_messages ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;`,
 ];
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */

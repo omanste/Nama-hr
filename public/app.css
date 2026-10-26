@@ -328,3 +328,8 @@ i.hol{background:var(--gold)} i.blk{background:var(--bad)} i.ev{background:var(-
 .bilingual .pair > div{display:grid;gap:4px}
 .bilingual .lang-tag{font-size:11px;color:var(--muted)}
 @media (max-width:640px){.bilingual .pair{grid-template-columns:1fr}}
+/* clickable home tiles and pages */
+button.tile{font:inherit;text-align:start;cursor:pointer;width:100%}
+button.tile[aria-pressed="true"]{outline:2px solid var(--brand);outline-offset:-2px}
+.pager{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:center;margin-top:14px}
+.pager .btn[aria-current="page"]{background:var(--brand);color:var(--brand-fg);border-color:var(--brand)}

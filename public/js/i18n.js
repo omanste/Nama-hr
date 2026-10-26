@@ -301,6 +301,12 @@ const D = {
   update_rows: ["تحديث {n} موظف", "Update {n} staff"], update_done: ["تم تحديث {n} موظف", "{n} staff updated"],
   ic_no_match: ["لا يوجد موظف مطابق", "No matching staff"], ic_ambiguous_match: ["أكثر من موظف بنفس الاسم — استخدم الرقم الوظيفي", "More than one person has this name — use the employee ID"],
   both_boxes_hint: ["اكتب كل خانة بالعربية والإنجليزية ليظهر الملف بلغة واحدة حسب اختيار المستخدم.", "Fill each field in Arabic and English so the profile reads in one language, whichever the person chooses."],
+  pages: ["الصفحات", "Pages"], showing_of: ["{a}–{b} من {n}", "{a}–{b} of {n}"], tiles_hint: ["اضغط على أي مربع لعرض قائمته هنا.", "Tap a box to list its records here."],
+  voice_hide: ["إخفاء", "Hide"], voice_unhide: ["إظهار", "Show again"], voice_hidden: ["مخفية", "Hidden"],
+  voice_hide_q: ["إخفاء هذه الرسالة؟ لن يراها المرسل ولا المستلم، وتبقى للمسؤول فقط.", "Hide this message? The sender and the recipient won't see it any more; only Admin will."],
+  voice_unhide_q: ["إظهار الرسالة للمرسل والمستلم من جديد؟", "Show the message to the sender and recipient again?"],
+  voice_delete_q: ["حذف الرسالة وردودها ومرفقاتها نهائياً؟ لا يمكن التراجع.", "Delete the message, its replies and attachments for good? This can't be undone."],
+  voice_hidden_note: ["هذه الرسالة مخفية: يراها المسؤول فقط.", "This message is hidden: only Admin can see it."],
 };
 
 let lang = "ar";

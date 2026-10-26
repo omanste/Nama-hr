@@ -113,3 +113,23 @@ export const avatar = (emp, size = 40) => emp && emp.photo_file_id
   : h("span", { class: "avatar ph", style: { width: size + "px", height: size + "px", fontSize: Math.round(size / 2.4) + "px" }, "aria-hidden": "true" }, ((emp && (emp.name_ar || emp.name_en)) || "؟").trim().charAt(0));
 /** Today's date in Muscat as YYYY-MM-DD. */
 export const todayIso = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Muscat", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+
+/** A list shown 50 at a time, with page numbers underneath when there are more. */
+export function pager(items, renderItem, perPage = 50) {
+  const box = h("div");
+  const pages = Math.max(1, Math.ceil(items.length / perPage));
+  function show(n) {
+    const list = items.slice((n - 1) * perPage, n * perPage);
+    const nums = [];
+    for (let i = 1; i <= pages; i++) if (i === 1 || i === pages || Math.abs(i - n) <= 2) nums.push(i); else if (nums[nums.length - 1] !== "…") nums.push("…");
+    box.replaceChildren(
+      list.length ? h("div", { class: "list" }, list.map(renderItem)) : empty(),
+      pages > 1 ? h("nav", { class: "pager", "aria-label": t("pages") },
+        h("button", { class: "btn small", type: "button", disabled: n === 1, onclick: () => show(n - 1) }, getLang() === "ar" ? "→" : "←"),
+        nums.map((i) => i === "…" ? h("span", { class: "muted" }, "…") : h("button", { class: "btn small", type: "button", "aria-current": i === n ? "page" : null, onclick: () => show(i) }, String(i))),
+        h("button", { class: "btn small", type: "button", disabled: n === pages, onclick: () => show(n + 1) }, getLang() === "ar" ? "←" : "→"),
+        h("span", { class: "sub" }, t("showing_of", { a: (n - 1) * perPage + 1, b: Math.min(n * perPage, items.length), n: items.length }))) : null);
+  }
+  show(1);
+  return box;
+}

@@ -1,5 +1,7 @@
 /* Staff Voice: suggestions, questions, complaints and notes from staff to their manager, HR or the CEO, with replies.
  * Never anonymous. A message is readable only by its sender, the people it was sent to, and Admin. */
+import fs from "node:fs";
+import path from "node:path";
 import { nowIso, tx, getSetting } from "./db.mjs";
 import { send, readJson, HttpError } from "./http.mjs";
 import { audit } from "./audit.mjs";
@@ -30,7 +32,8 @@ const userOfEmployee = (db, empId) => { const u = empId && db.prepare("SELECT id
 /** Sender, the person it went to (or any HR member for HR messages), and Admin. */
 export function canReadVoice(sess, m) {
   const u = sess.user;
-  return u.role === "admin" || m.user_id === u.id || isTo(sess, m);
+  if (u.role === "admin") return true;
+  return !m.hidden && (m.user_id === u.id || isTo(sess, m)); // a hidden message is Admin's only
 }
 const isTo = (sess, m) => (m.to_kind === "hr" ? sess.user.role === "hr" : (!!m.to_employee_id && m.to_employee_id === sess.user.employee_id) || (!!m.to_user_id && m.to_user_id === sess.user.id));
 const isRecipient = (sess, m) => sess.user.id !== m.user_id && isTo(sess, m);
@@ -44,7 +47,7 @@ const withNames = `SELECT m.*, e.name_ar, e.name_en, e.emp_no, tu.username to_us
 export function voiceInboxCount(db, sess) {
   const u = sess.user;
   if (u.role === "admin") return 0; // Admin can read everything but isn't a recipient
-  return db.prepare(`SELECT count(*) n FROM voice_messages WHERE status='new' AND user_id<>? AND (${u.role === "hr" ? "to_kind='hr' OR " : ""}(to_kind<>'hr' AND (to_employee_id=? OR to_user_id=?)))`).get(u.id, u.employee_id || -1, u.id).n;
+  return db.prepare(`SELECT count(*) n FROM voice_messages WHERE status='new' AND hidden=0 AND user_id<>? AND (${u.role === "hr" ? "to_kind='hr' OR " : ""}(to_kind<>'hr' AND (to_employee_id=? OR to_user_id=?)))`).get(u.id, u.employee_id || -1, u.id).n;
 }
 
 export function registerVoice(api, ctx) {
@@ -104,6 +107,7 @@ export function registerVoice(api, ctx) {
     const sess = req.sess, u = sess.user;
     const box = req.query.get("box") || "sent";
     const where = [], args = [];
+    if (u.role !== "admin") where.push("m.hidden=0");
     if (box === "sent") { where.push("m.user_id=?"); args.push(u.id); }
     else if (box === "inbox") {
       if (u.role === "admin") where.push("m.user_id<>?"), args.push(u.id); // Admin (developer) can see every message
@@ -163,6 +167,31 @@ export function registerVoice(api, ctx) {
     if (m.status === "closed") throw new HttpError(409, "closed", "This conversation is closed");
     const file = await storeUpload(ctx, req, { employeeId: m.employee_id, voiceId: m.id, kind: "voice" });
     send(req, res, 201, { file });
+  });
+
+  // Admin: hide a message (only Admin can then see it) or show it again
+  api.post("/api/voice/:id/hide", async (req, res) => {
+    if (req.sess.user.role !== "admin") throw forbidden();
+    const m = load(req.sess, req.params.id);
+    const hidden = (await readJson(req)).hidden !== false;
+    db.prepare("UPDATE voice_messages SET hidden=?, updated_at=? WHERE id=?").run(hidden ? 1 : 0, nowIso(), m.id);
+    audit(db, req.sess.user.id, hidden ? "voice.hide" : "voice.unhide", "voice", m.id, { hidden: m.hidden }, { hidden: hidden ? 1 : 0 });
+    send(req, res, 200, { ok: true });
+  });
+  // Admin: delete a message for good, with its replies and attachments
+  api.delete("/api/voice/:id", (req, res) => {
+    if (req.sess.user.role !== "admin") throw forbidden();
+    const m = load(req.sess, req.params.id);
+    const files = db.prepare("SELECT id FROM files WHERE voice_id=?").all(m.id).map((f) => f.id);
+    tx(db, () => {
+      db.prepare("DELETE FROM voice_replies WHERE message_id=?").run(m.id);
+      db.prepare("DELETE FROM files WHERE voice_id=?").run(m.id);
+      db.prepare("DELETE FROM notifications WHERE link=?").run(`#/voice/${m.id}`);
+      db.prepare("DELETE FROM voice_messages WHERE id=?").run(m.id);
+      audit(db, req.sess.user.id, "voice.delete", "voice", m.id, { category: m.category, to_kind: m.to_kind, from_employee: m.employee_id }, null); // content stays out of the log
+    });
+    for (const id of files) fs.rmSync(path.join(ctx.dataDir, "uploads", String(id)), { force: true });
+    send(req, res, 200, { ok: true });
   });
 
   // counts only (no content), for management reports
