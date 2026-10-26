@@ -10,6 +10,7 @@ import { postLedger, balanceOf, pendingMinutes, yearStartFor } from "./ledger.mj
 import { notify } from "./notify.mjs";
 import { getEmployee } from "./employees.mjs";
 import { storeUpload } from "./files.mjs";
+import { blockedOverlap } from "./calendar.mjs";
 
 export const TYPE_NAMES = {
   annual: ["إجازة سنوية", "Annual leave"], early: ["مغادرة مبكرة", "Early leave"], late: ["تأخير في الحضور", "Late arrival"], break: ["استئذان خلال الدوام", "Personal break"], emergency: ["إجازة اضطرارية", "Emergency leave"],
@@ -175,6 +176,8 @@ export function validateRequest(db, emp, body, today) {
     if (clash) throw err(409, "overlap", "These dates overlap another request");
   }
 
+  const blocked = blockedOverlap(db, type, start, end);
+  if (blocked) throw err(409, "blocked_days", `Leave can't be booked on these days: ${blocked.name} (${dmy(blocked.start_date)} – ${dmy(blocked.end_date)})`, isPermission(type) ? "date" : "start");
   if (TYPES[type].effect === "deduct") {
     const from = eligibleFrom(emp.join_date);
     if (from && start < from) throw err(409, "not_eligible_yet", `Leave is available from ${dmy(from)} (${from})`);
@@ -439,25 +442,6 @@ export function registerRequests(api, ctx) {
   });
 
   // ---- team calendar: who is off in a month (HR, Accounts, CEO, Admin: everyone; managers: their departments)
-  api.get("/api/calendar", (req, res) => {
-    const sess = req.sess;
-    const month = req.query.get("month") || ctx.today().slice(0, 7);
-    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw err(400, "invalid", "month must be YYYY-MM", "month");
-    const where = [], args = [];
-    if (!can(sess, "requests.viewAll")) {
-      const depts = approvedDepartments(db, sess.employee && sess.employee.id);
-      if (!depts.length) throw forbidden();
-      where.push(`e.department_id IN (${depts.map(() => "?").join(",")})`); args.push(...depts);
-    }
-    const first = `${month}-01`, last = addDays(addMonths(first, 1), -1);
-    const items = db.prepare(`SELECT r.id, r.employee_id, r.type, r.status, r.start_date, r.end_date, e.name_ar, e.name_en, e.emp_no, e.department_id
-      FROM leave_requests r JOIN employees e ON e.id=r.employee_id
-      WHERE r.status IN ('pending','approved') AND r.type NOT IN ${PERM_SQL} AND r.type<>'comp_day' AND r.start_date<=? AND r.end_date>=? ${where.length ? "AND " + where.join(" AND ") : ""}
-      ORDER BY r.start_date, e.name_ar`).all(last, first, ...args);
-    const holidays = getSetting(db, "official_holidays", []).filter((x) => x.date >= first && x.date <= last);
-    send(req, res, 200, { month, items, holidays });
-  });
-
   // Attachments on a request (e.g. a medical note for sick leave): the requester, HR or Admin.
   api.post("/api/requests/:id/files", async (req, res) => {
     const r = getReq(db, req.params.id);

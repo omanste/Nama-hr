@@ -1,36 +1,116 @@
-// Team leave calendar: who is off on each day of a month (pending shown lighter).
+// Company calendar: a month grid with leave (by what each person may see), official holidays, blocked days,
+// company occasions and birthdays. HR and Admin add or remove entries here.
 import { api } from "../api.js";
 import { t, nm, getLang } from "../i18n.js";
-import { h, pageHead, empty, todayIso } from "../ui.js";
+import { h, field, select, pageHead, toast, errText, confirm, dmy, todayIso, isPermission, empty } from "../ui.js";
+import { render as rerender } from "../app.js";
 
 const pad = (n) => String(n).padStart(2, "0");
+const loc = () => (getLang() === "ar" ? "ar-OM-u-nu-latn" : "en-GB");
 const shift = (month, n) => { const [y, m] = month.split("-").map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}`; };
+const inRange = (d, a, b) => d >= a && d <= b;
 
-export async function render(el, _p, { can, query }) {
-  if (!can.staffList()) throw { status: 403 };
+export async function render(el, _p, { query }) {
   const month = /^\d{4}-\d{2}$/.test(query.get("m") || "") ? query.get("m") : todayIso().slice(0, 7);
   const data = await api.get(`/api/calendar?month=${month}`);
   const [y, m] = month.split("-").map(Number);
   const daysIn = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  const title = new Intl.DateTimeFormat(getLang() === "ar" ? "ar-OM-u-nu-latn" : "en-GB", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(y, m - 1, 1)));
+  const firstDow = new Date(Date.UTC(y, m - 1, 1)).getUTCDay(); // 0 = Sunday
+  const today = todayIso();
   const holidays = new Map(data.holidays.map((x) => [x.date, x.name]));
-  const days = [];
-  for (let d = 1; d <= daysIn; d++) {
-    const iso = `${month}-${pad(d)}`;
-    const off = data.items.filter((r) => r.start_date <= iso && r.end_date >= iso);
-    const dow = new Date(iso + "T00:00:00Z").getUTCDay();
-    if (!off.length && !holidays.has(iso)) continue;
-    days.push(h("div", { class: "item", style: { alignItems: "flex-start", opacity: dow === 5 || dow === 6 ? 0.75 : 1 } },
-      h("div", { style: { minWidth: "64px" } }, h("div", { class: "title num" }, pad(d)),
-        h("div", { class: "meta" }, new Intl.DateTimeFormat(getLang() === "ar" ? "ar-OM" : "en-GB", { weekday: "short", timeZone: "UTC" }).format(new Date(iso + "T00:00:00Z")))),
-      h("div", { class: "grow row" },
-        holidays.has(iso) ? h("span", { class: "badge b-on_leave" }, `${t("holiday")}: ${holidays.get(iso)}`) : null,
-        off.map((r) => h("a", { href: `#/leave/${r.id}`, class: `badge ${r.status === "approved" ? "b-approved" : "b-pending"}`, title: t("lt_" + r.type) }, `${nm(r)} · ${t("lt_" + r.type)}`))),
-      off.length ? h("span", { class: "badge" }, t("off_count", { n: off.length })) : null));
+  let selected = query.get("d") && query.get("d").startsWith(month) ? query.get("d") : today.startsWith(month) ? today : `${month}-01`;
+
+  const go = (mm, d) => { location.hash = `#/calendar?m=${mm}${d ? `&d=${d}` : ""}`; };
+  const monthSel = select("month", Array.from({ length: 12 }, (_, i) => [pad(i + 1), new Intl.DateTimeFormat(loc(), { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2026, i, 1)))]), pad(m), { "aria-label": t("month") });
+  const years = []; for (let k = y - 3; k <= y + 2; k++) years.push(k);
+  const yearSel = select("year", years.map((k) => [k, String(k)]), y, { "aria-label": t("year") });
+  monthSel.addEventListener("change", () => go(`${yearSel.value}-${monthSel.value}`));
+  yearSel.addEventListener("change", () => go(`${yearSel.value}-${monthSel.value}`));
+
+  const onDay = (d) => ({
+    holiday: holidays.get(d),
+    blocked: data.events.filter((e) => e.kind === "blocked" && inRange(d, e.start_date, e.end_date)),
+    events: data.events.filter((e) => e.kind === "event" && inRange(d, e.start_date, e.end_date)),
+    birthdays: data.birthdays.filter((b) => b.date === d),
+    off: data.items.filter((r) => inRange(d, r.start_date, r.end_date)),
+  });
+
+  const grid = h("div", { class: "cal-grid", role: "grid" });
+  const detail = h("section", { class: "card", "aria-live": "polite" });
+  function drawGrid() {
+    const wk = [0, 1, 2, 3, 4, 5, 6].map((i) => new Intl.DateTimeFormat(loc(), { weekday: "short", timeZone: "UTC" }).format(new Date(Date.UTC(2023, 0, 1 + i))));
+    const cells = [];
+    for (let i = 0; i < firstDow; i++) cells.push(h("div", { class: "cal-cell empty", "aria-hidden": "true" }));
+    for (let d = 1; d <= daysIn; d++) {
+      const iso = `${month}-${pad(d)}`, x = onDay(iso), dow = new Date(iso + "T00:00:00Z").getUTCDay();
+      const leaves = x.off.filter((r) => !isPermission(r.type)), perms = x.off.filter((r) => isPermission(r.type));
+      cells.push(h("button", {
+        type: "button", class: ["cal-cell", dow === 5 || dow === 6 ? "we" : "", x.holiday ? "hol" : "", x.blocked.length ? "blk" : "", iso === today ? "today" : "", iso === selected ? "sel" : ""].filter(Boolean).join(" "),
+        "aria-pressed": String(iso === selected), "aria-label": dmy(iso), onclick: () => { selected = iso; drawGrid(); drawDetail(); },
+      },
+        h("span", { class: "dnum" }, String(d)),
+        x.holiday ? h("span", { class: "tag hol" }, x.holiday) : null,
+        x.blocked.map((e) => h("span", { class: "tag blk" }, "⛔ ", e.name)),
+        x.events.map((e) => h("span", { class: "tag ev" }, "★ ", e.name)),
+        x.birthdays.map((b) => h("span", { class: "tag bd" }, "🎂 ", nm(b))),
+        leaves.slice(0, 3).map((r) => h("span", { class: `tag lv ${r.status}` }, nm(r))),
+        leaves.length > 3 ? h("span", { class: "tag more" }, `+${leaves.length - 3}`) : null,
+        perms.length ? h("span", { class: "tag pm" }, "⏱ ", String(perms.length)) : null,
+        // phones: dots instead of words
+        h("span", { class: "dots", "aria-hidden": "true" },
+          x.holiday ? h("i", { class: "hol" }) : null, x.blocked.length ? h("i", { class: "blk" }) : null, x.events.length ? h("i", { class: "ev" }) : null,
+          x.birthdays.length ? h("i", { class: "bd" }) : null, leaves.length ? h("i", { class: "lv" }) : null, perms.length ? h("i", { class: "pm" }) : null)));
+    }
+    grid.replaceChildren(...wk.map((w) => h("div", { class: "cal-wk", role: "columnheader" }, w)), ...cells);
   }
-  el.append(pageHead(t("nav_calendar"),
-      h("a", { class: "btn small", href: `#/calendar?m=${shift(month, -1)}`, "aria-label": t("prev_month") }, getLang() === "ar" ? "→" : "←"),
-      h("span", { class: "title", style: { fontWeight: 600 } }, title),
-      h("a", { class: "btn small", href: `#/calendar?m=${shift(month, 1)}`, "aria-label": t("next_month") }, getLang() === "ar" ? "←" : "→")),
-    days.length ? h("div", { class: "list" }, days) : empty(t("calendar_none")));
+  function drawDetail() {
+    const x = onDay(selected);
+    const del = (fn) => data.canEdit ? h("button", { class: "btn small danger", type: "button", onclick: fn }, t("delete")) : null;
+    const rows = [
+      x.holiday ? h("div", { class: "item" }, h("span", { class: "badge b-on_leave" }, t("holiday")), h("div", { class: "grow" }, x.holiday),
+        del(async () => { if (await confirm(t("delete_q"), { danger: true })) { try { await api.del(`/api/calendar/holidays/${selected}`); toast(t("saved")); rerender(); } catch (e) { toast(errText(e), "bad"); } } })) : null,
+      ...x.blocked.map((e) => h("div", { class: "item" }, h("span", { class: "badge b-rejected" }, t("cal_blocked")), h("div", { class: "grow" }, e.name, h("div", { class: "meta" }, `${dmy(e.start_date)} – ${dmy(e.end_date)} · ${t("cal_blocked_hint")}`)),
+        del(async () => { if (await confirm(t("delete_q"), { danger: true })) { try { await api.del(`/api/calendar/entries/${e.id}`); toast(t("saved")); rerender(); } catch (er) { toast(errText(er), "bad"); } } }))),
+      ...x.events.map((e) => h("div", { class: "item" }, h("span", { class: "badge b-pending" }, t("cal_event")), h("div", { class: "grow" }, e.name, h("div", { class: "meta" }, e.start_date === e.end_date ? dmy(e.start_date) : `${dmy(e.start_date)} – ${dmy(e.end_date)}`)),
+        del(async () => { if (await confirm(t("delete_q"), { danger: true })) { try { await api.del(`/api/calendar/entries/${e.id}`); toast(t("saved")); rerender(); } catch (er) { toast(errText(er), "bad"); } } }))),
+      ...x.birthdays.map((b) => h("div", { class: "item" }, h("span", { class: "badge" }, "🎂"), h("div", { class: "grow" }, t("cal_birthday_of", { name: nm(b) })))),
+      ...x.off.map((r) => h("a", { class: "item", href: `#/leave/${r.id}` }, h("span", { class: `badge ${r.status === "approved" ? "b-approved" : "b-pending"}` }, t("rs_" + r.status)),
+        h("div", { class: "grow" }, h("div", { class: "title" }, nm(r)), h("div", { class: "meta" }, t("lt_" + r.type), isPermission(r.type) ? ` · ${r.early_time}${r.end_time ? "–" + r.end_time : ""}` : r.start_date === r.end_date ? "" : ` · ${dmy(r.start_date)} – ${dmy(r.end_date)}`)))),
+    ].filter(Boolean);
+    detail.replaceChildren(h("h2", null, new Intl.DateTimeFormat(loc(), { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(selected + "T00:00:00Z"))),
+      rows.length ? h("div", { class: "list" }, rows) : empty(t("cal_nothing_day")));
+  }
+  drawGrid(); drawDetail();
+
+  const legend = h("div", { class: "row sub cal-legend" },
+    [["hol", "holiday"], ["blk", "cal_blocked"], ["ev", "cal_event"], ["bd", "cal_birthday"], ["lv", "cal_leave"], ["pm", "nav_permissions"]].map(([c, k]) => h("span", null, h("i", { class: `key ${c}` }), t(k))));
+  el.append(pageHead(t("nav_calendar"), data.canEdit ? h("button", { class: "btn primary", type: "button", onclick: () => addDialog(selected) }, "+ ", t("cal_add")) : null),
+    h("div", { class: "toolbar cal-nav" },
+      h("button", { class: "btn", type: "button", "aria-label": t("prev_month"), onclick: () => go(shift(month, -1)) }, getLang() === "ar" ? "→" : "←"),
+      monthSel, yearSel,
+      h("button", { class: "btn", type: "button", "aria-label": t("next_month"), onclick: () => go(shift(month, 1)) }, getLang() === "ar" ? "←" : "→"),
+      h("button", { class: "btn", type: "button", onclick: () => go(today.slice(0, 7), today) }, t("today"))),
+    h("section", { class: "card cal-card" }, grid, legend),
+    detail);
+}
+
+function addDialog(day) {
+  const kind = select("kind", [["blocked", t("cal_blocked")], ["event", t("cal_event")], ["holiday", t("holiday")]], "blocked");
+  const from = h("input", { type: "date", value: day, required: true }), to = h("input", { type: "date", value: day });
+  const name = h("input", { required: true, maxlength: 100, dir: "auto" });
+  const hint = h("p", { class: "sub" });
+  const showHint = () => { hint.textContent = t("cal_hint_" + kind.value); };
+  kind.addEventListener("change", showHint); showHint();
+  const err = h("div", { class: "form-error" });
+  const dlg = h("dialog", { class: "dialog" }, h("form", { class: "form", onsubmit: async (ev) => {
+    ev.preventDefault();
+    try { await api.post("/api/calendar/entries", { kind: kind.value, start: from.value, end: to.value || from.value, name: name.value.trim() }); dlg.close(); toast(t("saved")); rerender(); }
+    catch (er) { err.textContent = errText(er); }
+  } },
+    h("h2", null, t("cal_add")),
+    h("div", { class: "fields" }, field(t("kind"), kind, { full: true }), field(t("holiday_from"), from), field(t("holiday_to"), to, { hint: t("holiday_to_hint") }), field(t("cal_name"), name, { full: true })),
+    hint, err,
+    h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), h("button", { class: "btn primary", type: "submit" }, t("save")))));
+  dlg.addEventListener("close", () => dlg.remove());
+  document.body.append(dlg); dlg.showModal(); name.focus();
 }

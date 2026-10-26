@@ -62,7 +62,7 @@ const D = {
   up_to: ["حتى {n}", "Up to {n}"], max_allowed: ["الحد المسموح", "Maximum allowed"],
   cover_title: ["النائب أثناء غيابي", "Cover while I'm away"], cover_hint: ["خلال هذه الفترة تذهب الطلبات الجديدة إلى النائب، ويمكنه البت في الطلبات المنتظرة.", "During these dates new requests go to your deputy, who can also decide waiting ones."],
   deputy: ["النائب", "Deputy"], add_cover: ["تعيين نائب", "Set deputy"], covering_for: ["تنوب عن {name}", "Covering for {name}"], route_cover: ["النائب", "Deputy"],
-  nav_calendar: ["تقويم الإجازات", "Leave calendar"], calendar_none: ["لا أحد في إجازة هذا الشهر", "Nobody is off this month"], prev_month: ["الشهر السابق", "Previous month"], next_month: ["الشهر التالي", "Next month"],
+  nav_calendar: ["التقويم", "Calendar"], calendar_none: ["لا أحد في إجازة هذا الشهر", "Nobody is off this month"], prev_month: ["الشهر السابق", "Previous month"], next_month: ["الشهر التالي", "Next month"],
   off_count: ["{n} في إجازة", "{n} off"], holiday: ["عطلة رسمية", "Official holiday"],
   relation: ["صلة القرابة", "Relation"], patient_relation: ["صلة القرابة بالمريض", "Relation to the patient"], birth_date: ["تاريخ الولادة (أو المتوقع)", "Date of birth (or expected)"],
   rel_wife: ["الزوجة", "Wife"], rel_son: ["الابن", "Son"], rel_daughter: ["البنت", "Daughter"], rel_father: ["الأب", "Father"], rel_mother: ["الأم", "Mother"],
@@ -282,6 +282,17 @@ const D = {
   staff_delete_q: ["حذف {name} نهائياً؟ يُحذف الملف والمستندات والحساب ولا يمكن التراجع. يُسمح بذلك فقط إذا لم يكن له أي طلبات أو رسائل — وإلا استخدم «تعطيل».", "Delete {name} for good? The profile, documents and login are removed and this can't be undone. Only allowed when they have no requests or messages — otherwise use Disable."],
   staff_deleted: ["تم الحذف", "Deleted"], err_has_history: ["لهذا الموظف سجل طلبات أو رسائل — استخدم «تعطيل» ليبقى السجل محفوظاً", "This person has requests or messages — use Disable so the records are kept"],
   disabled_note: ["هذا الموظف معطّل: لا يمكنه الدخول ولا يظهر في القوائم.", "This person is disabled: no sign-in, and hidden from the lists."],
+  // company calendar
+  cal_add: ["إضافة إلى التقويم", "Add to calendar"], cal_blocked: ["أيام ممنوعة للإجازة", "No leave allowed"], cal_event: ["مناسبة للشركة", "Company occasion"],
+  cal_birthday: ["عيد ميلاد", "Birthday"], cal_leave: ["إجازة", "Leave"], cal_name: ["الاسم / الوصف", "Name / description"],
+  cal_birthday_of: ["عيد ميلاد {name} 🎉", "{name}'s birthday 🎉"], cal_nothing_day: ["لا شيء في هذا اليوم", "Nothing on this day"],
+  cal_blocked_hint: ["لا تُقبل الإجازة السنوية ولا الخاصة بدون أجر ولا الاستئذانات", "No annual leave, special unpaid leave or permissions"],
+  cal_hint_blocked: ["تُرفض فيها طلبات الإجازة السنوية والخاصة بدون أجر والاستئذانات. الإجازات التي يكفلها القانون (المرضية، الوفاة، الأمومة، الأبوة، الحج…) لا يمكن منعها.", "Annual leave, special unpaid leave and permissions are refused on these days. Leave guaranteed by law (sick, bereavement, maternity, paternity, Hajj…) can't be blocked."],
+  cal_hint_event: ["تظهر للجميع في التقويم ويصلهم إشعار. لا تؤثر على الإجازات.", "Shown to everyone on the calendar, with a notification. Doesn't affect leave."],
+  cal_hint_holiday: ["عطلة رسمية: لا تُخصم من الإجازة السنوية إذا وقعت داخلها.", "Official holiday: not counted when it falls inside annual leave."],
+  delete_q: ["حذف؟", "Delete?"],
+  err_blocked_days: ["لا يمكن طلب إجازة في هذه الأيام", "Leave can't be booked on these days"],
+  birthdays_soon: ["أعياد ميلاد قريبة 🎂", "Birthdays coming up 🎂"], birthday_in: ["{name} — {d} ({n})", "{name} — {d} ({n})"], in_n_days: ["بعد {n} أيام", "in {n} days"], tomorrow: ["غداً", "tomorrow"],
 };
 
 let lang = "ar";

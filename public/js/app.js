@@ -54,7 +54,8 @@ function navItems() {
   if (me.employee) items.push(["#/leave", "nav_leave", "leave"], ["#/permissions", "nav_permissions", "clock"], ["#/me", "nav_me", "user"]);
   if (can.approve()) items.push(["#/approvals", "nav_approvals", "check", me.pendingApprovals]);
   if (me.employee || ["hr", "ceo", "admin"].includes(me.user.role)) items.push(["#/voice", "nav_voice", "chat", me.voiceInbox]);
-  if (can.staffList()) items.push(["#/staff", "nav_staff", "people"], ["#/calendar", "nav_calendar", "leave"]);
+  if (can.staffList()) items.push(["#/staff", "nav_staff", "people"]);
+  items.push(["#/calendar", "nav_calendar", "leave"]); // everyone: holidays, occasions, birthdays and their own leave
   if (me.isApprover && !can.viewAll()) items.push(["#/team", "team_requests", "list"]);
   if (can.viewAll()) items.push(["#/requests", "nav_requests", "list"]);
   if (can.viewAll() || me.isApprover) items.push(["#/reports", "nav_reports", "chart"]);

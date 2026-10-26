@@ -289,3 +289,37 @@ h1,h2{overflow-wrap:anywhere}
 .badge.v-answered{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)} .badge.v-closed{background:var(--surface-2);color:var(--muted)}
 .read-row input[type=radio]{width:20px;height:20px;min-height:0;margin-top:3px;flex:none}
 .card-head{flex-wrap:wrap} .card-head > h2{white-space:nowrap}
+/* company calendar (month grid) */
+.cal-nav{align-items:center}
+.cal-nav > .btn{flex:0 0 auto}
+.cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.cal-wk{font-size:12px;color:var(--muted);text-align:center;padding:4px 0}
+.cal-cell{display:flex;flex-direction:column;gap:2px;align-items:stretch;min-height:96px;padding:4px;border:1px solid var(--line);border-radius:8px;background:var(--surface);text-align:start;cursor:pointer;color:inherit;font:inherit;min-width:0;overflow:hidden}
+.cal-cell.empty{border:0;background:none;cursor:default}
+.cal-cell.we{background:var(--surface-2)}
+.cal-cell.hol{background:var(--gold-soft);border-color:var(--gold)}
+.cal-cell.blk{background:repeating-linear-gradient(135deg,var(--bad-soft) 0 6px,var(--surface) 6px 12px);border-color:var(--bad)}
+.cal-cell.today .dnum{background:var(--brand);color:var(--brand-fg);border-radius:999px;padding:0 6px}
+.cal-cell.sel{outline:2px solid var(--brand);outline-offset:-1px}
+.cal-cell .dnum{font-weight:700;font-size:13px;align-self:flex-start;font-variant-numeric:tabular-nums}
+.cal-cell .tag{font-size:11px;line-height:1.3;border-radius:4px;padding:1px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tag.hol{background:var(--gold);color:#1b1404}
+.tag.blk{background:var(--bad);color:#fff}
+.tag.ev{background:var(--info-soft);color:var(--info)}
+.tag.bd{background:var(--surface-2)}
+.tag.lv.approved{background:var(--ok-soft);color:var(--ok)}
+.tag.lv.pending{border:1px dashed var(--warn);color:var(--warn)}
+.tag.pm,.tag.more{color:var(--muted)}
+.cal-cell .dots{display:none;gap:3px;flex-wrap:wrap;margin-top:auto}
+.cal-cell .dots i,.cal-legend i.key{display:inline-block;width:8px;height:8px;border-radius:999px}
+i.hol{background:var(--gold)} i.blk{background:var(--bad)} i.ev{background:var(--info)} i.bd{background:#d46aa0} i.lv{background:var(--ok)} i.pm{background:var(--muted)}
+.cal-legend{margin-top:10px;gap:12px;flex-wrap:wrap}
+.cal-legend i.key{margin-inline-end:5px;vertical-align:0}
+@media (max-width:700px){
+  .cal-cell{min-height:52px;padding:3px}
+  .cal-cell .tag{display:none}
+  .cal-cell .dots{display:flex}
+  .cal-card{padding:10px}
+}
+/* birthdays banner on home */
+.bday{background:linear-gradient(135deg,var(--gold-soft),var(--surface));border:1px solid var(--gold)}

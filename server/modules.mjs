@@ -10,6 +10,7 @@ import { registerImport } from "./importer.mjs";
 import { registerAudit } from "./audit.mjs";
 import { registerPermissionReports } from "./permissions.mjs";
 import { registerVoice } from "./voice.mjs";
+import { registerCalendar } from "./calendar.mjs";
 
 export async function registerModules(api, ctx) {
   registerAuth(api, ctx);
@@ -24,4 +25,5 @@ export async function registerModules(api, ctx) {
   registerAudit(api, ctx);
   registerPermissionReports(api, ctx);
   registerVoice(api, ctx);
+  registerCalendar(api, ctx);
 }

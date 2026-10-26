@@ -26,6 +26,16 @@ const tile = (n, label, href, cls = "") => h(href ? "a" : "div", { class: `card 
 export async function render(el, _p, { me, can }) {
   el.append(h("h1", null, t("hello", { name: nm(me.employee) || me.user.username })));
   const jobs = [];
+  // colleagues' birthdays in the next 5 days (never your own) — so the team can prepare a surprise
+  jobs.push(api.get("/api/birthdays/upcoming").then(({ items }) => {
+    if (!items.length) return null;
+    const today = todayIso();
+    const left = (d) => Math.round((Date.parse(d) - Date.parse(today)) / 864e5);
+    return h("a", { class: "card bday", href: "#/calendar", style: { display: "block", textDecoration: "none", color: "inherit" } },
+      h("h2", null, t("birthdays_soon")),
+      h("div", { class: "list" }, items.map((b) => h("div", null, "🎂 ", h("b", null, nm(b)), " · ", dmy(b.date).slice(0, 5), " · ",
+        left(b.date) === 0 ? t("today") : left(b.date) === 1 ? t("tomorrow") : t("in_n_days", { n: num(left(b.date)) })))));
+  }).catch(() => null));
   // my leave balance, leave by type, permissions and request history
   if (me.employee) jobs.push(api.get(`/api/employees/${me.employee.id}`).then((p) => h("div", { class: "grid" }, leaveSections(p, { own: true, limit: 10 }))));
   else jobs.push(Promise.resolve(h("div", { class: "note" }, t("no_profile"))));

@@ -87,6 +87,10 @@ const MIGRATIONS = [
     rebuildWithCheck(db, "users", "CHECK(role IN ('staff','hr','accounts','ceo','admin'))", "CHECK(role IN ('staff','manager','hr','accounts','ceo','admin'))");
     rebuildWithCheck(db, "employees", "CHECK(status IN ('active','on_leave','resigned','terminated'))", "CHECK(status IN ('active','on_leave','resigned','terminated','disabled'))");
   },
+  // 13: company calendar — days when leave can't be booked, and company occasions (official holidays stay in settings)
+  `CREATE TABLE calendar_events(id INTEGER PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('blocked','event')), start_date TEXT NOT NULL, end_date TEXT NOT NULL,
+     name TEXT NOT NULL, created_by INTEGER, created_at TEXT NOT NULL);
+   CREATE INDEX ce_dates ON calendar_events(start_date, end_date);`,
 ];
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */

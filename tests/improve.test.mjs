@@ -87,7 +87,10 @@ test("team calendar: who is off in a month, by visibility", async () => {
   assert.ok(r.data.items.every((x) => ["pending", "approved"].includes(x.status)));
   assert.deepEqual(r.data.holidays.map((x) => x.date), ["2026-12-18"]);
   assert.ok((await hr.c.get("/api/calendar?month=2026-12")).data.items.length >= r.data.items.length);
-  assert.equal((await staff.c.get("/api/calendar?month=2026-12")).status, 403);
+  // staff see the calendar too, but only their own leave among the requests
+  const mine = await staff.c.get("/api/calendar?month=2026-12");
+  assert.equal(mine.status, 200);
+  assert.ok(mine.data.items.every((x) => x.employee_id === staff.emp.id));
   assert.equal((await hr.c.get("/api/calendar?month=2026-13")).status, 400);
 });
 
