@@ -59,5 +59,10 @@ export async function startServer({ dataDir, port = 3000, env = process.env } = 
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT || 3000);
-  startServer({ port }).then(() => console.log(`Nama HR (${process.env.APP_ENV || "production"}) listening on :${port}`));
+  startServer({ port }).then((app) => {
+    console.log(`Nama HR (${process.env.APP_ENV || "production"}) listening on :${port}`);
+    // Docker stops the container with SIGTERM; close the database cleanly instead of being killed
+    const stop = async () => { app.server.closeAllConnections?.(); await app.close(); process.exit(0); };
+    process.once("SIGTERM", stop); process.once("SIGINT", stop);
+  });
 }

@@ -11,6 +11,5 @@ ENV PORT=3000 DATA_DIR=/data APP_ENV=production
 EXPOSE 3000
 VOLUME ["/data"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1
-# runs as the unprivileged "node" user; a new /data volume inherits node ownership from the image
-USER node
-CMD ["node", "--disable-warning=ExperimentalWarning", "server/index.mjs"]
+# starts as root only to hand /data to the "node" user (a host folder or old volume may be root-owned), then runs as node
+CMD ["sh", "-c", "chown -R node:node /data && exec su node -s /bin/sh -c 'exec node --disable-warning=ExperimentalWarning server/index.mjs'"]
