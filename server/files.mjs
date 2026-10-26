@@ -54,7 +54,8 @@ export function registerFiles(api, ctx) {
     const f = db.prepare("SELECT * FROM files WHERE id=?").get(Number(req.params.id));
     if (!f) throw new HttpError(404, "not_found", "File not found");
     const emp = getEmployee(db, f.employee_id);
-    if (!canViewEmployee(db, req.sess, emp)) throw forbidden();
+    const approverOfRequest = f.request_id && (db.prepare("SELECT approver_user_id FROM leave_requests WHERE id=?").get(f.request_id) || {}).approver_user_id === req.sess.user.id;
+    if (!approverOfRequest && !canViewEmployee(db, req.sess, emp)) throw forbidden();
     const p = path.join(ctx.dataDir, "uploads", String(f.id));
     if (!fs.existsSync(p)) throw new HttpError(404, "not_found", "File missing on disk");
     const ext = { "application/pdf": ".pdf", "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp" }[f.mime] || "";
