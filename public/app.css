@@ -151,7 +151,7 @@ table{border-collapse:collapse;width:100%;font-size:14px}
 th,td{padding:9px 12px;text-align:start;border-bottom:1px solid var(--line);vertical-align:top}
 th{background:var(--surface-2);font-weight:600;font-size:12px;white-space:nowrap;position:sticky;top:0}
 tr:last-child td{border-bottom:0}
-td.num,th.num{text-align:end;font-variant-numeric:tabular-nums}
+td.num,th.num{text-align:end;font-variant-numeric:tabular-nums;white-space:nowrap}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap}
 .toolbar > *{flex:1 1 160px;min-width:0}
 .toolbar input[type="search"]{flex:2 1 220px}
