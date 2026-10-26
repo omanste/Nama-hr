@@ -78,6 +78,9 @@ const MIGRATIONS = [
    CREATE INDEX vm_user ON voice_messages(user_id); CREATE INDEX vm_to ON voice_messages(to_kind, to_user_id, status);
    CREATE TABLE voice_replies(id INTEGER PRIMARY KEY, message_id INTEGER NOT NULL REFERENCES voice_messages(id), user_id INTEGER NOT NULL REFERENCES users(id), body TEXT NOT NULL, created_at TEXT NOT NULL);
    ALTER TABLE files ADD COLUMN voice_id INTEGER;`,
+  // 11: Staff Voice goes to a person (employee), so a manager without a login yet still receives it at first sign-in
+  `ALTER TABLE voice_messages ADD COLUMN to_employee_id INTEGER REFERENCES employees(id);
+   UPDATE voice_messages SET to_employee_id=(SELECT employee_id FROM users WHERE users.id=voice_messages.to_user_id) WHERE to_user_id IS NOT NULL;`,
 ];
 
 export function openDb(dataDir) {

@@ -260,7 +260,11 @@ const D = {
   voice_named: ["تُرسل باسم: {name}", "Sent in your name: {name}"], voice_send: ["إرسال", "Send"], voice_sent_ok: ["تم إرسال رسالتك", "Your message was sent"],
   voice_reply: ["الرد", "Reply"], send: ["إرسال", "Send"], voice_closed_note: ["هذه المحادثة مغلقة", "This conversation is closed"],
   voice_close: ["إغلاق الرسالة", "Close message"], voice_reopen: ["إعادة فتح", "Reopen"], replies_n: ["{n} رد", "{n} replies"],
-  voice_no_recipients: ["لا يوجد مستلم متاح بعد (لا يوجد حساب لمديرك أو للموارد البشرية أو الرئيس التنفيذي).", "Nobody can receive messages yet (no login for your manager, HR or the CEO)."],
+  voice_no_recipients: ["لا يوجد مستلم متاح بعد", "Nobody can receive messages yet"],
+  voice_missing_manager: ["المدير: لم يُحدَّد مدير مباشر في ملفك ولا معتمد لقسمك (الإعدادات ← الأقسام).", "Manager: no direct manager on your profile and no approver for your department (Settings → Departments)."],
+  voice_missing_hr: ["الموارد البشرية: لا يوجد مستخدم بصلاحية «الموارد البشرية» (المستخدمون).", "HR: no user has the HR role yet (Users)."],
+  voice_missing_ceo: ["الرئيس التنفيذي: لم يُحدَّد مستخدم بصلاحية «الرئيس التنفيذي» ولا معتمد إجازات المدراء (الإعدادات).", "CEO: no user has the CEO role and no managers' leave approver is set (Settings)."],
+  voice_ask_admin: ["يمكن للمسؤول ضبط ذلك من الإعدادات والمستخدمين.", "Admin can set this up in Settings and Users."],
   report_voice: ["صوت الموظف", "Staff Voice"], report_voice_note: ["أعداد فقط — لا تظهر نصوص الرسائل في التقارير.", "Counts only — message text never appears in reports."], still_open: ["مفتوحة", "Still open"],
   // my leave / my permissions pages
   my_leave: ["إجازاتي", "My leave"], leave_taken: ["الإجازات المأخوذة", "Leave taken"], year: ["السنة", "Year"], month: ["الشهر", "Month"],

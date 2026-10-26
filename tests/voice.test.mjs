@@ -86,3 +86,27 @@ test("bad input; report counts for management only", async () => {
   assert.equal((await s.c.get("/api/reports/voice")).status, 403);
   assert.equal((await mgr.c.get("/api/reports/voice")).status, 403);
 });
+
+test("a manager without a login yet still receives it, and sees it at first sign-in; missing set-up is named", async () => {
+  const d = (await admin.post("/api/departments", { name_ar: "التأجير" })).data.department;
+  const boss = (await admin.post("/api/employees", { name_ar: "مدير بلا حساب", join_date: "2020-01-01", department_id: d.id })).data.employee;
+  await admin.put(`/api/departments/${d.id}`, { approver_employee_id: boss.id });
+  const w = await makePerson(t.base, admin, { emp_no: "R9", name_ar: "موظف تأجير", join_date: "2022-01-01", department_id: d.id }, "staff");
+  const opts = (await w.c.get("/api/voice/recipients")).data;
+  assert.ok(opts.items.some((x) => x.kind === "manager" && x.name_ar === "مدير بلا حساب"));
+  const m = (await send(w.c, { to: "manager" })).data.message;
+  assert.equal(m.to_employee_id, boss.id);
+  const login = (await admin.post(`/api/employees/${boss.id}/login`, {})).data;
+  const { login: signIn } = await import("./helpers.mjs");
+  const bc = await signIn(t.base, login.user.username, login.tempPassword, "Boss#2026x9");
+  assert.equal((await bc.get("/api/me")).data.voiceInbox, 1);
+  assert.equal((await bc.get(`/api/voice/${m.id}`)).status, 200);
+  // nothing set up at all → the reasons are listed
+  const t2 = await (await import("./helpers.mjs")).boot({});
+  try {
+    const a2 = await (await import("./helpers.mjs")).adminClient(t2.base);
+    const lone = await (await import("./helpers.mjs")).makePerson(t2.base, a2, { emp_no: "Z1", name_ar: "وحيد", join_date: "2022-01-01" }, "staff");
+    const r = (await lone.c.get("/api/voice/recipients")).data;
+    assert.deepEqual(r.items, []); assert.deepEqual(r.missing, ["manager", "hr", "ceo"]);
+  } finally { await t2.close(); }
+});

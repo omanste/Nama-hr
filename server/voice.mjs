@@ -10,44 +10,41 @@ export const CATEGORIES = ["suggestion", "question", "complaint", "note", "other
 const STATUSES = ["new", "in_review", "answered", "closed"];
 const NAMES = { suggestion: ["اقتراح", "Suggestion"], question: ["استفسار", "Question"], complaint: ["شكوى", "Complaint"], note: ["ملاحظة", "Note"], other: ["رسالة", "Message"] };
 
-/** Who reads messages sent to HR / the CEO; "manager" goes to one person. */
+/** Who reads messages sent to HR; "manager" and "ceo" go to one person (an employee — with or without a login yet). */
 const hrUsers = (db) => db.prepare("SELECT id FROM users WHERE role='hr' AND active=1").all().map((r) => r.id);
-function ceoUser(db) {
-  const u = db.prepare("SELECT id FROM users WHERE role='ceo' AND active=1 ORDER BY id").get();
-  if (u) return u.id;
-  const emp = getSetting(db, "managers_approver_employee_id", null); // the managers' leave approver stands in until a CEO login exists
-  const v = emp && db.prepare("SELECT id FROM users WHERE employee_id=? AND active=1").get(emp);
-  return v ? v.id : null;
+const activeEmp = (db, id) => id && db.prepare("SELECT id FROM employees WHERE id=? AND status IN ('active','on_leave')").get(id) ? id : null;
+/** The CEO: the person with the CEO login, else the managers' leave approver (Settings). */
+function ceoEmployee(db) {
+  const u = db.prepare("SELECT employee_id FROM users WHERE role='ceo' AND active=1 AND employee_id IS NOT NULL ORDER BY id").get();
+  return activeEmp(db, u && u.employee_id) || activeEmp(db, getSetting(db, "managers_approver_employee_id", null));
 }
 /** The sender's manager: their direct manager, else their department's approver (never themself). */
-function managerUser(db, emp) {
+function managerEmployee(db, emp) {
   if (!emp) return null;
   const dept = emp.department_id && db.prepare("SELECT approver_employee_id FROM departments WHERE id=? AND active=1").get(emp.department_id);
-  for (const id of [emp.manager_employee_id, dept && dept.approver_employee_id]) {
-    if (!id || id === emp.id) continue;
-    const u = db.prepare("SELECT u.id FROM users u JOIN employees e ON e.id=u.employee_id WHERE u.employee_id=? AND u.active=1 AND e.status IN ('active','on_leave')").get(id);
-    if (u) return u.id;
-  }
+  for (const id of [emp.manager_employee_id, dept && dept.approver_employee_id]) if (id && id !== emp.id && activeEmp(db, id)) return id;
   return null;
 }
+const userOfEmployee = (db, empId) => { const u = empId && db.prepare("SELECT id FROM users WHERE employee_id=? AND active=1").get(empId); return u ? u.id : null; };
 
 /** Sender, the person it went to (or any HR member for HR messages), and Admin. */
 export function canReadVoice(sess, m) {
   const u = sess.user;
-  return u.role === "admin" || m.user_id === u.id || (m.to_kind === "hr" ? u.role === "hr" : m.to_user_id === u.id);
+  return u.role === "admin" || m.user_id === u.id || isTo(sess, m);
 }
-const isRecipient = (sess, m) => sess.user.id !== m.user_id && (m.to_kind === "hr" ? sess.user.role === "hr" : m.to_user_id === sess.user.id);
-const recipientsOf = (db, m) => (m.to_kind === "hr" ? hrUsers(db) : [m.to_user_id]).filter((id) => id && id !== m.user_id);
+const isTo = (sess, m) => (m.to_kind === "hr" ? sess.user.role === "hr" : (!!m.to_employee_id && m.to_employee_id === sess.user.employee_id) || (!!m.to_user_id && m.to_user_id === sess.user.id));
+const isRecipient = (sess, m) => sess.user.id !== m.user_id && isTo(sess, m);
+const recipientsOf = (db, m) => (m.to_kind === "hr" ? hrUsers(db) : [userOfEmployee(db, m.to_employee_id) || m.to_user_id]).filter((id) => id && id !== m.user_id);
 
 const withNames = `SELECT m.*, e.name_ar, e.name_en, e.emp_no, tu.username to_username, te.name_ar to_name_ar, te.name_en to_name_en,
     (SELECT count(*) FROM voice_replies r WHERE r.message_id=m.id) replies
-  FROM voice_messages m LEFT JOIN employees e ON e.id=m.employee_id LEFT JOIN users tu ON tu.id=m.to_user_id LEFT JOIN employees te ON te.id=tu.employee_id`;
+  FROM voice_messages m LEFT JOIN employees e ON e.id=m.employee_id LEFT JOIN employees te ON te.id=m.to_employee_id LEFT JOIN users tu ON tu.employee_id=te.id`;
 
 /** Messages waiting for this person to open them (status "new"). */
 export function voiceInboxCount(db, sess) {
   const u = sess.user;
   if (u.role === "admin") return 0; // Admin can read everything but isn't a recipient
-  return db.prepare(`SELECT count(*) n FROM voice_messages WHERE status='new' AND user_id<>? AND (${u.role === "hr" ? "to_kind='hr' OR " : ""}to_user_id=?)`).get(u.id, u.id).n;
+  return db.prepare(`SELECT count(*) n FROM voice_messages WHERE status='new' AND user_id<>? AND (${u.role === "hr" ? "to_kind='hr' OR " : ""}(to_kind<>'hr' AND (to_employee_id=? OR to_user_id=?)))`).get(u.id, u.employee_id || -1, u.id).n;
 }
 
 export function registerVoice(api, ctx) {
@@ -62,14 +59,17 @@ export function registerVoice(api, ctx) {
   };
 
   // where this person can send: their manager (if they have one with a login), HR, the CEO
+  // where this person can send: their manager, HR (anyone with the HR role), the CEO; "missing" says what still needs setting up
   api.get("/api/voice/recipients", (req, res) => {
-    const sess = req.sess, out = [];
-    const mgr = managerUser(db, sess.employee);
-    if (mgr && mgr !== sess.user.id) out.push({ kind: "manager", ...db.prepare("SELECT u.username, e.name_ar, e.name_en FROM users u LEFT JOIN employees e ON e.id=u.employee_id WHERE u.id=?").get(mgr) });
-    if (hrUsers(db).some((id) => id !== sess.user.id)) out.push({ kind: "hr" });
-    const ceo = ceoUser(db);
-    if (ceo && ceo !== sess.user.id) out.push({ kind: "ceo", ...db.prepare("SELECT u.username, e.name_ar, e.name_en FROM users u LEFT JOIN employees e ON e.id=u.employee_id WHERE u.id=?").get(ceo) });
-    send(req, res, 200, { items: out, categories: CATEGORIES });
+    const sess = req.sess, out = [], missing = [];
+    const name = (empId) => db.prepare("SELECT name_ar, name_en FROM employees WHERE id=?").get(empId);
+    const own = sess.employee && sess.employee.id;
+    const mgr = managerEmployee(db, sess.employee);
+    if (mgr && mgr !== own) out.push({ kind: "manager", ...name(mgr) }); else missing.push("manager");
+    if (hrUsers(db).some((id) => id !== sess.user.id)) out.push({ kind: "hr" }); else missing.push("hr");
+    const ceo = ceoEmployee(db);
+    if (ceo && ceo !== own) out.push({ kind: "ceo", ...name(ceo) }); else if (!ceo) missing.push("ceo");
+    send(req, res, 200, { items: out, missing, categories: CATEGORIES });
   });
 
   api.post("/api/voice", async (req, res) => {
@@ -81,17 +81,18 @@ export function registerVoice(api, ctx) {
     if (!subject) throw bad("subject", "A subject is required");
     if (!body) throw bad("body", "Please write your message");
     const to = b.to;
-    let toUser = null;
-    if (to === "manager") toUser = managerUser(db, sess.employee);
-    else if (to === "ceo") toUser = ceoUser(db);
+    let toEmp = null;
+    if (to === "manager") toEmp = managerEmployee(db, sess.employee);
+    else if (to === "ceo") toEmp = ceoEmployee(db);
     else if (to !== "hr") throw bad("to", "Choose who receives it");
-    if (to !== "hr" && (!toUser || toUser === sess.user.id)) throw bad("to", "Nobody can receive this yet — choose another recipient");
+    if (to !== "hr" && (!toEmp || toEmp === sess.employee.id)) throw bad("to", "Nobody can receive this yet — choose another recipient");
+    const toUser = to === "hr" ? null : userOfEmployee(db, toEmp);
     if (to === "hr" && !hrUsers(db).some((id) => id !== sess.user.id)) throw bad("to", "There is no HR login yet — choose another recipient");
     const m = tx(db, () => {
-      const r = db.prepare("INSERT INTO voice_messages(employee_id,user_id,category,subject,body,to_kind,to_user_id,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'new',?,?)")
-        .run(sess.employee.id, sess.user.id, b.category, subject, body, to, toUser, nowIso(), nowIso());
+      const r = db.prepare("INSERT INTO voice_messages(employee_id,user_id,category,subject,body,to_kind,to_user_id,to_employee_id,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,'new',?,?)")
+        .run(sess.employee.id, sess.user.id, b.category, subject, body, to, toUser, toEmp, nowIso(), nowIso());
       const row = db.prepare("SELECT * FROM voice_messages WHERE id=?").get(r.lastInsertRowid);
-      audit(db, sess.user.id, "voice.send", "voice", row.id, null, { category: row.category, to_kind: row.to_kind, to_user_id: row.to_user_id }); // content stays out of the log
+      audit(db, sess.user.id, "voice.send", "voice", row.id, null, { category: row.category, to_kind: row.to_kind, to_employee_id: row.to_employee_id }); // content stays out of the log
       return row;
     });
     const [ar, en] = NAMES[m.category], e = sess.employee;
@@ -106,7 +107,7 @@ export function registerVoice(api, ctx) {
     if (box === "sent") { where.push("m.user_id=?"); args.push(u.id); }
     else if (box === "inbox") {
       if (u.role === "admin") where.push("m.user_id<>?"), args.push(u.id); // Admin (developer) can see every message
-      else { where.push(`m.user_id<>? AND (${u.role === "hr" ? "m.to_kind='hr' OR " : ""}m.to_user_id=?)`); args.push(u.id, u.id); }
+      else { where.push(`m.user_id<>? AND (${u.role === "hr" ? "m.to_kind='hr' OR " : ""}(m.to_kind<>'hr' AND (m.to_employee_id=? OR m.to_user_id=?)))`); args.push(u.id, u.employee_id || -1, u.id); }
     } else throw bad("box", "unknown box");
     const status = req.query.get("status");
     if (status) { if (!STATUSES.includes(status)) throw bad("status", "unknown status"); where.push("m.status=?"); args.push(status); }

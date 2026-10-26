@@ -5,8 +5,15 @@ import { h, field, toast, errText, showFieldError, backLink, empty } from "../ui
 
 export async function render(el, _p, { me, query }) {
   if (!me.employee) { el.append(empty(t("no_profile"))); return; }
-  const { items: recipients, categories } = await api.get("/api/voice/recipients");
-  if (!recipients.length) { el.append(backLink("#/voice"), empty(t("voice_no_recipients"))); return; }
+  const { items: recipients, categories, missing = [] } = await api.get("/api/voice/recipients");
+  // nobody set up yet: say exactly what Admin/HR still need to set
+  if (!recipients.length) {
+    el.append(backLink("#/voice"), h("h1", null, t("voice_new")),
+      h("section", { class: "card" }, h("h2", null, t("voice_no_recipients")),
+        h("ul", null, missing.map((k) => h("li", null, t("voice_missing_" + k)))),
+        h("p", { class: "sub" }, t("voice_ask_admin"))));
+    return;
+  }
   let category = categories.includes(query.get("category")) ? query.get("category") : "suggestion";
   let to = recipients[0].kind;
   const catBox = h("div", { class: "seg", role: "group", "aria-label": t("kind") });
