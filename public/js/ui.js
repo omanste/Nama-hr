@@ -1,5 +1,5 @@
 // Small DOM helpers shared by every page.
-import { t, getLang } from "./i18n.js";
+import { t, getLang, has } from "./i18n.js";
 
 /** h("div", {class:"x", onclick: fn}, "text", child, [more]) */
 export function h(tag, attrs, ...children) {
@@ -50,7 +50,16 @@ export function toast(msg, kind = "ok") {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove("show"), 3200);
 }
-export const errText = (e) => (e && e.status === 0 ? t("offline") : (e && e.message) || t("error"));
+/** Localised text for an API error: by error code when we have one, else the server's message. */
+export const errText = (e) => {
+  if (!e) return t("error");
+  if (e.status === 0) return t("offline");
+  if (e.error && has("err_" + e.error)) {
+    const extra = /\(([^)]*\d[^)]*)\)/.exec(e.message || "");
+    return t("err_" + e.error) + (extra && e.error !== "invalid" ? ` (${extra[1]})` : "");
+  }
+  return e.message || t("error");
+};
 
 /** Small confirmation dialog. With {input:"label"} it returns the typed text, else true; null when cancelled. */
 export function confirm(message, { input = null, required = false, okText = t("confirm"), danger = false } = {}) {

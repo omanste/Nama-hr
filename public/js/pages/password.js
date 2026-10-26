@@ -1,6 +1,6 @@
 import { api } from "../api.js";
 import { t } from "../i18n.js";
-import { h, toast } from "../ui.js";
+import { h, toast, errText } from "../ui.js";
 import { loadMe, state } from "../app.js";
 
 export async function render(el) {
@@ -20,7 +20,7 @@ export async function render(el) {
       await loadMe();
       toast(t("password_saved"));
       location.hash = "#/";
-    } catch (e2) { err.textContent = e2.message || t("error"); btn.disabled = false; }
+    } catch (e2) { err.textContent = errText(e2); btn.disabled = false; }
   } },
     h("div", { class: "field" }, h("label", { for: "pc" }, t("current_password")), cur),
     h("div", { class: "field" }, h("label", { for: "pn" }, t("new_password")), nw),

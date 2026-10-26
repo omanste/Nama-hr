@@ -125,6 +125,16 @@ const D = {
   add_user: ["إضافة مستخدم", "Add user"], link_employee: ["ربط بموظف", "Linked employee"], backup_download: ["تنزيل نسخة احتياطية", "Download backup"],
   audit_title: ["سجل التغييرات", "Audit log"], at: ["الوقت", "When"], actor: ["بواسطة", "By"], action: ["الإجراء", "Action"], details: ["التفاصيل", "Details"],
   load_more: ["تحميل المزيد", "Load more"],
+  // server error codes
+  err_invalid: ["قيمة غير صالحة", "Invalid value"], err_duplicate_emp_no: ["الرقم الوظيفي مستخدم", "This employee ID is already used"],
+  err_duplicate_username: ["اسم المستخدم مستخدم", "This username is taken"], err_has_login: ["للموظف حساب دخول بالفعل", "This employee already has a login"],
+  err_forbidden: ["ليست لديك صلاحية", "You do not have permission"], err_not_found: ["غير موجود", "Not found"],
+  err_overlap: ["تتداخل التواريخ مع طلب آخر", "These dates overlap another request"], err_insufficient_balance: ["يتجاوز رصيدك المتاح", "This exceeds your available balance"],
+  err_not_eligible_yet: ["الإجازة غير متاحة قبل إكمال ٦ أشهر من التعيين", "Leave is available after 6 months of service"],
+  err_not_pending: ["تم البت في هذا الطلب مسبقاً", "This request has already been decided"], err_not_cancellable: ["لا يمكن إلغاء هذا الطلب", "This request cannot be cancelled"],
+  err_unsupported_type: ["نوع الملف غير مدعوم (PDF أو صورة)", "Unsupported file type (PDF or image)"], err_too_large: ["الملف كبير جداً (الحد ١٠ ميجابايت)", "File too large (10 MB max)"],
+  err_weak_password: ["كلمة المرور قصيرة (٨ أحرف على الأقل)", "Password too short (at least 8 characters)"], err_wrong_password: ["كلمة المرور الحالية غير صحيحة", "Current password is wrong"],
+  err_same_password: ["اختر كلمة مرور مختلفة", "Choose a different password"], err_no_profile: ["حسابك غير مرتبط بملف موظف", "Your login is not linked to a staff profile"],
 };
 
 let lang = "ar";
