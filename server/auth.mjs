@@ -34,12 +34,15 @@ const usable = (db, u) => {
   return !!e && e.status !== "resigned" && e.status !== "terminated";
 };
 
+const DUMMY = (() => { const h = hashPassword(crypto.randomBytes(12).toString("hex")); return { pw_hash: h.hash, pw_salt: h.salt, pw_iter: h.iter }; })();
+
 export const providers = {
   local: {
     id: "local",
     login(db, { username, password }) {
       const u = db.prepare("SELECT * FROM users WHERE username=? AND auth_provider='local'").get(String(username || "").trim());
-      return u && usable(db, u) && verifyPassword(password, u) ? u : null;
+      if (!u) { verifyPassword(password, DUMMY); return null; } // same work for unknown names, so timing doesn't reveal them
+      return usable(db, u) && verifyPassword(password, u) ? u : null;
     },
   },
   // microsoft: { id:"microsoft", startLogin(req,res), finishLogin(req) → {externalId,email} } — phase 2
@@ -87,7 +90,8 @@ export function registerAuth(api, ctx) {
   ctx.sessionMs = Number(env.SESSION_HOURS || 12) * 3600e3;
   ensureAdmin(db, env);
   const fails = new Map();
-  const ipOf = (req) => String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+  // behind Dokploy/Traefik the proxy appends the real client address last; earlier entries can be forged
+  const ipOf = (req) => String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",").pop().trim();
 
   ctx.guard = (req, res, pathname) => {
     if (PUBLIC.has(pathname)) return true;
@@ -100,7 +104,9 @@ export function registerAuth(api, ctx) {
 
   api.post("/api/login", async (req, res) => {
     const body = await readJson(req);
-    const key = `${String(body.username || "").trim().toLowerCase()}|${ipOf(req)}`;
+    // counted per username, so changing address doesn't reset it
+    const key = String(body.username || "").trim().toLowerCase();
+    if (fails.size > 5000) for (const [k, v] of fails) if (v.until < Date.now()) fails.delete(k);
     const f = fails.get(key);
     if (f && f.n >= 6 && f.until > Date.now()) return fail(req, res, 429, "locked", "Too many attempts. Try again in 10 minutes.");
     const user = providers.local.login(db, body);
@@ -127,9 +133,11 @@ export function registerAuth(api, ctx) {
 
   api.get("/api/me", (req, res) => {
     const s = req.sess;
+    const today = ctx.today(), own = s.employee ? s.employee.id : -1;
     const pendingApprovals = s.user.role === "admin"
-      ? db.prepare("SELECT count(*) n FROM leave_requests WHERE status='pending'").get().n
-      : db.prepare("SELECT count(*) n FROM leave_requests WHERE status='pending' AND approver_user_id=?").get(s.user.id).n;
+      ? db.prepare("SELECT count(*) n FROM leave_requests WHERE status='pending' AND employee_id<>?").get(own).n
+      : db.prepare(`SELECT count(*) n FROM leave_requests WHERE status='pending' AND employee_id<>? AND (approver_user_id=?
+          OR approver_user_id IN (SELECT approver_user_id FROM approver_cover WHERE deputy_user_id=? AND start_date<=? AND end_date>=?))`).get(own, s.user.id, s.user.id, today, today).n;
     const pendingCapReviews = ["hr", "admin"].includes(s.user.role) ? db.prepare("SELECT count(*) n FROM cap_reviews WHERE status='pending'").get().n : 0;
     send(req, res, 200, { user: publicUser(s.user), employee: s.employee, isApprover: s.isApprover, pendingApprovals, pendingCapReviews, env: ctx.appEnv });
   });

@@ -48,22 +48,39 @@ const ACTIVE = "('pending','approved')";
 const dmy = (iso) => iso.split("-").reverse().join("/");
 const err = (status, code, message, field) => Object.assign(new HttpError(status, code, message), field ? { field } : {});
 
-export function adminUserId(db) {
-  const r = db.prepare("SELECT id FROM users WHERE role='admin' AND active=1 ORDER BY id LIMIT 1").get();
+export function adminUserId(db, notUserId = 0) {
+  const r = db.prepare("SELECT id FROM users WHERE role='admin' AND active=1 AND id<>? ORDER BY id LIMIT 1").get(notUserId);
   return r ? r.id : null;
 }
 
-export function routeFor(db, emp) {
-  const role = (db.prepare("SELECT role FROM users WHERE employee_id=?").get(emp.id) || {}).role || "staff";
-  return approverFor({ employee: emp, role }, {
+/** The deputy covering for an approver on a date, if any. */
+export function deputyOf(db, approverUserId, date) {
+  const r = db.prepare(`SELECT c.deputy_user_id id FROM approver_cover c JOIN users u ON u.id=c.deputy_user_id
+    WHERE c.approver_user_id=? AND c.start_date<=? AND c.end_date>=? AND u.active=1 ORDER BY c.id DESC LIMIT 1`).get(approverUserId, date, date);
+  return r ? r.id : null;
+}
+
+/** May this session approve/reject this request? Never one's own; the stored approver, their deputy while covering, or Admin. */
+export function mayDecide(db, sess, r, today) {
+  if (sess.employee && sess.employee.id === r.employee_id) return false;
+  if (sess.user.role === "admin" || r.approver_user_id === sess.user.id) return true;
+  return deputyOf(db, r.approver_user_id, today) === sess.user.id;
+}
+
+export function routeFor(db, emp, today) {
+  const user = db.prepare("SELECT id, role FROM users WHERE employee_id=?").get(emp.id) || {};
+  const route = approverFor({ employee: emp, role: user.role || "staff" }, {
     departments: db.prepare("SELECT id, approver_employee_id FROM departments WHERE active=1").all(),
     managersApproverEmployeeId: getSetting(db, "managers_approver_employee_id", null),
     userIdByEmployee: (id) => {
       const u = db.prepare("SELECT u.id FROM users u JOIN employees e ON e.id=u.employee_id WHERE u.employee_id=? AND u.active=1 AND e.status IN ('active','on_leave')").get(id);
       return u ? u.id : null;
     },
-    adminUserId: adminUserId(db),
+    adminUserId: adminUserId(db, user.id || 0),
   });
+  if (route.userId && route.userId === user.id) route.userId = adminUserId(db, user.id); // never one's own approver
+  const deputy = today && route.userId && deputyOf(db, route.userId, today);
+  return deputy && deputy !== user.id ? { userId: deputy, reason: "cover" } : route;
 }
 
 /** Validate a submission; returns {type, start_date, end_date, early_time, minutes}. */
@@ -136,7 +153,7 @@ function describe(r, emp) {
 export function registerRequests(api, ctx) {
   const { db } = ctx;
   const forbidden = () => new HttpError(403, "forbidden", "You do not have permission for this");
-  const canSee = (sess, r) => r.approver_user_id === sess.user.id || can(sess, "requests.viewAll") || canViewEmployee(db, sess, getEmployee(db, r.employee_id));
+  const canSee = (sess, r) => r.approver_user_id === sess.user.id || deputyOf(db, r.approver_user_id, ctx.today()) === sess.user.id || can(sess, "requests.viewAll") || canViewEmployee(db, sess, getEmployee(db, r.employee_id));
 
   const withNames = `SELECT r.*, e.emp_no, e.name_ar, e.name_en, e.department_id,
       (SELECT coalesce(sum(minutes),0) FROM leave_ledger l WHERE l.employee_id=r.employee_id) balance,
@@ -150,7 +167,7 @@ export function registerRequests(api, ctx) {
     const emp = sess.employee;
     const r = tx(db, () => {
       const v = validateRequest(db, emp, body, ctx.today());
-      const route = routeFor(db, emp);
+      const route = routeFor(db, emp, ctx.today());
       const ins = db.prepare(`INSERT INTO leave_requests(employee_id,type,start_date,end_date,early_time,minutes,reason,status,approver_user_id,route_reason,created_by,created_at,relation,event_date,comp_choice)
         VALUES(?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?)`).run(emp.id, v.type, v.start_date, v.end_date, v.early_time, v.minutes, String(body.reason || "").slice(0, 1000) || null, route.userId, route.reason, sess.user.id, nowIso(), v.relation, v.event_date, v.comp_choice);
       const row = getReq(db, ins.lastInsertRowid);
@@ -169,7 +186,13 @@ export function registerRequests(api, ctx) {
     const scope = req.query.get("scope") || "mine";
     const where = [], args = [];
     if (scope === "mine") { where.push("r.employee_id=?"); args.push(sess.employee ? sess.employee.id : -1); }
-    else if (scope === "approvals") { where.push("r.status='pending'"); if (sess.user.role !== "admin") { where.push("r.approver_user_id=?"); args.push(sess.user.id); } }
+    else if (scope === "approvals") {
+      where.push("r.status='pending'", "r.employee_id<>?"); args.push(sess.employee ? sess.employee.id : -1);
+      if (sess.user.role !== "admin") {
+        where.push(`(r.approver_user_id=? OR r.approver_user_id IN (SELECT approver_user_id FROM approver_cover WHERE deputy_user_id=? AND start_date<=? AND end_date>=?))`);
+        args.push(sess.user.id, sess.user.id, ctx.today(), ctx.today());
+      }
+    }
     else if (scope === "team") {
       const depts = approvedDepartments(db, sess.employee && sess.employee.id);
       if (!depts.length) throw forbidden();
@@ -200,7 +223,7 @@ export function registerRequests(api, ctx) {
     }
     const deducted = -db.prepare("SELECT coalesce(sum(minutes),0) n FROM leave_ledger WHERE request_id=?").get(r.id).n;
     send(req, res, 200, { request: r, events, approver, files, sickPay, deducted, earlyFreeHours: Number(getSetting(db, "early_free_hours_month", 4)), needsProof: !!TYPES[r.type].proof && !files.length,
-      canDecide: r.status === "pending" && can(req.sess, "request.decide", r), canPostpone: r.status === "pending" && r.type === "annual" && can(req.sess, "request.decide", r) });
+      canDecide: r.status === "pending" && mayDecide(db, req.sess, r, ctx.today()), canPostpone: r.status === "pending" && r.type === "annual" && mayDecide(db, req.sess, r, ctx.today()) });
   });
 
   async function decide(req, res, action) {
@@ -213,7 +236,7 @@ export function registerRequests(api, ctx) {
       const emp = getEmployee(db, r.employee_id);
       const isOwner = sess.employee && sess.employee.id === r.employee_id;
       if (action === "approve" || action === "reject") {
-        if (!can(sess, "request.decide", r)) throw forbidden();
+        if (!mayDecide(db, sess, r, ctx.today())) throw forbidden();
         if (r.status !== "pending") throw err(409, "not_pending", "This request has already been decided");
         if (action === "reject" && !comment) throw err(400, "invalid", "Please give a reason for the rejection", "comment");
         if (action === "approve") {
@@ -271,7 +294,7 @@ export function registerRequests(api, ctx) {
     const out = tx(db, () => {
       const r = getReq(db, req.params.id);
       if (!r) throw new HttpError(404, "not_found", "Request not found");
-      if (!can(sess, "request.decide", r)) throw forbidden();
+      if (!mayDecide(db, sess, r, ctx.today())) throw forbidden();
       if (r.status !== "pending" || r.type !== "annual") throw err(409, "not_pending", "Only a pending annual leave can be postponed");
       if (!isIsoDate(start) || start <= r.start_date) throw err(400, "invalid", "Choose a later start date", "start");
       if (start > addMonths(r.start_date, 6)) throw err(400, "too_late", "Annual leave can be postponed by at most 6 months", "start");
@@ -293,6 +316,71 @@ export function registerRequests(api, ctx) {
     notify(ctx, [ownerUser(db, out.r.employee_id)].filter((id) => id && id !== sess.user.id),
       { title_ar: "تم تأجيل إجازتك والموافقة عليها", title_en: "Your leave was postponed and approved", body_ar: d.ar, body_en: d.en, link: `#/leave/${out.r.id}` });
     send(req, res, 200, { request: out.r });
+  });
+
+  // ---- approver cover: an approver (or Admin) names a deputy for a period
+  const coverRow = `SELECT c.*, ua.username approver_username, ea.name_ar approver_name_ar, ea.name_en approver_name_en,
+      ud.username deputy_username, ed.name_ar deputy_name_ar, ed.name_en deputy_name_en
+    FROM approver_cover c JOIN users ua ON ua.id=c.approver_user_id LEFT JOIN employees ea ON ea.id=ua.employee_id
+    JOIN users ud ON ud.id=c.deputy_user_id LEFT JOIN employees ed ON ed.id=ud.employee_id`;
+  const isApproverUser = (sess) => sess.user.role === "admin" || sess.user.role === "ceo" || sess.isApprover
+    || (sess.employee && getSetting(db, "managers_approver_employee_id", null) === sess.employee.id);
+  api.get("/api/cover", (req, res) => {
+    const all = req.sess.user.role === "admin";
+    const items = db.prepare(`${coverRow} WHERE c.end_date>=? ${all ? "" : "AND (c.approver_user_id=? OR c.deputy_user_id=?)"} ORDER BY c.start_date`)
+      .all(ctx.today(), ...(all ? [] : [req.sess.user.id, req.sess.user.id]));
+    // people who can be named deputy: active logins other than me
+    const candidates = isApproverUser(req.sess) ? db.prepare(`SELECT u.id, u.username, e.name_ar, e.name_en FROM users u LEFT JOIN employees e ON e.id=u.employee_id
+      WHERE u.active=1 AND u.id<>? AND (e.id IS NULL OR e.status IN ('active','on_leave')) ORDER BY coalesce(e.name_ar,u.username)`).all(req.sess.user.id) : undefined;
+    send(req, res, 200, { items, candidates });
+  });
+  api.post("/api/cover", async (req, res) => {
+    const sess = req.sess;
+    if (!isApproverUser(sess)) throw forbidden();
+    const b = await readJson(req);
+    const approverId = sess.user.role === "admin" && b.approver_user_id ? Number(b.approver_user_id) : sess.user.id;
+    const deputyId = Number(b.deputy_user_id);
+    if (!deputyId || deputyId === approverId) throw err(400, "invalid", "Choose someone else as deputy", "deputy_user_id");
+    if (!db.prepare("SELECT 1 FROM users WHERE id=? AND active=1").get(deputyId)) throw err(400, "invalid", "Unknown deputy", "deputy_user_id");
+    if (!isIsoDate(b.start) || !isIsoDate(b.end) || b.end < b.start) throw err(400, "invalid", "Choose valid dates", "end");
+    if (daysBetweenInclusive(b.start, b.end) > 120) throw err(400, "invalid", "At most 120 days", "end");
+    const id = tx(db, () => {
+      const r = db.prepare("INSERT INTO approver_cover(approver_user_id,deputy_user_id,start_date,end_date,created_by,created_at) VALUES(?,?,?,?,?,?)")
+        .run(approverId, deputyId, b.start, b.end, sess.user.id, nowIso());
+      audit(db, sess.user.id, "cover.create", "user", approverId, null, { deputyId, start: b.start, end: b.end });
+      return Number(r.lastInsertRowid);
+    });
+    const cover = db.prepare(`${coverRow} WHERE c.id=?`).get(id);
+    notify(ctx, [deputyId], { title_ar: "تم تعيينك نائباً للموافقات", title_en: "You are covering approvals", body_ar: `${cover.approver_name_ar || cover.approver_username}: ${dmy(b.start)} – ${dmy(b.end)}`, body_en: `${cover.approver_name_en || cover.approver_name_ar || cover.approver_username}: ${dmy(b.start)} – ${dmy(b.end)}`, link: "#/approvals" });
+    send(req, res, 201, { cover });
+  });
+  api.delete("/api/cover/:id", (req, res) => {
+    const c = db.prepare("SELECT * FROM approver_cover WHERE id=?").get(Number(req.params.id));
+    if (!c) throw new HttpError(404, "not_found", "Not found");
+    if (req.sess.user.role !== "admin" && c.approver_user_id !== req.sess.user.id) throw forbidden();
+    db.prepare("DELETE FROM approver_cover WHERE id=?").run(c.id);
+    audit(db, req.sess.user.id, "cover.delete", "user", c.approver_user_id, c, null);
+    send(req, res, 200, { ok: true });
+  });
+
+  // ---- team calendar: who is off in a month (HR, Accounts, CEO, Admin: everyone; managers: their departments)
+  api.get("/api/calendar", (req, res) => {
+    const sess = req.sess;
+    const month = req.query.get("month") || ctx.today().slice(0, 7);
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw err(400, "invalid", "month must be YYYY-MM", "month");
+    const where = [], args = [];
+    if (!can(sess, "requests.viewAll")) {
+      const depts = approvedDepartments(db, sess.employee && sess.employee.id);
+      if (!depts.length) throw forbidden();
+      where.push(`e.department_id IN (${depts.map(() => "?").join(",")})`); args.push(...depts);
+    }
+    const first = `${month}-01`, last = addDays(addMonths(first, 1), -1);
+    const items = db.prepare(`SELECT r.id, r.employee_id, r.type, r.status, r.start_date, r.end_date, e.name_ar, e.name_en, e.emp_no, e.department_id
+      FROM leave_requests r JOIN employees e ON e.id=r.employee_id
+      WHERE r.status IN ('pending','approved') AND r.type NOT IN ('early','comp_day') AND r.start_date<=? AND r.end_date>=? ${where.length ? "AND " + where.join(" AND ") : ""}
+      ORDER BY r.start_date, e.name_ar`).all(last, first, ...args);
+    const holidays = getSetting(db, "official_holidays", []).filter((x) => x.date >= first && x.date <= last);
+    send(req, res, 200, { month, items, holidays });
   });
 
   // Attachments on a request (e.g. a medical note for sick leave): the requester, HR or Admin.

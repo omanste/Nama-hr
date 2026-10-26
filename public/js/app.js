@@ -24,6 +24,7 @@ const ROUTES = [
   ["/users", "users"],
   ["/audit", "audit"],
   ["/cap-reviews", "cap-reviews"],
+  ["/calendar", "calendar"],
   ["/menu", "menu"],
 ].map(([pattern, page, opts = {}]) => {
   const keys = [];
@@ -46,7 +47,7 @@ function navItems() {
   const items = [["#/", "nav_home", "home"]];
   if (me.employee) items.push(["#/leave", "nav_leave", "leave"], ["#/me", "nav_me", "user"]);
   if (can.approve()) items.push(["#/approvals", "nav_approvals", "check", me.pendingApprovals]);
-  if (can.staffList()) items.push(["#/staff", "nav_staff", "people"]);
+  if (can.staffList()) items.push(["#/staff", "nav_staff", "people"], ["#/calendar", "nav_calendar", "leave"]);
   if (me.isApprover && !can.viewAll()) items.push(["#/team", "team_requests", "list"]);
   if (can.viewAll()) items.push(["#/requests", "nav_requests", "list"]);
   if (can.edit()) items.push(["#/cap-reviews", "nav_cap_reviews", "clock", me.pendingCapReviews], ["#/import", "nav_import", "upload"]);

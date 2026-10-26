@@ -140,6 +140,9 @@ export function registerEmployees(api, ctx) {
     const cur = getEmployee(db, req.params.id);
     if (!cur) throw new HttpError(404, "not_found", "Employee not found");
     const values = cleanEmployee(db, await readJson(req), cur);
+    if (["resigned", "terminated"].includes(values.status) && req.sess.user.role !== "admin"
+      && db.prepare("SELECT 1 FROM users WHERE employee_id=? AND role IN ('admin','ceo')").get(cur.id))
+      throw new HttpError(403, "forbidden", "Only Admin can end the service of an Admin or CEO");
     const emp = tx(db, () => {
       const cols = Object.keys(values);
       if (cols.length) db.prepare(`UPDATE employees SET ${cols.map((c) => `${c}=?`).join(",")},updated_at=? WHERE id=?`).run(...cols.map((c) => values[c]), nowIso(), cur.id);

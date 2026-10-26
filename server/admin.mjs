@@ -119,7 +119,7 @@ export function registerAdmin(api, ctx) {
     if (!cur) throw new HttpError(404, "not_found", "User not found");
     const b = await readJson(req);
     if ("role" in b && !ROLES.includes(b.role)) throw invalid("role", "unknown role");
-    if (cur.id === req.sess.user.id && (b.active === false || (b.role && b.role !== "admin"))) throw invalid("role", "You cannot remove your own admin access");
+    if (cur.id === req.sess.user.id && (("active" in b && !b.active) || (b.role && b.role !== "admin"))) throw invalid("role", "You cannot remove your own admin access");
     tx(db, () => {
       if ("role" in b) db.prepare("UPDATE users SET role=? WHERE id=?").run(b.role, cur.id);
       if ("active" in b) { db.prepare("UPDATE users SET active=? WHERE id=?").run(b.active ? 1 : 0, cur.id); if (!b.active) db.prepare("DELETE FROM sessions WHERE user_id=?").run(cur.id); }

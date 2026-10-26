@@ -59,6 +59,9 @@ const MIGRATIONS = [
      reason TEXT, decided_by INTEGER, decided_at TEXT, created_at TEXT NOT NULL, UNIQUE(employee_id, year_start));`,
   // 4: holiday work compensated as a day off ("leave") or payment ("pay") — the employee chooses
   `ALTER TABLE leave_requests ADD COLUMN comp_choice TEXT;`,
+  // 5: an approver names a deputy for a period (e.g. while on leave)
+  `CREATE TABLE approver_cover(id INTEGER PRIMARY KEY, approver_user_id INTEGER NOT NULL REFERENCES users(id), deputy_user_id INTEGER NOT NULL REFERENCES users(id),
+     start_date TEXT NOT NULL, end_date TEXT NOT NULL, created_by INTEGER, created_at TEXT NOT NULL);`,
 ];
 
 export function openDb(dataDir) {
