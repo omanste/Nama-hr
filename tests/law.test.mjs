@@ -75,11 +75,11 @@ test("maternity: women only, 98 days, at most 14 before the birth", async () => 
 });
 
 test("bereavement: days depend on the relation; the widow's leave is for women", async () => {
-  assert.equal((await ask(man, { type: "bereavement", start: "2027-06-01", end: "2027-06-04", relation: "father" })).data.error, "too_long");
-  assert.equal((await ask(man, { type: "bereavement", start: "2027-06-01", end: "2027-06-03", relation: "father" })).status, 201);
-  assert.equal((await ask(man, { type: "bereavement", start: "2027-06-10", end: "2027-06-10" })).data.error, "invalid");
-  assert.equal((await ask(man, { type: "bereavement", start: "2027-06-10", end: "2027-06-20", relation: "husband_muslim" })).data.error, "not_entitled");
-  assert.equal((await ask(woman, { type: "bereavement", start: "2027-06-01", end: "2027-10-08", relation: "husband_muslim" })).status, 201);
+  assert.equal((await ask(man, { type: "bereavement", start: "2027-06-01", end: "2027-06-04", relation: "father", event_date: "2027-06-01" })).data.error, "too_long");
+  assert.equal((await ask(man, { type: "bereavement", start: "2027-06-01", end: "2027-06-03", relation: "father", event_date: "2027-06-01" })).status, 201);
+  assert.equal((await ask(man, { type: "bereavement", start: "2027-06-10", end: "2027-06-10", event_date: "2027-06-10" })).data.error, "invalid");
+  assert.equal((await ask(man, { type: "bereavement", start: "2027-06-10", end: "2027-06-20", relation: "husband_muslim", event_date: "2027-06-10" })).data.error, "not_entitled");
+  assert.equal((await ask(woman, { type: "bereavement", start: "2027-06-01", end: "2027-10-08", relation: "husband_muslim", event_date: "2027-06-01" })).status, 201);
 });
 
 test("Hajj: 15 days once, after a continuous year of service", async () => {
@@ -109,8 +109,8 @@ test("sick leave: medical certificate before approval, 182 days a year, pay band
 });
 
 test("unpaid child-care leave is for women; special unpaid leave for anyone", async () => {
-  assert.equal((await ask(man, { type: "childcare", start: "2028-01-01", end: "2028-02-01" })).data.error, "not_entitled");
-  assert.equal((await ask(woman, { type: "childcare", start: "2028-01-01", end: "2028-02-01" })).status, 201);
+  assert.equal((await ask(man, { type: "childcare", start: "2028-01-01", end: "2028-02-01", event_date: "2027-01-20" })).data.error, "not_entitled");
+  assert.equal((await ask(woman, { type: "childcare", start: "2028-01-01", end: "2028-02-01", event_date: "2027-01-20" })).status, 201);
   assert.equal((await ask(expat, { type: "unpaid", start: "2028-03-01", end: "2028-03-10" })).status, 201);
 });
 

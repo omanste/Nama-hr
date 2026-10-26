@@ -89,6 +89,8 @@ export function registerAdmin(api, ctx) {
     for (const k of ["ramadan_start", "ramadan_end"]) if (k in b && b[k] !== null && b[k] !== "" && !isIsoDate(b[k])) throw invalid(k, "must be a date");
     if ("ramadan_start" in b && b.ramadan_start === "") b.ramadan_start = null;
     if ("ramadan_end" in b && b.ramadan_end === "") b.ramadan_end = null;
+    const rs = "ramadan_start" in b ? b.ramadan_start : getSetting(db, "ramadan_start", null), re = "ramadan_end" in b ? b.ramadan_end : getSetting(db, "ramadan_end", null);
+    if (rs && re && re < rs) throw invalid("ramadan_end", "Ramadan ends after it starts");
     for (const k of Object.keys(b)) if (!allowed.includes(k)) throw invalid(k, `unknown setting ${k}`);
     if ("managers_approver_employee_id" in b && b.managers_approver_employee_id !== null && !getEmployee(db, b.managers_approver_employee_id)) throw invalid("managers_approver_employee_id", "unknown employee");
     if ("managers_approver_title" in b && !["ceo", "chairman"].includes(b.managers_approver_title)) throw invalid("managers_approver_title", "title must be ceo or chairman");

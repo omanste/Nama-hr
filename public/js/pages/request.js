@@ -47,7 +47,7 @@ export async function render(el, params, { me, can }) {
       r.type === "early" && d.deducted > 0 ? row("deducted_from_annual", t("hours", { n: d.deducted / 60 })) : null,
       r.type === "comp_day" ? row("comp_choice", t(r.comp_choice === "pay" ? "comp_pay" : "comp_leave")) : null,
       r.relation ? row(r.type === "patient_care" ? "patient_relation" : "relation", r.type === "bereavement" ? t("rel_" + r.relation) : r.relation) : null,
-      r.event_date ? row("birth_date", dmy(r.event_date)) : null,
+      r.event_date ? row(r.type === "bereavement" ? "death_date" : r.type === "childcare" ? "child_birth_date" : "birth_date", dmy(r.event_date)) : null,
       row("approver", d.approver ? `${nm(d.approver) || d.approver.username} · ${t("route_" + r.route_reason)}` : "—"),
       row("submitted_at", dateTime(r.created_at)),
       r.reason ? h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("reason")), h("dd", null, r.reason)) : null),

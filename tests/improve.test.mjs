@@ -28,7 +28,7 @@ test("an approver names a deputy for dates; new requests go to the deputy, who c
   const c = await tawfiq.c.post("/api/cover", { deputy_user_id: deputy.user.id, start: "2026-10-20", end: "2026-11-05" });
   assert.equal(c.status, 201);
   const fresh = await staff.c.post("/api/requests", { type: "annual", start: "2026-12-10", end: "2026-12-10" });
-  assert.equal(fresh.data.request.approver_user_id, deputy.user.id);
+  assert.equal(fresh.data.request.approver_user_id, tawfiq.user.id, "stays with the real approver");
   assert.equal(fresh.data.request.route_reason, "cover");
   const list = (await deputy.c.get("/api/requests?scope=approvals")).data.items.map((x) => x.id).sort();
   assert.deepEqual(list, [waiting.data.request.id, fresh.data.request.id].sort());
@@ -39,7 +39,8 @@ test("an approver names a deputy for dates; new requests go to the deputy, who c
   assert.ok(cand.some((x) => x.id === deputy.user.id) && !cand.some((x) => x.id === tawfiq.user.id));
   assert.equal((await staff.c.get("/api/cover")).data.candidates, undefined);
   assert.equal((await tawfiq.c.del(`/api/cover/${c.data.cover.id}`)).status, 200);
-  assert.equal((await deputy.c.post(`/api/requests/${fresh.data.request.id}/approve`, {})).status, 200, "a request routed to the deputy stays theirs");
+  assert.equal((await deputy.c.post(`/api/requests/${fresh.data.request.id}/approve`, {})).status, 403, "after the cover ends the deputy can't decide");
+  assert.equal((await tawfiq.c.post(`/api/requests/${fresh.data.request.id}/approve`, {})).status, 200, "the real approver can");
 });
 
 test("cover outside its dates does nothing", async () => {

@@ -83,6 +83,7 @@ export function registerCapReviews(api, ctx) {
       if (!r) throw new HttpError(404, "not_found", "Review not found");
       if (r.status !== "pending") throw new HttpError(409, "not_pending", "This review has already been decided");
       const emp = db.prepare("SELECT * FROM employees WHERE id=?").get(r.employee_id);
+      if (req.sess.employee && req.sess.employee.id === emp.id) throw new HttpError(403, "forbidden", "You can't decide your own balance review");
       let minutes = 0;
       if (decision === "forfeit") {
         minutes = Math.min(r.excess, cappedExcess(db, emp.id)); // never more than is over the cap today

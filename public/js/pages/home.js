@@ -9,7 +9,8 @@ export const balanceHero = (leave, { apply = true } = {}) => h("section", { clas
   h("div", { class: "facts" },
     fact("bal_remaining", leave.remaining), fact("bal_entitlement", leave.entitlement), fact("bal_carried", leave.carried),
     fact("bal_used", leave.used), fact("bal_pending", leave.pending), leave.extra ? fact("bal_extra", leave.extra) : null,
-    leave.adjustments ? fact("bal_adjustments", leave.adjustments) : null),
+    leave.adjustments ? fact("bal_adjustments", leave.adjustments) : null,
+    leave.encashed ? fact("bal_encashed", leave.encashed) : null),
   apply ? h("a", { class: "btn gold", href: "#/leave/new" }, t("apply_leave")) : null);
 const fact = (key, min) => h("div", null, h("b", null, num(daysOf(min))), h("span", null, t(key)));
 

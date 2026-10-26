@@ -7,6 +7,7 @@ import { can, canViewEmployee } from "./perm.mjs";
 import { audit } from "./audit.mjs";
 import { isIsoDate } from "./leave.mjs";
 import { getEmployee } from "./employees.mjs";
+import { deputyOf } from "./requests.mjs";
 
 export const MAX_FILE = 10 * 1024 * 1024;
 const IMAGES = ["image/jpeg", "image/png", "image/webp"];
@@ -54,7 +55,8 @@ export function registerFiles(api, ctx) {
     const f = db.prepare("SELECT * FROM files WHERE id=?").get(Number(req.params.id));
     if (!f) throw new HttpError(404, "not_found", "File not found");
     const emp = getEmployee(db, f.employee_id);
-    const approverOfRequest = f.request_id && (db.prepare("SELECT approver_user_id FROM leave_requests WHERE id=?").get(f.request_id) || {}).approver_user_id === req.sess.user.id;
+    const reqRow = f.request_id && db.prepare("SELECT * FROM leave_requests WHERE id=?").get(f.request_id);
+    const approverOfRequest = !!reqRow && (reqRow.approver_user_id === req.sess.user.id || deputyOf(db, reqRow.approver_user_id, ctx.today()) === req.sess.user.id);
     if (!approverOfRequest && !canViewEmployee(db, req.sess, emp)) throw forbidden();
     const p = path.join(ctx.dataDir, "uploads", String(f.id));
     if (!fs.existsSync(p)) throw new HttpError(404, "not_found", "File missing on disk");

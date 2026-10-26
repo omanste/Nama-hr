@@ -6,11 +6,11 @@ import { h, field, select, toast, errText, showFieldError, backLink, daysText, n
 // mirrors server/leave.mjs TYPES (the server enforces every limit; this only guides the form)
 const RULES = {
   annual: { range: true, deduct: true }, early: { hours: true }, sick: { range: true, proof: true }, emergency: { range: true, deduct: true },
-  bereavement: { range: true, proof: true, relation: "list" }, marriage: { range: true, proof: true, max: 3 },
+  bereavement: { range: true, proof: true, relation: "list", event: "death" }, marriage: { range: true, proof: true, max: 3 },
   paternity: { range: true, proof: true, max: 7, gender: "male", event: true }, maternity: { range: true, proof: true, max: 98, gender: "female", event: true },
   hajj: { range: true, proof: true, max: 15 }, exam: { range: true, proof: true, max: 15, omani: true },
   patient_care: { range: true, proof: true, max: 15, omani: true, relation: "text" },
-  childcare: { range: true, gender: "female", unpaid: true }, unpaid: { range: true, unpaid: true }, comp_day: {},
+  childcare: { range: true, gender: "female", unpaid: true, event: "child" }, unpaid: { range: true, unpaid: true }, comp_day: {},
 };
 const GROUPS = [["grp_main", ["annual", "early", "sick", "emergency", "comp_day"]], ["grp_special", ["bereavement", "marriage", "paternity", "maternity", "hajj", "exam", "patient_care"]], ["grp_unpaid", ["childcare", "unpaid"]]];
 const BEREAVEMENT = { wife: 10, son: 10, daughter: 10, father: 3, mother: 3, grandfather: 3, grandmother: 3, brother: 3, sister: 3, uncle: 2, aunt: 2, husband_muslim: 130, husband_other: 14 };
@@ -95,7 +95,7 @@ export async function render(el, _p, { me, query }) {
       ...(type === "comp_day" ? [field(t("worked_date"), date, { req: true }), field(t("comp_choice"), compChoice, { req: true })] : []),
       R.relation === "list" ? field(t("relation"), relList, { req: true }) : null,
       R.relation === "text" ? field(t("patient_relation"), relText, { req: true }) : null,
-      R.event ? field(t("birth_date"), birth, { req: true }) : null,
+      R.event ? field(t(R.event === "death" ? "death_date" : R.event === "child" ? "child_birth_date" : "birth_date"), birth, { req: true }) : null,
       deputySel && R.deduct && type !== "early" ? field(t("deputy"), deputySel, { req: true, hint: t("cover_hint") }) : null,
       field(t("reason_optional"), reason, { full: true }),
       R.proof ? field(type === "sick" ? t("medical_note") : t("proof"), proofFile, { full: true }) : null].filter(Boolean));

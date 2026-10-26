@@ -82,6 +82,11 @@ export function profile(db, sess, emp, today) {
   return out;
 }
 
+/** Nobody changes their own balance or decides their own case. */
+export function notSelf(sess, emp) {
+  if (sess.employee && sess.employee.id === emp.id) throw new HttpError(403, "forbidden", "You can't do this on your own record");
+}
+
 export function registerEmployees(api, ctx) {
   const { db } = ctx;
   const need = (sess, action) => { if (!can(sess, action)) throw new HttpError(403, "forbidden", "You do not have permission for this"); };
@@ -162,6 +167,7 @@ export function registerEmployees(api, ctx) {
   api.post("/api/employees/:id/adjust", async (req, res) => {
     need(req.sess, "ledger.adjust");
     const emp = load(req.sess, req.params.id);
+    notSelf(req.sess, emp);
     const { minutes, note } = await readJson(req);
     if (!Number.isInteger(minutes) || minutes === 0 || Math.abs(minutes) > 100 * DAY) throw bad("minutes", "Adjustment must be a non-zero whole number of minutes");
     if (!note || !String(note).trim()) throw bad("note", "A reason is required");
@@ -176,15 +182,19 @@ export function registerEmployees(api, ctx) {
   api.post("/api/employees/:id/encash", async (req, res) => {
     need(req.sess, "ledger.adjust");
     const emp = load(req.sess, req.params.id);
+    notSelf(req.sess, emp);
     const { days, consent_file_id, note } = await readJson(req);
     const doc = consent_file_id && db.prepare("SELECT * FROM files WHERE id=? AND employee_id=? AND doc_type='consent'").get(Number(consent_file_id), emp.id);
     if (!doc) throw Object.assign(new HttpError(409, "consent_required", "Upload the employee's signed consent (document type: consent) first"), { field: "consent_file_id" });
+    if (db.prepare("SELECT 1 FROM leave_ledger WHERE kind='encashment' AND file_id=?").get(doc.id))
+      throw Object.assign(new HttpError(409, "consent_used", "This consent was already used for a payment; upload a new one"), { field: "consent_file_id" });
     const minutes = Math.round(Number(days) * DAY);
     if (!Number.isFinite(minutes) || minutes <= 0) throw bad("days", "Enter the number of days");
     const available = balanceOf(db, emp.id) - pendingMinutes(db, emp.id);
     if (minutes > available) throw new HttpError(409, "insufficient_balance", `Only ${fmtDays(available)} days are available`);
     tx(db, () => {
       const id = postLedger(db, emp, { kind: "encashment", minutes: -minutes, date: ctx.today(), note: `Paid in cash (basic wage), consent file #${doc.id}${note ? " — " + String(note).slice(0, 300) : ""}`, by: req.sess.user.id });
+      db.prepare("UPDATE leave_ledger SET file_id=? WHERE id=?").run(doc.id, id);
       audit(db, req.sess.user.id, "ledger.encash", "employee", emp.id, null, { ledger_id: id, minutes, consent_file_id: doc.id });
     });
     send(req, res, 200, { leave: leaveSummary(db, emp, ctx.today()) });

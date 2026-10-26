@@ -64,6 +64,8 @@ const MIGRATIONS = [
      start_date TEXT NOT NULL, end_date TEXT NOT NULL, created_by INTEGER, created_at TEXT NOT NULL);`,
   // 6: cover created with an approver's own leave request (removed if that request is cancelled or rejected)
   `ALTER TABLE approver_cover ADD COLUMN request_id INTEGER;`,
+  // 7: the consent document behind a cash payment (each consent pays out once)
+  `ALTER TABLE leave_ledger ADD COLUMN file_id INTEGER;`,
 ];
 
 export function openDb(dataDir) {

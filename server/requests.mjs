@@ -39,10 +39,21 @@ export function earlyDeduction(db, empId, date, minutes, excludeId = 0, statuses
 }
 
 /** Days already requested (pending or approved) of a type, for the legal limits. */
-function usedDays(db, empId, type, start, eventDate, excludeId = 0) {
+function usedDays(db, empId, type, start, end, eventDate, relation, excludeId = 0) {
   const sum = (where, ...args) => db.prepare(`SELECT coalesce(sum(julianday(end_date)-julianday(start_date)+1),0) n FROM leave_requests
     WHERE employee_id=? AND type=? AND status IN ${ACTIVE} AND id<>? ${where}`).get(empId, type, excludeId, ...args).n;
-  return { inYear: sum("AND substr(start_date,1,4)=?", start.slice(0, 4)), ever: sum(""), forEvent: eventDate ? sum("AND event_date=?", eventDate) : 0 };
+  // yearly limits count the days that fall inside each calendar year the request touches; report the tightest year
+  const overlap = (a, b, y) => { const s = a > `${y}-01-01` ? a : `${y}-01-01`, e = b < `${y}-12-31` ? b : `${y}-12-31`; return s > e ? 0 : daysBetweenInclusive(s, e); };
+  let yearInfo = { used: 0, add: 0 };
+  for (let y = +start.slice(0, 4); y <= +end.slice(0, 4); y++) {
+    const rows = db.prepare(`SELECT start_date, end_date FROM leave_requests WHERE employee_id=? AND type=? AND status IN ${ACTIVE} AND id<>?
+      AND start_date<=? AND end_date>=?`).all(empId, type, excludeId, `${y}-12-31`, `${y}-01-01`);
+    const info = { used: rows.reduce((n, r) => n + overlap(r.start_date, r.end_date, y), 0), add: overlap(start, end, y) };
+    if (info.used + info.add > yearInfo.used + yearInfo.add) yearInfo = info;
+  }
+  const forEvent = !eventDate ? 0 : type === "bereavement" ? sum("AND event_date=? AND relation=?", eventDate, relation || "") : sum("AND event_date=?", eventDate);
+  const otherEventNear = !!eventDate && sum("AND event_date IS NOT NULL AND event_date<>? AND abs(julianday(event_date)-julianday(?))<270", eventDate, eventDate) > 0;
+  return { yearInfo, ever: sum(""), forEvent, otherEventNear };
 }
 const ACTIVE = "('pending','approved')";
 const dmy = (iso) => iso.split("-").reverse().join("/");
@@ -79,8 +90,9 @@ export function routeFor(db, emp, today) {
     adminUserId: adminUserId(db, user.id || 0),
   });
   if (route.userId && route.userId === user.id) route.userId = adminUserId(db, user.id); // never one's own approver
+  // while a deputy covers, the request stays with the real approver; the deputy may decide it during the cover dates
   const deputy = today && route.userId && deputyOf(db, route.userId, today);
-  return deputy && deputy !== user.id ? { userId: deputy, reason: "cover" } : route;
+  return deputy && deputy !== user.id ? { ...route, reason: "cover", deputyId: deputy } : route;
 }
 
 /** Validate a submission; returns {type, start_date, end_date, early_time, minutes}. */
@@ -110,7 +122,7 @@ export function validateRequest(db, emp, body, today) {
   const relation = String(body.relation || "").trim().slice(0, 100) || null;
   const eventDate = body.event_date || null;
   if (TYPES[type].range) {
-    try { checkLeaveRules(type, { emp, start, end, relation, eventDate, used: usedDays(db, emp.id, type, start, eventDate) }); }
+    try { checkLeaveRules(type, { emp, start, end, relation, eventDate, used: usedDays(db, emp.id, type, start, end, eventDate, relation) }); }
     catch (e) { if (e instanceof RuleError) throw err(RULE_STATUS[e.code] || 409, e.code, e.message, e.field); throw e; }
   }
   if (type === "comp_day" && start > today) throw err(400, "invalid", "The worked day cannot be in the future", "date");
@@ -184,7 +196,8 @@ export function registerRequests(api, ctx) {
       return row;
     });
     const d = describe(r, emp);
-    notify(ctx, [r.approver_user_id], { title_ar: "طلب إجازة بانتظار موافقتك", title_en: "Leave request awaiting your approval", body_ar: d.ar, body_en: d.en, link: `#/leave/${r.id}` });
+    const dep = deputyOf(db, r.approver_user_id, ctx.today());
+    notify(ctx, [r.approver_user_id, dep && dep !== sess.user.id ? dep : null], { title_ar: "طلب إجازة بانتظار موافقتك", title_en: "Leave request awaiting your approval", body_ar: d.ar, body_en: d.en, link: `#/leave/${r.id}` });
     notify(ctx, [sess.user.id], { title_ar: "تم إرسال طلبك", title_en: "Your request was submitted", body_ar: d.ar, body_en: d.en, link: `#/leave/${r.id}`, inAppOnly: true });
     send(req, res, 201, { request: r });
   });
@@ -308,14 +321,18 @@ export function registerRequests(api, ctx) {
       if (!isIsoDate(start) || start <= r.start_date) throw err(400, "invalid", "Choose a later start date", "start");
       if (start > addMonths(r.start_date, 6)) throw err(400, "too_late", "Annual leave can be postponed by at most 6 months", "start");
       const end = addDays(start, daysBetweenInclusive(r.start_date, r.end_date) - 1);
+      const workDays = daysExcludingHolidays(start, end, holidaySet(db));
+      if (!workDays) throw err(400, "invalid", "All the new days are official holidays", "start");
+      r.minutes = workDays * DAY; // official holidays in the new dates are not deducted
       if (db.prepare(`SELECT 1 FROM leave_requests WHERE employee_id=? AND id<>? AND type<>'comp_day' AND status IN ${ACTIVE} AND start_date<=? AND end_date>=?`).get(r.employee_id, r.id, end, start))
         throw err(409, "overlap", "The new dates overlap another request");
       const emp = getEmployee(db, r.employee_id);
       const available = balanceOf(db, emp.id) - pendingMinutes(db, emp.id, r.id);
       if (r.minutes > available) throw err(409, "insufficient_balance", `The balance is no longer enough (${fmtDays(available)} days available)`);
       postLedger(db, emp, { kind: "annual_leave", minutes: -r.minutes, date: start, requestId: r.id, by: sess.user.id });
-      db.prepare("UPDATE leave_requests SET start_date=?, end_date=?, status='approved', decided_by=?, decided_at=?, decision_comment=? WHERE id=?")
-        .run(start, end, sess.user.id, nowIso(), String(comment || "").slice(0, 1000) || null, r.id);
+      db.prepare("UPDATE leave_requests SET start_date=?, end_date=?, minutes=?, status='approved', decided_by=?, decided_at=?, decision_comment=? WHERE id=?")
+        .run(start, end, r.minutes, sess.user.id, nowIso(), String(comment || "").slice(0, 1000) || null, r.id);
+      db.prepare("UPDATE approver_cover SET start_date=?, end_date=? WHERE request_id=?").run(start, end, r.id);
       event(db, r.id, "postponed", sess.user.id, `${dmy(r.start_date)} → ${dmy(start)}${comment ? " — " + comment : ""}`);
       const after = getReq(db, r.id);
       audit(db, sess.user.id, "request.postpone", "request", r.id, r, after);
@@ -367,6 +384,8 @@ export function registerRequests(api, ctx) {
     const c = db.prepare("SELECT * FROM approver_cover WHERE id=?").get(Number(req.params.id));
     if (!c) throw new HttpError(404, "not_found", "Not found");
     if (req.sess.user.role !== "admin" && c.approver_user_id !== req.sess.user.id) throw forbidden();
+    if (req.sess.user.role !== "admin" && c.request_id && db.prepare("SELECT 1 FROM leave_requests WHERE id=? AND status IN ('pending','approved')").get(c.request_id))
+      throw err(409, "cover_required", "This deputy covers your own leave; cancel the leave first");
     db.prepare("DELETE FROM approver_cover WHERE id=?").run(c.id);
     audit(db, req.sess.user.id, "cover.delete", "user", c.approver_user_id, c, null);
     send(req, res, 200, { ok: true });

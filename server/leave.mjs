@@ -15,25 +15,25 @@ export const TYPES = {
   early: { effect: "early", hours: true },                        // company permission: free hours each month, the rest from annual leave
   emergency: { effect: "deduct", range: true, maxDays: 60 },      // company policy: taken from annual leave (not in the 2023 law)
   sick: { effect: "record", range: true, proof: true, yearCap: 182, maxDays: 182 },
-  bereavement: { effect: "record", range: true, proof: true, relation: "list" },
+  bereavement: { effect: "record", range: true, proof: true, relation: "list", event: "death" },
   marriage: { effect: "record", range: true, proof: true, maxDays: 3, once: true },
   paternity: { effect: "record", range: true, proof: true, maxDays: 7, gender: "male", event: "birth" },
   maternity: { effect: "record", range: true, proof: true, maxDays: 98, gender: "female", event: "birth" },
   hajj: { effect: "record", range: true, proof: true, maxDays: 15, once: true, minServiceMonths: 12 },
   exam: { effect: "record", range: true, proof: true, yearCap: 15, maxDays: 15, omani: true },
   patient_care: { effect: "record", range: true, proof: true, yearCap: 15, maxDays: 15, omani: true, relation: "text" },
-  childcare: { effect: "record", range: true, maxDays: 365, gender: "female", paid: false },
+  childcare: { effect: "record", range: true, maxDays: 365, gender: "female", paid: false, event: "child" },
   unpaid: { effect: "record", range: true, maxDays: 365, paid: false },
   comp_day: { effect: "credit" },
 };
 
 /** Art. 84: days of paid bereavement leave by relation. A widow's leave (iddah) is for women. */
-export const BEREAVEMENT_DAYS = {
+export const BEREAVEMENT_DAYS = Object.freeze({
   wife: 10, son: 10, daughter: 10,
   father: 3, mother: 3, grandfather: 3, grandmother: 3, brother: 3, sister: 3,
   uncle: 2, aunt: 2,
   husband_muslim: 130, husband_other: 14,
-};
+});
 
 /** Art. 82: sick-leave pay by cumulative day of the year — {percent: days}. */
 export function sickPayBands(priorDays, days) {
@@ -63,21 +63,29 @@ export function checkLeaveRules(type, { emp, start, end, relation, eventDate, us
   if (T.once && used.ever > 0) throw new RuleError("already_taken", "This leave can be taken once during the service", "type");
   let max = T.maxDays;
   if (T.relation === "list") {
-    if (!(relation in BEREAVEMENT_DAYS)) throw new RuleError("invalid", "Choose the relation", "relation");
+    if (typeof relation !== "string" || !Object.hasOwn(BEREAVEMENT_DAYS, relation)) throw new RuleError("invalid", "Choose the relation", "relation");
     if (relation.startsWith("husband") && emp.gender === "male") throw new RuleError("not_entitled", "This leave is for a widow", "relation");
     if (relation === "wife" && emp.gender === "female") throw new RuleError("not_entitled", "Choose the correct relation", "relation");
     max = BEREAVEMENT_DAYS[relation];
   }
   if (T.relation === "text" && !String(relation || "").trim()) throw new RuleError("invalid", "Name the patient's relation to you", "relation");
   if (T.event) {
-    if (!isIsoDate(eventDate)) throw new RuleError("invalid", "Enter the date of birth", "event_date");
-    // paternity: from the birth up to the child's 98th day · maternity: starts at most 14 days before the birth
-    const ok = type === "paternity" ? start >= eventDate && end <= addDays(eventDate, 97) : start >= addDays(eventDate, -14);
-    if (!ok) throw new RuleError("outside_window", type === "paternity" ? "Paternity leave must be taken within 98 days of the birth" : "Maternity leave can start at most 14 days before the birth", "start");
+    if (!isIsoDate(eventDate)) throw new RuleError("invalid", T.event === "death" ? "Enter the date of death" : "Enter the date of birth", "event_date");
+    // paternity: from the birth up to the child's 98th day · maternity: from 14 days before the birth, starting by the birth
+    // bereavement: starts within 2 days of the death · child care: any time after the birth
+    const ok = type === "paternity" ? start >= eventDate && end <= addDays(eventDate, 97)
+      : type === "maternity" ? start >= addDays(eventDate, -14) && start <= eventDate
+      : type === "bereavement" ? start >= eventDate && start <= addDays(eventDate, 2)
+      : start >= eventDate;
+    if (!ok) throw new RuleError("outside_window", { paternity: "Paternity leave must be taken within 98 days of the birth", maternity: "Maternity leave starts between 14 days before the birth and the birth", bereavement: "Bereavement leave starts at the death (within 2 days)", childcare: "Child-care leave starts after the birth" }[type], "start");
+    // another birth within 9 months is not credible — a second paternity/maternity needs HR
+    if ((type === "paternity" || type === "maternity") && used.otherEventNear) throw new RuleError("already_taken", "Leave for this birth was already requested", "event_date");
     if (days + (used.forEvent || 0) > max) throw new RuleError("too_long", `At most ${max} days`, "end");
   }
   if (max && days > max) throw new RuleError("too_long", `At most ${max} days`, "end");
-  if (T.yearCap && days + (used.inYear || 0) > T.yearCap) throw new RuleError("year_limit", `At most ${T.yearCap} days a year (${Math.max(0, T.yearCap - (used.inYear || 0))} left)`, "end");
+  // yearInfo: the calendar year this request strains most — {used: days already requested in it, add: this request's days in it}
+  const yi = used.yearInfo || { used: used.inYear || 0, add: days };
+  if (T.yearCap && yi.used + yi.add > T.yearCap) throw new RuleError("year_limit", `At most ${T.yearCap} days a year (${Math.max(0, T.yearCap - yi.used)} left)`, "end");
   return days;
 }
 
@@ -192,6 +200,7 @@ export function summarize(rows, pendingMinutes, yearStart) {
     extra: sum(of("comp_credit")),
     used: -sum(of("annual_leave", "emergency_leave", "early_leave", "reversal").filter((r) => r.kind !== "reversal" || r.minutes > 0)),
     adjustments: sum(of("adjustment")),
+    encashed: -sum(of("encashment")),
     remaining,
     pending: pendingMinutes,
     available: remaining - pendingMinutes,
