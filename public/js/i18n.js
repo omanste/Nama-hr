@@ -245,6 +245,23 @@ const D = {
   // own photo and contact
   photo_camera: ["التقاط صورة", "Take photo"], photo_upload: ["رفع صورة", "Upload photo"],
   email_by_hr: ["البريد الإلكتروني للعمل يضيفه قسم الموارد البشرية أو المسؤول.", "The work e-mail is added by HR or Admin."],
+  // Staff Voice
+  nav_voice: ["صوت الموظف", "Staff Voice"], nav_voice_short: ["رسائل", "Messages"], voice_new: ["رسالة جديدة", "New message"],
+  voice_intro: ["اقتراحات واستفسارات وشكاوى وملاحظات إلى مديرك أو الموارد البشرية أو الرئيس التنفيذي. تُرسل باسمك ولا يراها غير المرسل إليه.", "Suggestions, questions, complaints and notes to your manager, HR or the CEO. Sent with your name and seen only by the person you send it to."],
+  voice_sent: ["رسائلي", "My messages"], voice_inbox: ["الوارد", "Inbox"],
+  voice_sent_empty: ["لم ترسل أي رسالة بعد", "You haven't sent any messages yet"], voice_inbox_empty: ["لا توجد رسائل", "No messages"],
+  vc_suggestion: ["اقتراح / تطوير", "Suggestion / improvement"], vc_question: ["استفسار / توضيح", "Question / clarification"], vc_complaint: ["شكوى", "Complaint"], vc_note: ["ملاحظة", "Note"], vc_other: ["أخرى", "Other"],
+  vs_new: ["جديدة", "New"], vs_in_review: ["قيد المراجعة", "In review"], vs_answered: ["تم الرد", "Answered"], vs_closed: ["مغلقة", "Closed"],
+  voice_to: ["إلى", "To"], voice_from: ["من", "From"], to_manager: ["مديري المباشر", "My manager"], to_hr: ["الموارد البشرية", "HR"], to_ceo: ["الرئيس التنفيذي", "The CEO"],
+  to_manager_hint: ["لأمور العمل اليومية في قسمك", "For day-to-day work in your department"], to_hr_hint: ["يراها فريق الموارد البشرية", "Seen by the HR team"], to_ceo_hint: ["تصل إلى الرئيس التنفيذي فقط", "Reaches the CEO only"],
+  voice_private: ["لا يرى رسالتك إلا من ترسلها إليه.", "Only the person you send it to can read your message."],
+  voice_complaint_hint: ["إذا كانت الشكوى تخص مديرك فأرسلها إلى الموارد البشرية أو الرئيس التنفيذي.", "If the complaint is about your manager, send it to HR or the CEO instead."],
+  voice_subject: ["الموضوع", "Subject"], voice_body: ["الرسالة", "Message"], attachment_optional: ["مرفق (اختياري)", "Attachment (optional)"],
+  voice_named: ["تُرسل باسم: {name}", "Sent in your name: {name}"], voice_send: ["إرسال", "Send"], voice_sent_ok: ["تم إرسال رسالتك", "Your message was sent"],
+  voice_reply: ["الرد", "Reply"], send: ["إرسال", "Send"], voice_closed_note: ["هذه المحادثة مغلقة", "This conversation is closed"],
+  voice_close: ["إغلاق الرسالة", "Close message"], voice_reopen: ["إعادة فتح", "Reopen"], replies_n: ["{n} رد", "{n} replies"],
+  voice_no_recipients: ["لا يوجد مستلم متاح بعد (لا يوجد حساب لمديرك أو للموارد البشرية أو الرئيس التنفيذي).", "Nobody can receive messages yet (no login for your manager, HR or the CEO)."],
+  report_voice: ["صوت الموظف", "Staff Voice"], report_voice_note: ["أعداد فقط — لا تظهر نصوص الرسائل في التقارير.", "Counts only — message text never appears in reports."], still_open: ["مفتوحة", "Still open"],
 };
 
 let lang = "ar";

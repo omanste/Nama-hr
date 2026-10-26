@@ -70,6 +70,14 @@ const MIGRATIONS = [
   `ALTER TABLE files ADD COLUMN extracted TEXT;`,
   // 9: permissions — a personal break has a from and a to time (early_time holds the first, end_time the second)
   `ALTER TABLE leave_requests ADD COLUMN end_time TEXT;`,
+  // 10: Staff Voice — suggestions, questions, complaints and notes to a manager, HR or the CEO, with replies
+  `CREATE TABLE voice_messages(id INTEGER PRIMARY KEY, employee_id INTEGER REFERENCES employees(id), user_id INTEGER NOT NULL REFERENCES users(id),
+     category TEXT NOT NULL CHECK(category IN ('suggestion','question','complaint','note','other')), subject TEXT NOT NULL, body TEXT NOT NULL,
+     to_kind TEXT NOT NULL CHECK(to_kind IN ('manager','hr','ceo')), to_user_id INTEGER REFERENCES users(id),
+     status TEXT NOT NULL DEFAULT 'new' CHECK(status IN ('new','in_review','answered','closed')), created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+   CREATE INDEX vm_user ON voice_messages(user_id); CREATE INDEX vm_to ON voice_messages(to_kind, to_user_id, status);
+   CREATE TABLE voice_replies(id INTEGER PRIMARY KEY, message_id INTEGER NOT NULL REFERENCES voice_messages(id), user_id INTEGER NOT NULL REFERENCES users(id), body TEXT NOT NULL, created_at TEXT NOT NULL);
+   ALTER TABLE files ADD COLUMN voice_id INTEGER;`,
 ];
 
 export function openDb(dataDir) {

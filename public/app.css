@@ -280,3 +280,11 @@ h1,h2{overflow-wrap:anywhere}
 .photo-box{display:grid;justify-items:center;gap:8px}
 .photo-actions{gap:6px;justify-content:center;flex-wrap:wrap}
 .photo-actions .btn{font-size:12px;padding:4px 10px;min-height:32px}
+/* Staff Voice */
+.thread{display:grid;gap:10px}
+.bubble{background:var(--surface-2);border-radius:12px;padding:10px 12px;max-width:min(560px,92%);justify-self:start}
+.bubble.mine{background:var(--gold-soft);justify-self:end}
+.bubble .bwho{font-size:12px;font-weight:600;margin-bottom:4px}
+.badge.v-new{background:var(--gold);color:#fff} .badge.v-in_review{background:var(--gold-soft);color:var(--fg)}
+.badge.v-answered{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)} .badge.v-closed{background:var(--surface-2);color:var(--muted)}
+.read-row input[type=radio]{width:20px;height:20px;min-height:0;margin-top:3px;flex:none}

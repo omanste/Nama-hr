@@ -2,6 +2,7 @@
  * A provider turns credentials into a user row; sessions, roles and everything else stay the same. */
 import crypto from "node:crypto";
 import { rerouteFallbacks } from "./requests.mjs";
+import { voiceInboxCount } from "./voice.mjs";
 import { nowIso, tx } from "./db.mjs";
 import { send, fail, readJson, HttpError } from "./http.mjs";
 import { audit } from "./audit.mjs";
@@ -170,7 +171,7 @@ export function registerAuth(api, ctx) {
       : db.prepare(`SELECT count(*) n FROM leave_requests WHERE status='pending' AND employee_id<>? AND (approver_user_id=?
           OR approver_user_id IN (SELECT approver_user_id FROM approver_cover WHERE deputy_user_id=? AND start_date<=? AND end_date>=?))`).get(own, s.user.id, s.user.id, today, today).n;
     const pendingCapReviews = ["hr", "admin"].includes(s.user.role) ? db.prepare("SELECT count(*) n FROM cap_reviews WHERE status='pending'").get().n : 0;
-    send(req, res, 200, { user: publicUser(s.user), employee: s.employee, isApprover: s.isApprover, pendingApprovals, pendingCapReviews, env: ctx.appEnv });
+    send(req, res, 200, { user: publicUser(s.user), employee: s.employee, isApprover: s.isApprover, pendingApprovals, pendingCapReviews, voiceInbox: voiceInboxCount(db, s), env: ctx.appEnv });
   });
 
   api.post("/api/me/password", async (req, res) => {

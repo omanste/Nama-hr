@@ -9,6 +9,7 @@ import { registerJobs, registerCapReviews } from "./jobs.mjs";
 import { registerImport } from "./importer.mjs";
 import { registerAudit } from "./audit.mjs";
 import { registerPermissionReports } from "./permissions.mjs";
+import { registerVoice } from "./voice.mjs";
 
 export async function registerModules(api, ctx) {
   registerAuth(api, ctx);
@@ -22,4 +23,5 @@ export async function registerModules(api, ctx) {
   registerImport(api, ctx);
   registerAudit(api, ctx);
   registerPermissionReports(api, ctx);
+  registerVoice(api, ctx);
 }

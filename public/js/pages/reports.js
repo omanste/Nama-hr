@@ -57,5 +57,18 @@ export async function render(el, _p, { me, can, query }) {
       field(t("period"), quick), field(t("holiday_from"), from), field(t("holiday_to"), to), dept ? field(t("f_department"), dept) : null,
       h("label", { class: "row", style: { alignSelf: "end", minHeight: "44px" } }, onlyUsed, t("only_used")))),
     out);
-  await load();
+  const voiceOut = h("div");
+  if (["hr", "ceo", "admin"].includes(me.user.role)) el.append(h("section", { class: "card", style: { marginTop: "16px" } }, h("h2", null, t("report_voice")), voiceOut));
+  async function loadVoice() {
+    if (!el.contains(voiceOut)) return;
+    const r = await api.get(`/api/reports/voice?from=${from.value}&to=${to.value}`);
+    const n = (c, open) => r.rows.filter((x) => (!c || x.category === c) && (!open || x.status !== "closed")).reduce((a, x) => a + x.n, 0);
+    clear(voiceOut).append(h("p", { class: "sub" }, t("report_voice_note")),
+      h("div", { class: "table-wrap" }, h("table", null,
+        h("thead", null, h("tr", null, h("th", null, t("kind")), h("th", { class: "num" }, t("total")), h("th", { class: "num" }, t("still_open")))),
+        h("tbody", null, r.categories.map((c) => h("tr", null, h("td", null, t("vc_" + c)), h("td", { class: "num" }, num(n(c))), h("td", { class: "num" }, num(n(c, true))))),
+          h("tr", null, h("td", null, h("b", null, t("total"))), h("td", { class: "num" }, h("b", null, num(n()))), h("td", { class: "num" }, h("b", null, num(n(null, true)))))))));
+  }
+  for (const i of [from, to, quick]) i.addEventListener("change", () => setTimeout(loadVoice, 0));
+  await Promise.all([load(), loadVoice()]);
 }
