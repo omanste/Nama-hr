@@ -1,5 +1,5 @@
 import { api } from "../api.js";
-import { t, nm } from "../i18n.js";
+import { t, nm, tx } from "../i18n.js";
 import { h, clear, select, pageHead, badge, avatar, daysText, empty, dmy } from "../ui.js";
 
 const STATUSES = ["active", "on_leave", "resigned", "terminated"];
@@ -24,10 +24,10 @@ export async function render(el, _p, { can, query }) {
           h("tbody", null, items.map((e) => h("tr", null,
             h("td", { class: "num" }, e.emp_no),
             h("td", null, h("a", { href: `#/staff/${e.id}`, class: "row", style: { flexWrap: "nowrap" } }, avatar(e, 28), nm(e))),
-            h("td", null, deptName(e.department_id)), h("td", null, e.job_title || "—"), h("td", { class: "num" }, dmy(e.join_date)),
+            h("td", null, deptName(e.department_id)), h("td", null, tx(e.job_title) || "—"), h("td", { class: "num" }, dmy(e.join_date)),
             h("td", { class: "num" }, daysText(e.remaining)), h("td", null, badge(e.status, "st_")))))))
       : h("div", { class: "list" }, items.map((e) => h("a", { class: "item", href: `#/staff/${e.id}` }, avatar(e, 44),
-          h("div", { class: "grow" }, h("div", { class: "title" }, nm(e)), h("div", { class: "meta" }, [e.emp_no, deptName(e.department_id), e.job_title].filter(Boolean).join(" · "))),
+          h("div", { class: "grow" }, h("div", { class: "title" }, nm(e)), h("div", { class: "meta" }, [e.emp_no, deptName(e.department_id), tx(e.job_title)].filter(Boolean).join(" · "))),
           h("div", { style: { textAlign: "end" } }, h("div", { class: "num" }, daysText(e.remaining)), e.status !== "active" ? badge(e.status, "st_") : null)))));
   };
   q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(load, 250); });

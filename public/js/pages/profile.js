@@ -1,5 +1,5 @@
 import { api } from "../api.js";
-import { t, nm, getLang } from "../i18n.js";
+import { t, nm, getLang, tx } from "../i18n.js";
 import { countryName } from "../countries.js";
 import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, errText, confirm, select, field, backLink, todayIso } from "../ui.js";
 import { balanceHero, requestItem } from "./home.js";
@@ -44,7 +44,7 @@ export async function render(el, params, { me, can, opts }) {
   el.append(
     opts.me ? null : backLink("#/staff"),
     h("div", { class: "profile-head" }, photo,
-      h("div", { class: "grow" }, h("h1", null, nm(e)), h("div", { class: "sub" }, [e.emp_no, e.job_title, nm(p.department)].filter(Boolean).join(" · ")), h("div", { class: "row", style: { marginTop: "6px" } }, badge(e.status, "st_"))),
+      h("div", { class: "grow" }, h("h1", null, nm(e)), h("div", { class: "sub" }, [e.emp_no, tx(e.job_title), nm(p.department)].filter(Boolean).join(" · ")), h("div", { class: "row", style: { marginTop: "6px" } }, badge(e.status, "st_"))),
       h("div", { class: "row" },
         can.edit() ? h("a", { class: "btn", href: `#/staff/${e.id}/edit` }, t("edit")) : null,
         can.edit() ? h("button", { class: "btn", type: "button", onclick: () => adjustDialog(e) }, t("adjust_balance")) : null,
@@ -80,15 +80,15 @@ export async function render(el, params, { me, can, opts }) {
         ["f_mobile", e.mobile && h("a", { href: `tel:${e.mobile}`, dir: "ltr" }, e.mobile)], ["f_email", e.email && h("a", { href: `mailto:${e.email}` }, e.email)], ["f_address", e.address],
         ["f_emergency_name", e.emergency_name], ["f_emergency_relation", e.emergency_relation], ["f_emergency_phone", e.emergency_phone && h("span", { dir: "ltr" }, e.emergency_phone)]])),
       h("section", { class: "card" }, h("h2", null, t("sec_job")), facts([
-        ["f_department_id", nm(p.department)], ["f_job_title", e.job_title], ["f_manager_employee_id", nm(p.manager)], ["f_join_date", dmy(e.join_date)], ["f_status", t("st_" + e.status)]])),
+        ["f_department_id", nm(p.department)], ["f_job_title", tx(e.job_title)], ["f_manager_employee_id", nm(p.manager)], ["f_join_date", dmy(e.join_date)], ["f_status", t("st_" + e.status)]])),
       h("section", { class: "card" }, h("h2", null, t("sec_contract")), facts([["f_contract_type", e.contract_type], ["f_contract_end", dmy(e.contract_end)]]),
         p.login !== undefined ? h("div", { style: { marginTop: "14px" } }, h("h3", null, t("login_account")),
           p.login ? h("div", { class: "sub" }, `${p.login.username} · ${t("role_" + p.login.role)}${p.login.active ? "" : " · " + t("inactive")}`)
             : h("div", { class: "row" }, h("span", { class: "sub" }, t("no_login")), can.edit() ? h("button", { class: "btn small", type: "button", onclick: () => createLogin(e) }, t("create_login")) : null)) : null)),
 
     h("section", { class: "card" }, h("h2", null, t("sec_qualifications")), h("dl", { class: "facts" },
-      ["education", "specialization", "experience", "languages", "certifications"].map((k) => h("div", null, h("dt", null, t("f_" + k)), h("dd", { dir: "auto" }, e[k] || "—"))),
-      ["skills", "main_tasks"].map((k) => h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("f_" + k)), h("dd", { dir: "auto", style: { whiteSpace: "pre-line" } }, e[k] || "—"))))),
+      ["education", "specialization", "experience", "languages", "certifications"].map((k) => h("div", null, h("dt", null, t("f_" + k)), h("dd", { dir: "auto" }, tx(e[k]) || "—"))),
+      ["skills", "main_tasks"].map((k) => h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("f_" + k)), h("dd", { dir: "auto", style: { whiteSpace: "pre-line" } }, tx(e[k]) || "—"))))),
     documents(p, e, can, mayUpload),
     h("section", { class: "card kpi-placeholder" }, h("h2", null, t("sec_kpi")), h("p", null, t("kpi_later"))));
 }

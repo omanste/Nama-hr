@@ -232,6 +232,41 @@ export function t(key, vars) {
 }
 export const has = (key) => key in D;
 /** Pick the name in the current language, falling back to the other. */
+// Fixed answers from the staff questionnaire, so a profile reads in one language.
+const ANSWERS = {
+  "less than 1 year": "أقل من سنة", "1–3 years": "1–3 سنوات", "4–6 years": "4–6 سنوات", "7–10 years": "7–10 سنوات", "more than 10 years": "أكثر من 10 سنوات",
+  arabic: "العربية", english: "الإنجليزية", hindi: "الهندية", urdu: "الأردية", indian: "الهندية", malayalam: "المالايالامية", bengali: "البنغالية",
+  tagalog: "الفلبينية", filipino: "الفلبينية", french: "الفرنسية", persian: "الفارسية", farsi: "الفارسية", swahili: "السواحلية", german: "الألمانية", turkish: "التركية",
+  yes: "نعم", no: "لا", "not sure": "غير متأكد", "not applicable": "لا ينطبق",
+  both_lang_hint: ["لعرضها باللغتين اكتب: English | عربي", "To show it in both languages write: English | عربي"],
+};
+const AR_TO_EN = Object.fromEntries(Object.entries(ANSWERS).map(([en, ar]) => [ar, en.replace(/^\w/, (c) => c.toUpperCase())]));
+const isArabic = (x) => /[\u0600-\u06FF]/.test(x);
+function oneItem(x) {
+  const parts = x.split(/\s*\|\s*/).filter(Boolean);
+  if (parts.length === 2) { // "English | عربي"
+    const ar = parts.find(isArabic), en = parts.find((y) => !isArabic(y));
+    return lang === "ar" ? ar || parts[1] : en || parts[0];
+  }
+  if (lang === "ar") return ANSWERS[x.toLowerCase()] || x;
+  return AR_TO_EN[x] || x;
+}
+/** Show free text in the current language: picks one side of "English | عربي" pairs and translates the fixed questionnaire answers. */
+export function tx(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const s = String(value);
+  // a whole field written in both languages: "English text | النص العربي"
+  const halves = s.split(/\s+\|\s+/);
+  if (halves.length === 2 && isArabic(halves[0]) !== isArabic(halves[1])) {
+    return halves.find((x) => isArabic(x) === (lang === "ar"));
+  }
+  if (!s.includes("|") && !Object.keys(ANSWERS).some((k) => s.toLowerCase().includes(k)) && !Object.keys(AR_TO_EN).some((k) => s.includes(k))) return s;
+  return s.split("\n").map((line) => {
+    const items = line.split(/\s*[,،]\s*/);
+    const out = items.map((y) => (y.trim() ? oneItem(y.trim()) : y));
+    return out.join(lang === "ar" ? "، " : ", ");
+  }).join("\n");
+}
 export const nm = (o, base = "name") => (o ? (lang === "ar" ? o[`${base}_ar`] || o[`${base}_en`] : o[`${base}_en`] || o[`${base}_ar`]) || "" : "");
 /** Both translations of a key, e.g. to recognise either language in an uploaded file. */
 export const both = (key) => D[key] || [key];
