@@ -13,7 +13,7 @@ const RULES = {
   patient_care: { range: true, proof: true, max: 15, omani: true, relation: "text" },
   childcare: { range: true, gender: "female", unpaid: true, event: "child" }, unpaid: { range: true, unpaid: true }, comp_day: {},
 };
-const GROUPS = [["grp_main", ["annual", "early", "sick", "emergency", "comp_day"]], ["grp_special", ["bereavement", "marriage", "paternity", "maternity", "hajj", "exam", "patient_care"]], ["grp_unpaid", ["childcare", "unpaid"]]];
+const GROUPS = [["grp_main", ["annual", "sick", "emergency", "comp_day"]], ["grp_special", ["bereavement", "marriage", "paternity", "maternity", "hajj", "exam", "patient_care"]], ["grp_unpaid", ["childcare", "unpaid"]]];
 const BEREAVEMENT = { wife: 10, son: 10, daughter: 10, father: 3, mother: 3, grandfather: 3, grandmother: 3, brother: 3, sister: 3, uncle: 2, aunt: 2, husband_muslim: 130, husband_other: 14 };
 const hm = (s) => { const [a, b] = String(s).split(":").map(Number); return a * 60 + b; };
 const clock = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
@@ -21,6 +21,7 @@ const dayCount = (a, b) => (a && b ? Math.round((Date.parse(b) - Date.parse(a)) 
 
 export async function render(el, _p, { me, query }) {
   if (!me.employee) { el.append(empty(t("no_profile"))); return; }
+  if (query.get("type") === "early") { location.hash = "#/permissions/new"; return; } // permissions have their own form
   const [prof, settings, cover] = await Promise.all([api.get(`/api/employees/${me.employee.id}`), api.get("/api/settings"), api.get("/api/cover")]);
   // approvers name a deputy for their own annual or emergency leave (company policy)
   const deputySel = cover.candidates && (me.isApprover || me.user.role === "ceo" || settings.managers_approver_employee_id === me.employee.id)

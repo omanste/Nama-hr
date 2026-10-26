@@ -15,3 +15,10 @@ test("all UI text keys exist in both languages", async () => {
   assert.deepEqual([...missing], []);
   for (const lang of ["ar", "en"]) { setLang(lang); assert.notEqual(t("read_title"), "read_title"); }
 });
+
+test("no text key is defined twice (the second would silently replace the first)", () => {
+  const s = fs.readFileSync(new URL("../public/js/i18n.js", import.meta.url), "utf8");
+  const D = s.slice(s.indexOf("const D = {"), s.indexOf("\n};"));
+  const keys = [...D.matchAll(/(?:^|[\s,{])([a-z0-9_]+):\s*\[/g)].map((m) => m[1]);
+  assert.deepEqual(keys.filter((k, i) => keys.indexOf(k) !== i), []);
+});

@@ -48,7 +48,9 @@ export function registerFiles(api, ctx) {
   api.post("/api/employees/:id/files", async (req, res) => {
     const emp = getEmployee(db, req.params.id);
     const kind = req.query.get("kind") === "photo" ? "photo" : "doc";
-    const ownDoc = !!emp && emp.id === req.sess.user.employee_id && kind === "doc" && SELF_DOC_TYPES.includes(req.query.get("doc_type") || "other");
+    const own = !!emp && emp.id === req.sess.user.employee_id;
+    // staff add their own photo and papers; contracts and payout consents stay with HR
+    const ownDoc = own && (kind === "photo" || SELF_DOC_TYPES.includes(req.query.get("doc_type") || "other"));
     if (!can(req.sess, "employee.edit") && !ownDoc) throw forbidden();
     if (!emp) throw new HttpError(404, "not_found", "Employee not found");
     const file = await storeUpload(ctx, req, { employeeId: emp.id, kind });

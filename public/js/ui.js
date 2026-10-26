@@ -36,8 +36,12 @@ export const dateTime = (iso) => {
 export const daysOf = (min) => Math.round((min / 480) * 100) / 100;
 export const daysText = (min) => t("days", { n: num(daysOf(min)) });
 /** Early leave reads better in hours. */
-export const amountText = (r) => (r.type === "early" ? t("hours", { n: num(r.minutes / 60) }) : daysText(r.minutes));
-export const when = (r) => (r.type === "early" ? `${dmy(r.start_date)} · ${r.early_time}` : r.start_date === r.end_date ? dmy(r.start_date) : `${dmy(r.start_date)} – ${dmy(r.end_date)}`);
+/** Permissions: short absences inside a working day, counted in hours. */
+export const PERMISSIONS = ["early", "late", "break"];
+export const isPermission = (type) => PERMISSIONS.includes(type);
+export const amountText = (r) => (isPermission(r.type) ? t("hours", { n: num(r.minutes / 60) }) : daysText(r.minutes));
+const permWhen = (r) => r.type === "late" ? t("arrive_at", { t: r.early_time }) : r.type === "break" ? `${r.early_time}–${r.end_time}` : t("leave_at", { t: r.early_time });
+export const when = (r) => (isPermission(r.type) ? `${dmy(r.start_date)} · ${permWhen(r)}` : r.start_date === r.end_date ? dmy(r.start_date) : `${dmy(r.start_date)} – ${dmy(r.end_date)}`);
 
 export const badge = (status, prefix = "rs_") => h("span", { class: `badge b-${status}` }, t(prefix + status));
 

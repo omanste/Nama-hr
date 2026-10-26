@@ -25,6 +25,8 @@ export async function render(el, _p, { can }) {
   const types = h("textarea", { rows: 4 }); types.value = settings.contract_types.join("\n");
   const HALF = []; for (let m = 10 * 60; m <= 20 * 60; m += 30) HALF.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${m % 60 ? "30" : "00"}`);
   const dayEnd = select("work_day_end", HALF.map((x) => [x, x]), settings.work_day_end);
+  const START = []; for (let m = 6 * 60; m <= 12 * 60 + 30; m += 30) START.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${m % 60 ? "30" : "00"}`);
+  const dayStart = select("work_day_start", START.map((x) => [x, x]), settings.work_day_start || "09:00");
   const rStart = h("input", { type: "date", value: settings.ramadan_start || "" });
   const rEnd = h("input", { type: "date", value: settings.ramadan_end || "" });
   const rDayEnd = select("ramadan_day_end", HALF.map((x) => [x, x]), settings.ramadan_day_end);
@@ -42,8 +44,8 @@ export async function render(el, _p, { can }) {
       h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", { managers_approver_employee_id: mgr.value ? Number(mgr.value) : null, managers_approver_title: title.value })) }, t("save")))),
     h("section", { class: "card" }, h("h2", null, t("ramadan")),
       h("p", { class: "sub" }, t("ramadan_hint")),
-      h("div", { class: "fields" }, field(t("work_day_end"), dayEnd), field(t("ramadan_start"), rStart), field(t("ramadan_end"), rEnd), field(t("ramadan_day_end"), rDayEnd)),
-      h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", { work_day_end: dayEnd.value, ramadan_start: rStart.value || null, ramadan_end: rEnd.value || null, ramadan_day_end: rDayEnd.value })) }, t("save")))),
+      h("div", { class: "fields" }, field(t("work_day_start"), dayStart), field(t("work_day_end"), dayEnd), field(t("ramadan_start"), rStart), field(t("ramadan_end"), rEnd), field(t("ramadan_day_end"), rDayEnd)),
+      h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", { work_day_start: dayStart.value, work_day_end: dayEnd.value, ramadan_start: rStart.value || null, ramadan_end: rEnd.value || null, ramadan_day_end: rDayEnd.value })) }, t("save")))),
     h("section", { class: "card" }, h("h2", null, t("official_holidays")),
       hol.el,
       field(t("early_free_hours"), freeH),

@@ -1,6 +1,7 @@
 /* Sign-in: username + password now; designed so Microsoft (Entra ID) can be added as a second provider.
  * A provider turns credentials into a user row; sessions, roles and everything else stay the same. */
 import crypto from "node:crypto";
+import { rerouteFallbacks } from "./requests.mjs";
 import { nowIso, tx } from "./db.mjs";
 import { send, fail, readJson, HttpError } from "./http.mjs";
 import { audit } from "./audit.mjs";
@@ -108,6 +109,7 @@ export function registerAuth(api, ctx) {
       const h = hashPassword(crypto.randomBytes(12).toString("hex"));
       db.prepare("INSERT INTO users(username,employee_id,role,pw_hash,pw_salt,pw_iter,must_change,created_at) VALUES(?,?,?,?,?,?,0,?)").run(name, emp.id, "staff", h.hash, h.salt, h.iter, nowIso());
       u = db.prepare("SELECT * FROM users WHERE employee_id=?").get(emp.id);
+      rerouteFallbacks(ctx); // requests waiting with Admin because this person had no login yet
     }
     if (!usable(db, u)) return null;
     if (u.must_change) db.prepare("UPDATE users SET must_change=0 WHERE id=?").run(u.id); // dev: no forced change

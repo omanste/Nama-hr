@@ -55,13 +55,13 @@ test("a second request that would exceed available balance is refused", async ()
 test("overlapping requests are refused", async () => {
   const r = await staff.c.post("/api/requests", { type: "sick", start: "2026-11-04", end: "2026-11-06" });
   assert.equal(r.status, 409); assert.equal(r.data.error, "overlap");
-  const e = await staff.c.post("/api/requests", { type: "early", date: "2026-11-03", time: "15:00" });
+  const e = await staff.c.post("/api/requests", { type: "early", reason: "موعد", date: "2026-11-03", time: "15:00" });
   assert.equal(e.status, 409); assert.equal(e.data.error, "overlap");
 });
 
 test("invalid input is refused", async () => {
   assert.equal((await staff.c.post("/api/requests", { type: "annual", start: "2026-11-10", end: "2026-11-09" })).status, 400);
-  assert.equal((await staff.c.post("/api/requests", { type: "early", date: "2026-11-10", time: "15:15" })).status, 400);
+  assert.equal((await staff.c.post("/api/requests", { type: "early", reason: "موعد", date: "2026-11-10", time: "15:15" })).status, 400);
   assert.equal((await staff.c.post("/api/requests", { type: "vacation", start: "2026-11-10", end: "2026-11-10" })).status, 400);
   assert.equal((await staff.c.post("/api/requests", { type: "annual", start: "2026-01-01", end: "2026-03-05" })).status, 400);
 });
@@ -79,7 +79,7 @@ test("HR cannot approve; the department approver can, and the balance drops", as
 });
 
 test("early leave is recorded in hours and does not reduce annual leave", async () => {
-  const r = await staff.c.post("/api/requests", { type: "early", date: "2026-11-10", time: "15:30" });
+  const r = await staff.c.post("/api/requests", { type: "early", reason: "موعد", date: "2026-11-10", time: "15:30" });
   assert.equal(r.status, 201);
   assert.equal(r.data.request.minutes, 90);
   assert.equal((await tawfiq.c.post(`/api/requests/${r.data.request.id}/approve`, {})).status, 200);
@@ -145,7 +145,7 @@ test("new joiners cannot take annual leave before six months; early leave and re
   const a = await junior.c.post("/api/requests", { type: "annual", start: "2026-11-01", end: "2026-11-01" });
   assert.equal(a.status, 409); assert.equal(a.data.error, "not_eligible_yet");
   assert.match(a.data.message, /2027-02-20|20\/02\/2027/);
-  assert.equal((await junior.c.post("/api/requests", { type: "early", date: "2026-11-02", time: "16:00" })).status, 201);
+  assert.equal((await junior.c.post("/api/requests", { type: "early", reason: "موعد", date: "2026-11-02", time: "16:00" })).status, 201);
   const s = await junior.c.post("/api/requests", { type: "sick", start: "2026-10-20", end: "2026-10-21", reason: "زكام" });
   assert.equal(s.status, 201);
   const before = await remaining(hr.c, junior.emp.id);

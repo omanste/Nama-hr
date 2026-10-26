@@ -223,6 +223,28 @@ const D = {
   read_nothing: ["حُفظت النسخة. لم تُقرأ بيانات واضحة — صوّر الوجه الخلفي (الأسطر <<<) في إضاءة جيدة.", "Copy saved. No clear details were read — photograph the back (the <<< lines) in good light."],
   read_skip: ["تخطي", "Skip"], read_apply: ["تحديث الملف", "Update profile"], doc_expired: ["منتهي", "Expired"],
   scan_tip: ["للقراءة التلقائية صوّر الوجه الخلفي للبطاقة (الأسطر <<<) بشكل مستقيم وفي إضاءة جيدة.", "For automatic reading, photograph the back of the card (the <<< lines) straight and in good light."],
+  // permissions (early leave, late arrival, personal break)
+  nav_permissions: ["الاستئذانات", "Permissions"], nav_permissions_short: ["استئذان", "Permissions"], my_permissions: ["استئذاناتي", "My permissions"],
+  apply_permission: ["طلب استئذان", "Request permission"], permission_type: ["نوع الاستئذان", "Type of permission"],
+  lt_late: ["تأخير في الحضور", "Late arrival"], lt_break: ["استئذان خلال الدوام", "Personal break"],
+  perm_hint_early: ["المغادرة قبل نهاية الدوام.", "Leave before the end of the working day."],
+  perm_hint_late: ["الحضور بعد بداية الدوام.", "Arrive after the start of the working day."],
+  perm_hint_break: ["الخروج لفترة خلال ساعات الدوام ثم العودة.", "Step out for a while during working hours and come back."],
+  arrival_time: ["وقت الحضور", "Arriving at"], break_from: ["من الساعة", "From"], break_to: ["إلى الساعة", "To"],
+  arrive_at: ["الحضور {t}", "arrive {t}"], leave_at: ["المغادرة {t}", "leave {t}"],
+  reason_required: ["اكتب سبب الاستئذان", "Please give a reason"],
+  free_left_month: ["الساعات المجانية المتبقية هذا الشهر", "Free hours left this month"], from_annual: ["يُخصم من الإجازة السنوية", "Taken from annual leave"],
+  perm_rule: ["الاستئذانات الثلاثة تشترك في {n} ساعات مجانية شهرياً، وما زاد يُخصم من الإجازة السنوية (8 ساعات = يوم).", "All three permissions share {n} free hours a month; the rest comes from annual leave (8 hours = 1 day)."],
+  perm_holiday: ["هذا اليوم عطلة رسمية", "This day is an official holiday"],
+  sec_permissions: ["الاستئذانات", "Permissions"], this_month: ["هذا الشهر", "This month"], this_year: ["هذه السنة", "This year"], last_month: ["الشهر الماضي", "Last month"],
+  times_hours: ["{n} مرة · {h} ساعة", "{n} times · {h} h"], total: ["المجموع", "Total"],
+  kind: ["النوع", "Type"], kind_leave: ["إجازات", "Leave"], kind_permission: ["استئذانات", "Permissions"],
+  nav_reports: ["التقارير", "Reports"], report_permissions: ["تقرير الاستئذانات", "Permissions report"], period: ["الفترة", "Period"], custom_period: ["فترة محددة", "Custom dates"],
+  only_used: ["إظهار من استخدم فقط", "Only people who used it"], approved_only: ["المعتمد فقط", "Approved only"], perm_none: ["لا توجد استئذانات في هذه الفترة", "No permissions in this period"],
+  download_excel: ["تنزيل Excel", "Download Excel"], work_day_start: ["بداية الدوام", "Start of working day"],
+  // own photo and contact
+  photo_camera: ["التقاط صورة", "Take photo"], photo_upload: ["رفع صورة", "Upload photo"],
+  email_by_hr: ["البريد الإلكتروني للعمل يضيفه قسم الموارد البشرية أو المسؤول.", "The work e-mail is added by HR or Admin."],
 };
 
 let lang = "ar";

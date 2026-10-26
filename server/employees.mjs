@@ -7,7 +7,10 @@ import { isIsoDate, ANNUAL, DAY, fmtDays, addDays } from "./leave.mjs";
 import { postLedger, leaveSummary, ledgerRows, yearStartFor, balanceOf, pendingMinutes } from "./ledger.mjs";
 import { tempPassword, hashPassword } from "./auth.mjs";
 import { toCountryCode } from "../public/js/countries.js";
+import { permissionSummary } from "./permissions.mjs";
+import { rerouteFallbacks } from "./requests.mjs";
 
+const CONTACT = ["mobile", "address", "emergency_name", "emergency_relation", "emergency_phone"];
 export const STATUSES = ["active", "on_leave", "resigned", "terminated"];
 const TEXT = ["name_ar", "name_en", "civil_id", "nationality", "mobile", "address", "emergency_name", "emergency_relation", "emergency_phone", "job_title", "contract_type"];
 const DATES = ["civil_id_expiry", "dob", "join_date", "contract_end"];
@@ -79,7 +82,7 @@ export function profile(db, sess, emp, today) {
   const dept = emp.department_id ? db.prepare("SELECT * FROM departments WHERE id=?").get(emp.department_id) : null;
   const manager = emp.manager_employee_id ? db.prepare("SELECT id,emp_no,name_ar,name_en FROM employees WHERE id=?").get(emp.manager_employee_id) : null;
   const user = db.prepare("SELECT id,username,role,active FROM users WHERE employee_id=?").get(emp.id) || null;
-  const out = { employee: emp, department: dept, manager, files, requests, leave: leaveSummary(db, emp, today), login: can(sess, "employee.viewAll") ? user : undefined };
+  const out = { employee: emp, department: dept, manager, files, requests, leave: leaveSummary(db, emp, today), permissions: permissionSummary(db, emp.id, today), login: can(sess, "employee.viewAll") ? user : undefined };
   if (can(sess, "ledger.adjust")) out.ledger = ledgerRows(db, emp.id);
   return out;
 }
@@ -140,6 +143,24 @@ export function registerEmployees(api, ctx) {
       return e;
     });
     send(req, res, 201, { employee: emp });
+  });
+
+  // staff keep their own contact details current; the work e-mail stays with HR/Admin
+  api.put("/api/employees/:id/contact", async (req, res) => {
+    const cur = getEmployee(db, req.params.id);
+    if (!cur) throw new HttpError(404, "not_found", "Employee not found");
+    if (!can(req.sess, "employee.edit") && cur.id !== req.sess.user.employee_id) throw new HttpError(403, "forbidden", "You do not have permission for this");
+    const b = await readJson(req);
+    const body = Object.fromEntries(CONTACT.filter((k) => k in b).map((k) => [k, b[k]]));
+    const values = cleanEmployee(db, body, cur);
+    const emp = tx(db, () => {
+      const cols = Object.keys(values);
+      if (cols.length) db.prepare(`UPDATE employees SET ${cols.map((c) => `${c}=?`).join(",")},updated_at=? WHERE id=?`).run(...cols.map((c) => values[c]), nowIso(), cur.id);
+      const e = getEmployee(db, cur.id);
+      audit(db, req.sess.user.id, "employee.contact", "employee", cur.id, Object.fromEntries(cols.map((c) => [c, cur[c]])), values);
+      return e;
+    });
+    send(req, res, 200, { employee: emp });
   });
 
   api.put("/api/employees/:id", async (req, res) => {
@@ -209,6 +230,7 @@ export function registerEmployees(api, ctx) {
     const body = await readJson(req);
     const role = req.sess.user.role === "admin" && body.role ? body.role : "staff";
     const out = createUser(db, req.sess, { username: body.username || emp.emp_no, role, employee_id: emp.id });
+    rerouteFallbacks(ctx);
     send(req, res, 201, out);
   });
 }

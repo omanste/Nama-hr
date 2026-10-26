@@ -1,7 +1,7 @@
 import { api } from "../api.js";
 import { t, nm, getLang, tx } from "../i18n.js";
 import { countryName } from "../countries.js";
-import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, errText, confirm, select, field, backLink, todayIso } from "../ui.js";
+import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, errText, confirm, select, field, backLink, todayIso, isPermission } from "../ui.js";
 import { balanceHero, requestItem } from "./home.js";
 import { render as rerender } from "../app.js";
 
@@ -78,12 +78,17 @@ export async function render(el, params, { me, can, opts }) {
   const mayUpload = can.edit() || own;
   const facts = (pairs) => h("dl", { class: "facts" }, pairs.map(([k, v]) => h("div", null, h("dt", null, t(k)), h("dd", { dir: "auto" }, v || "—"))));
 
-  const photo = can.edit()
-    ? h("label", { class: "photo-edit", title: t("change_photo"), style: { cursor: "pointer" } }, avatar(e, 72),
-        h("input", { type: "file", accept: "image/png,image/jpeg,image/webp", hidden: true, onchange: async (ev) => {
-          const f = ev.target.files[0]; if (!f) return;
-          try { await api.upload(`/api/employees/${e.id}/files?kind=photo&name=${encodeURIComponent(f.name)}`, f); toast(t("saved")); rerender(); } catch (er) { toast(errText(er), "bad"); }
-        } }))
+  // photo: HR for anyone, staff for themselves — from the phone camera (front camera for a selfie) or a file
+  const setPhoto = async (f) => {
+    if (!f) return;
+    try { await api.upload(`/api/employees/${e.id}/files?kind=photo&name=${encodeURIComponent(f.name || "photo.jpg")}`, f); toast(t("saved")); rerender(); } catch (er) { toast(errText(er), "bad"); }
+  };
+  const photoPicker = (attrs) => h("input", { type: "file", hidden: true, accept: "image/png,image/jpeg,image/webp", ...attrs, onchange: (ev) => { const f = ev.target.files[0]; ev.target.value = ""; setPhoto(f); } });
+  const photo = mayUpload
+    ? h("div", { class: "photo-box" }, avatar(e, 72),
+        h("div", { class: "row photo-actions" },
+          h("label", { class: "btn small", title: t("photo_camera") }, "📷 ", t("photo_camera"), photoPicker({ accept: "image/*", capture: "user" })),
+          h("label", { class: "btn small", title: t("photo_upload") }, "🖼️ ", t("photo_upload"), photoPicker({}))))
     : avatar(e, 72);
 
   el.append(
@@ -101,11 +106,12 @@ export async function render(el, params, { me, can, opts }) {
         L.eligibleFrom && L.eligibleFrom > todayIso() ? h("div", { class: "note" }, t("eligible_from", { d: dmy(L.eligibleFrom) })) : null,
         !e.join_date ? h("div", { class: "note" }, t("no_join_date")) : null),
       h("section", { class: "card" }, h("h2", null, t("by_type")),
-        h("dl", { class: "facts" }, Object.entries(L.byType).map(([k, v]) => h("div", null, h("dt", null, t("lt_" + k)), h("dd", { class: "num" }, k === "early" ? t("hours", { n: num(v / 60) }) : daysText(v))))),
+        h("dl", { class: "facts" }, Object.entries(L.byType).map(([k, v]) => h("div", null, h("dt", null, t("lt_" + k)), h("dd", { class: "num" }, isPermission(k) ? t("hours", { n: num(v / 60) }) : daysText(v))))),
         h("dl", { class: "facts", style: { marginTop: "14px" } },
           h("div", null, h("dt", null, t("f_join_date")), h("dd", null, dmy(e.join_date))),
           h("div", null, h("dt", null, t("probation_end")), h("dd", null, dmy(L.probationEnd)))))),
 
+    permissionCard(p.permissions),
     h("section", { class: "card" }, h("h2", null, t("sec_requests")),
       p.requests.length ? h("div", { class: "list" }, p.requests.map((r) => requestItem(r))) : empty()),
 
@@ -121,7 +127,8 @@ export async function render(el, params, { me, can, opts }) {
       h("section", { class: "card" }, h("h2", null, t("sec_personal")), facts([
         ["f_name_ar", e.name_ar], ["f_name_en", e.name_en], ["f_emp_no", e.emp_no], ["f_gender", e.gender ? t("g_" + e.gender) : ""], ["f_nationality", countryName(e.nationality, getLang())], ["f_dob", dmy(e.dob)],
         ["f_civil_id", e.civil_id], ["f_civil_id_expiry", e.civil_id_expiry ? h("span", null, dmy(e.civil_id_expiry), " ", expiryBadge(e.civil_id_expiry)) : null]]), civilIdCard(p, e, mayUpload, can)),
-      h("section", { class: "card" }, h("h2", null, t("sec_contact")), facts([
+      h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_contact")),
+          mayUpload ? h("button", { class: "btn small", type: "button", onclick: () => contactDialog(e) }, t("edit")) : null), facts([
         ["f_mobile", e.mobile && h("a", { href: `tel:${e.mobile}`, dir: "ltr" }, e.mobile)], ["f_email", e.email && h("a", { href: `mailto:${e.email}` }, e.email)], ["f_address", e.address],
         ["f_emergency_name", e.emergency_name], ["f_emergency_relation", e.emergency_relation], ["f_emergency_phone", e.emergency_phone && h("span", { dir: "ltr" }, e.emergency_phone)]])),
       h("section", { class: "card" }, h("h2", null, t("sec_job")), facts([
@@ -223,6 +230,40 @@ function encashDialog(e, consents) {
     consents.length ? h("div", { class: "fields" }, field(t("encash_days"), daysIn), field(t("consent_doc"), consent)) : h("div", { class: "note bad" }, t("err_consent_required")),
     err,
     h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), consents.length ? h("button", { class: "btn primary", type: "submit" }, t("save")) : null)));
+  dlg.addEventListener("close", () => dlg.remove());
+  document.body.append(dlg); dlg.showModal();
+}
+
+const hrs = (m) => t("hours", { n: num(m / 60) });
+/** Times and hours of early leave, late arrival and personal breaks — this month and this year. */
+function permissionCard(P) {
+  if (!P) return null;
+  const col = (title, S) => h("div", null, h("h3", null, title),
+    h("dl", { class: "facts" }, ["early", "late", "break"].map((k) => h("div", null, h("dt", null, t("lt_" + k)), h("dd", { class: "num" }, t("times_hours", { n: num(S[k].count), h: num(S[k].minutes / 60) })))),
+      h("div", null, h("dt", null, h("b", null, t("total"))), h("dd", { class: "num" }, h("b", null, t("times_hours", { n: num(S.total.count), h: num(S.total.minutes / 60) })))),
+      S.deducted ? h("div", null, h("dt", null, t("from_annual")), h("dd", { class: "num" }, hrs(S.deducted))) : null));
+  return h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_permissions")), h("span", { class: "badge" }, t("free_left_month"), ": ", hrs(P.freeLeft))),
+    h("div", { class: "grid cols2" }, col(t("this_month"), P.month), col(t("this_year"), P.year)));
+}
+/** Small summary at the top of "My permissions". */
+export async function permissionSummaryCard(empId) {
+  const p = await api.get(`/api/employees/${empId}`);
+  return permissionCard(p.permissions);
+}
+
+function contactDialog(e) {
+  const F = ["mobile", "address", "emergency_name", "emergency_relation", "emergency_phone"];
+  const inputs = Object.fromEntries(F.map((k) => [k, h("input", { name: k, value: e[k] || "", ...(k.endsWith("phone") || k === "mobile" ? { type: "tel", dir: "ltr", inputmode: "tel" } : {}) })]));
+  const err = h("div", { class: "form-error" });
+  const dlg = h("dialog", { class: "dialog" }, h("form", { class: "form", onsubmit: async (ev) => {
+    ev.preventDefault();
+    try { await api.put(`/api/employees/${e.id}/contact`, Object.fromEntries(F.map((k) => [k, inputs[k].value]))); dlg.close(); toast(t("saved")); rerender(); }
+    catch (er) { err.textContent = errText(er); }
+  } },
+    h("h2", null, t("sec_contact")),
+    h("div", { class: "fields" }, F.map((k) => field(t("f_" + k), inputs[k], { full: k === "address" }))),
+    h("p", { class: "sub" }, t("email_by_hr")), err,
+    h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), h("button", { class: "btn primary", type: "submit" }, t("save")))));
   dlg.addEventListener("close", () => dlg.remove());
   document.body.append(dlg); dlg.showModal();
 }

@@ -272,3 +272,11 @@ h1,h2{overflow-wrap:anywhere}
 .read-row{display:flex;gap:12px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:10px;cursor:pointer}
 .read-row input{width:22px;height:22px;min-height:0;margin-top:4px;flex:none}
 .read-row input:disabled{opacity:.4}
+/* hero: apply for leave / permission */
+.hero .hero-actions{margin-top:16px;position:relative;z-index:1;flex-wrap:wrap}
+.hero .hero-actions .btn.gold{margin-top:0}
+.btn.ghost-light{background:transparent;border-color:rgba(255,255,255,.55);color:#fff}
+.btn.ghost-light:hover{background:rgba(255,255,255,.1)}
+.photo-box{display:grid;justify-items:center;gap:8px}
+.photo-actions{gap:6px;justify-content:center;flex-wrap:wrap}
+.photo-actions .btn{font-size:12px;padding:4px 10px;min-height:32px}

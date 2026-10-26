@@ -46,13 +46,13 @@ test("early leave: free hours each month, the rest deducted from annual leave", 
   assert.equal((await admin.put("/api/settings", { early_free_hours_month: 3 })).status, 200);
   assert.equal((await admin.put("/api/settings", { early_free_hours_month: -1 })).status, 400);
   const before = await remaining(s.emp.id);
-  const a = await s.c.post("/api/requests", { type: "early", date: "2026-12-07", time: "15:00" }); // 2 h, free
+  const a = await s.c.post("/api/requests", { type: "early", reason: "موعد", date: "2026-12-07", time: "15:00" }); // 2 h, free
   assert.equal((await approve(a.data.request.id)).status, 200);
   assert.equal(await remaining(s.emp.id), before);
-  const b = await s.c.post("/api/requests", { type: "early", date: "2026-12-08", time: "14:00" }); // 3 h: 1 free + 2 deducted
+  const b = await s.c.post("/api/requests", { type: "early", reason: "موعد", date: "2026-12-08", time: "14:00" }); // 3 h: 1 free + 2 deducted
   assert.equal((await approve(b.data.request.id)).status, 200);
   assert.equal(await remaining(s.emp.id), before - 120);
-  const c = await s.c.post("/api/requests", { type: "early", date: "2027-01-05", time: "16:00" }); // new month, free again
+  const c = await s.c.post("/api/requests", { type: "early", reason: "موعد", date: "2027-01-05", time: "16:00" }); // new month, free again
   assert.equal((await approve(c.data.request.id)).status, 200);
   assert.equal(await remaining(s.emp.id), before - 120);
   await mgr.c.post(`/api/requests/${b.data.request.id}/cancel`, {});

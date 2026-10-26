@@ -12,10 +12,13 @@ const ROUTES = [
   ["/staff/new", "profile-edit"],
   ["/staff/:id", "profile"],
   ["/staff/:id/edit", "profile-edit"],
-  ["/leave", "requests", { scope: "mine" }],
+  ["/leave", "requests", { scope: "mine", kind: "leave" }],
   ["/requests", "requests", { scope: "all" }],
   ["/team", "requests", { scope: "team" }],
   ["/leave/new", "request-new"],
+  ["/permissions", "requests", { scope: "mine", kind: "permission" }],
+  ["/permissions/new", "permission-new"],
+  ["/reports", "reports"],
   ["/leave/:id", "request"],
   ["/approvals", "approvals"],
   ["/notifications", "notifications"],
@@ -45,11 +48,12 @@ export const can = {
 function navItems() {
   const me = state.me;
   const items = [["#/", "nav_home", "home"]];
-  if (me.employee) items.push(["#/leave", "nav_leave", "leave"], ["#/me", "nav_me", "user"]);
+  if (me.employee) items.push(["#/leave", "nav_leave", "leave"], ["#/permissions", "nav_permissions", "clock"], ["#/me", "nav_me", "user"]);
   if (can.approve()) items.push(["#/approvals", "nav_approvals", "check", me.pendingApprovals]);
   if (can.staffList()) items.push(["#/staff", "nav_staff", "people"], ["#/calendar", "nav_calendar", "leave"]);
   if (me.isApprover && !can.viewAll()) items.push(["#/team", "team_requests", "list"]);
   if (can.viewAll()) items.push(["#/requests", "nav_requests", "list"]);
+  if (can.viewAll() || me.isApprover) items.push(["#/reports", "nav_reports", "chart"]);
   if (can.edit()) items.push(["#/cap-reviews", "nav_cap_reviews", "clock", me.pendingCapReviews], ["#/import", "nav_import", "upload"]);
   if (can.admin()) items.push(["#/settings", "nav_settings", "gear"], ["#/users", "nav_users", "key"]);
   if (can.viewAll()) items.push(["#/audit", "nav_audit", "clock"]);
@@ -61,6 +65,7 @@ const ICONS = {
   home: "M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z", leave: "M7 3v3M17 3v3M4 8h16M5 5h14v16H5z", user: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-8 9a8 8 0 0 1 16 0",
   check: "M4 12l5 5L20 6", people: "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 10a7 7 0 0 1 14 0M17 3.5a4 4 0 0 1 0 7.5M22 21a7 7 0 0 0-4-6.3",
   list: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01", upload: "M12 16V4m0 0-5 5m5-5 5 5M4 20h16", gear: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm8-3 2-1-2-4-2 .5-1.5-1L16 4h-4l-.5 2.5-1.5 1L8 7 6 11l2 1-.1 1.5L6 15l2 4 2-.5 1.5 1L12 22h4l.5-2.5 1.5-1 2 .5 2-4-2-1z",
+  chart: "M4 20V10M10 20V4M16 20v-7M22 20H2",
   key: "M15 7a4 4 0 1 1-3.9 5H3v3h3v3h3v-3h2.1A4 4 0 0 1 15 7z", clock: "M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", bell: "M6 17V11a6 6 0 1 1 12 0v6l2 2H4zM10 21h4", more: "M5 12h.01M12 12h.01M19 12h.01",
 };
 export const icon = (name, size = 20) => {

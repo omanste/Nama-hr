@@ -1,6 +1,6 @@
 import { api } from "../api.js";
 import { t, nm } from "../i18n.js";
-import { h, badge, when, amountText, dateTime, daysText, confirm, toast, errText, backLink, dmy, field } from "../ui.js";
+import { h, badge, when, amountText, dateTime, daysText, confirm, toast, errText, backLink, dmy, field, isPermission } from "../ui.js";
 import { render as rerender, refreshMe } from "../app.js";
 
 export async function decide(id, action) {
@@ -44,7 +44,7 @@ export async function render(el, params, { me, can }) {
       row("employee", can.staffList() ? h("a", { href: `#/staff/${r.employee_id}` }, nm(r)) : nm(r)),
       row("date", when(r)), row("amount", amountText(r)),
       ["annual", "emergency"].includes(r.type) ? row("current_balance", daysText(r.balance)) : null,
-      r.type === "early" && d.deducted > 0 ? row("deducted_from_annual", t("hours", { n: d.deducted / 60 })) : null,
+      isPermission(r.type) && d.deducted > 0 ? row("deducted_from_annual", t("hours", { n: d.deducted / 60 })) : null,
       r.type === "comp_day" ? row("comp_choice", t(r.comp_choice === "pay" ? "comp_pay" : "comp_leave")) : null,
       r.relation ? row(r.type === "patient_care" ? "patient_relation" : "relation", r.type === "bereavement" ? t("rel_" + r.relation) : r.relation) : null,
       r.event_date ? row(r.type === "bereavement" ? "death_date" : r.type === "childcare" ? "child_birth_date" : "birth_date", dmy(r.event_date)) : null,

@@ -68,6 +68,8 @@ const MIGRATIONS = [
   `ALTER TABLE leave_ledger ADD COLUMN file_id INTEGER;`,
   // 8: what was read from an ID/passport photo (suggestions; a person confirms before the profile changes)
   `ALTER TABLE files ADD COLUMN extracted TEXT;`,
+  // 9: permissions — a personal break has a from and a to time (early_time holds the first, end_time the second)
+  `ALTER TABLE leave_requests ADD COLUMN end_time TEXT;`,
 ];
 
 export function openDb(dataDir) {

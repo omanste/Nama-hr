@@ -13,7 +13,10 @@ export const DAY_END = 17 * 60;    // 17:00
  *   proof: a document must be attached before approval (Art. 84; Art. 47 for sickness) · paid: false = without wage */
 export const TYPES = {
   annual: { effect: "deduct", range: true, maxDays: 60 },
-  early: { effect: "early", hours: true },                        // company permission: free hours each month, the rest from annual leave
+  // permissions (company policy): short absences inside a working day. They share free hours each month; the rest comes from annual leave
+  early: { effect: "early", hours: true, permission: true },      // leave before the end of the day
+  late: { effect: "early", hours: true, permission: true },       // arrive after the start of the day
+  break: { effect: "early", hours: true, permission: true },      // step out for a while during the day
   emergency: { effect: "deduct", range: true, maxDays: 60 },      // company policy: taken from annual leave (not in the 2023 law)
   sick: { effect: "record", range: true, proof: true, yearCap: 182, maxDays: 182 },
   bereavement: { effect: "record", range: true, proof: true, relation: "list", event: "death" },
@@ -146,10 +149,33 @@ export function earlyMinutes(time, dayEnd = DAY_END) {
   return dayEnd - t;
 }
 
-export function requestMinutes(type, { start, end, time, dayEnd } = {}) {
+export const PERMISSION_TYPES = Object.keys(TYPES).filter((k) => TYPES[k].permission);
+const toMin = (time) => { const m = /^(\d{2}):(\d{2})$/.exec(String(time || "")); if (!m || +m[2] % 30 !== 0) throw new RangeError("invalid time (30-minute steps)"); return +m[1] * 60 + +m[2]; };
+/** Late arrival: minutes from the start of the day to the arrival time (09:30 at the earliest, 30 minutes before the end at the latest). */
+export function lateMinutes(time, dayStart = 9 * 60, dayEnd = DAY_END) {
+  const t = toMin(time);
+  if (t < dayStart + 30 || t > dayEnd - 30) throw new RangeError("arrival must be from 30 minutes after the start of the day to 30 minutes before its end");
+  return t - dayStart;
+}
+/** Personal break: from–to inside working hours. */
+export function breakMinutes(from, to, dayStart = 9 * 60, dayEnd = DAY_END) {
+  const a = toMin(from), b = toMin(to);
+  if (a < dayStart || b > dayEnd || b <= a) throw new RangeError("the break must be inside working hours and end after it starts");
+  return b - a;
+}
+/** The part of the working day a permission covers, as [from, to] minutes — used to stop two permissions overlapping. */
+export function permissionSpan(type, { time, endTime, dayStart = 9 * 60, dayEnd = DAY_END }) {
+  if (type === "early") return [toMin(time), dayEnd];
+  if (type === "late") return [dayStart, toMin(time)];
+  return [toMin(time), toMin(endTime)];
+}
+
+export function requestMinutes(type, { start, end, time, endTime, dayStart = 9 * 60, dayEnd } = {}) {
   const T = TYPES[type];
   if (!T) throw new RangeError("unknown leave type");
   if (type === "early") return earlyMinutes(time, dayEnd);
+  if (type === "late") return lateMinutes(time, dayStart, dayEnd);
+  if (type === "break") return breakMinutes(time, endTime, dayStart, dayEnd);
   if (type === "comp_day") return DAY;
   // the per-type legal limits (maxDays, relation, yearCap) are checked by checkLeaveRules; this only bounds a request to a year
   return annualMinutes(start, end, type === "annual" ? MAX_RANGE_DAYS : 366);

@@ -6,6 +6,7 @@ import { audit } from "./audit.mjs";
 import { createUser, ROLES, getEmployee } from "./employees.mjs";
 import { tempPassword, setPassword } from "./auth.mjs";
 import { isIsoDate } from "./leave.mjs";
+import { rerouteFallbacks } from "./requests.mjs";
 
 export const DEFAULT_CONTRACT_TYPES = ["Unlimited", "Limited", "Probation", "Part-time"];
 export function readSettings(db) {
@@ -13,6 +14,7 @@ export function readSettings(db) {
     managers_approver_employee_id: getSetting(db, "managers_approver_employee_id", null),
     managers_approver_title: getSetting(db, "managers_approver_title", "ceo"),
     contract_types: getSetting(db, "contract_types", DEFAULT_CONTRACT_TYPES),
+    work_day_start: getSetting(db, "work_day_start", "09:00"),
     work_day_end: getSetting(db, "work_day_end", "17:00"),
     ramadan_start: getSetting(db, "ramadan_start", null),
     ramadan_end: getSetting(db, "ramadan_end", null),
@@ -70,6 +72,7 @@ export function registerAdmin(api, ctx) {
       audit(db, req.sess.user.id, "department.update", "department", cur.id, cur, row);
       return row;
     });
+    rerouteFallbacks(ctx);
     send(req, res, 200, { department: d });
   });
 
@@ -78,13 +81,14 @@ export function registerAdmin(api, ctx) {
   api.put("/api/settings", async (req, res) => {
     need(req.sess, "settings.edit");
     const b = await readJson(req);
-    const allowed = ["managers_approver_employee_id", "managers_approver_title", "contract_types", "work_day_end", "ramadan_start", "ramadan_end", "ramadan_day_end", "official_holidays", "early_free_hours_month"];
+    const allowed = ["managers_approver_employee_id", "managers_approver_title", "contract_types", "work_day_start", "work_day_end", "ramadan_start", "ramadan_end", "ramadan_day_end", "official_holidays", "early_free_hours_month"];
     if ("official_holidays" in b) {
       if (!Array.isArray(b.official_holidays) || !b.official_holidays.every((x) => x && isIsoDate(x.date))) throw invalid("official_holidays", "each holiday needs a valid date");
       b.official_holidays = b.official_holidays.map((x) => ({ date: x.date, name: String(x.name || "").trim().slice(0, 80) })).sort((x, y) => (x.date < y.date ? -1 : 1));
     }
     if ("early_free_hours_month" in b && !(typeof b.early_free_hours_month === "number" && b.early_free_hours_month >= 0 && b.early_free_hours_month <= 40 && (b.early_free_hours_month * 2) % 1 === 0))
       throw invalid("early_free_hours_month", "hours must be 0–40 in half hours");
+    if ("work_day_start" in b && !/^(0[6-9]|1[0-2]):(00|30)$/.test(String(b.work_day_start))) throw invalid("work_day_start", "start time must be 06:00–12:30 (on the hour or half hour)");
     for (const k of ["work_day_end", "ramadan_day_end"]) if (k in b && !/^(1[0-9]|2[0-3]):(00|30)$/.test(String(b[k]))) throw invalid(k, "time must be HH:MM (on the hour or half hour)");
     for (const k of ["ramadan_start", "ramadan_end"]) if (k in b && b[k] !== null && b[k] !== "" && !isIsoDate(b[k])) throw invalid(k, "must be a date");
     if ("ramadan_start" in b && b.ramadan_start === "") b.ramadan_start = null;
@@ -100,6 +104,7 @@ export function registerAdmin(api, ctx) {
       for (const k of Object.keys(b)) setSetting(db, k, k === "managers_approver_employee_id" && b[k] !== null ? Number(b[k]) : k === "contract_types" ? b[k].map((x) => x.trim()) : b[k]);
       audit(db, req.sess.user.id, "settings.update", "settings", null, before, readSettings(db));
     });
+    rerouteFallbacks(ctx);
     send(req, res, 200, readSettings(db));
   });
 
@@ -113,7 +118,9 @@ export function registerAdmin(api, ctx) {
   api.post("/api/users", async (req, res) => {
     need(req.sess, "users.manage");
     const b = await readJson(req);
-    send(req, res, 201, tx(db, () => createUser(db, req.sess, { username: b.username, role: b.role || "staff", employee_id: b.employee_id ? Number(b.employee_id) : null })));
+    const out = tx(db, () => createUser(db, req.sess, { username: b.username, role: b.role || "staff", employee_id: b.employee_id ? Number(b.employee_id) : null }));
+    rerouteFallbacks(ctx);
+    send(req, res, 201, out);
   });
   api.put("/api/users/:id", async (req, res) => {
     need(req.sess, "users.manage");
@@ -127,6 +134,7 @@ export function registerAdmin(api, ctx) {
       if ("active" in b) { db.prepare("UPDATE users SET active=? WHERE id=?").run(b.active ? 1 : 0, cur.id); if (!b.active) db.prepare("DELETE FROM sessions WHERE user_id=?").run(cur.id); }
       audit(db, req.sess.user.id, "user.update", "user", cur.id, cur, db.prepare("SELECT id,username,role,active,employee_id FROM users WHERE id=?").get(cur.id));
     });
+    rerouteFallbacks(ctx);
     send(req, res, 200, { user: db.prepare("SELECT id,username,role,active,employee_id FROM users WHERE id=?").get(cur.id) });
   });
   api.post("/api/users/:id/reset", (req, res) => {
