@@ -55,3 +55,20 @@ export async function login(base, username, password, next = password + "x9") {
   }
   return c;
 }
+
+/** Admin client with the first-login password change done. */
+export async function adminClient(base) {
+  return login(base, ADMIN.username, ADMIN.password, "NewAdmin#2026");
+}
+
+/** Create an employee (as `c`, HR or admin) and optionally a login with a role; returns {emp, user, c (logged in)}. */
+export async function makePerson(base, admin, fields, role) {
+  const r = await admin.post("/api/employees", fields);
+  if (r.status !== 201) throw new Error(`create employee → ${r.status} ${JSON.stringify(r.data)}`);
+  const emp = r.data.employee;
+  if (!role) return { emp };
+  const u = await admin.post("/api/users", { username: emp.emp_no.toLowerCase(), role, employee_id: emp.id });
+  if (u.status !== 201) throw new Error(`create user → ${u.status} ${JSON.stringify(u.data)}`);
+  const c = await login(base, u.data.user.username, u.data.tempPassword, "Passw0rd!" + emp.id);
+  return { emp, user: u.data.user, c };
+}

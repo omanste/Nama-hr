@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { openDb } from "./db.mjs";
 import { router, makeStatic, send, fail, HttpError } from "./http.mjs";
 import { registerModules } from "./modules.mjs";
+import { todayMuscat } from "./leave.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -19,6 +20,9 @@ export async function startServer({ dataDir, port = 3000, env = process.env } = 
   for (const d of ["", "uploads", "backups"]) fs.mkdirSync(path.join(DATA, d), { recursive: true });
   const db = openDb(DATA);
   const ctx = { db, env, dataDir: DATA, appEnv: env.APP_ENV || "production", timers: [] };
+  // tests may pin "today" (APP_ENV=test only); everyone else uses the Muscat calendar date
+  ctx.fakeToday = ctx.appEnv === "test" ? env.FAKE_TODAY || null : null;
+  ctx.today = () => ctx.fakeToday || todayMuscat();
   const api = router();
   api.get("/api/health", (req, res) => send(req, res, 200, { ok: true, env: ctx.appEnv }));
   await registerModules(api, ctx);
@@ -37,7 +41,7 @@ export async function startServer({ dataDir, port = 3000, env = process.env } = 
       if (req.method !== "GET" && req.method !== "HEAD") return fail(req, res, 405, "method_not_allowed");
       return await serveStatic(req, res);
     } catch (e) {
-      if (e instanceof HttpError) return fail(req, res, e.status, e.code, e.message);
+      if (e instanceof HttpError) return send(req, res, e.status, { error: e.code, message: e.message, ...(e.field ? { field: e.field } : {}) });
       console.error(e);
       if (!res.headersSent) fail(req, res, 500, "server_error", "Unexpected server error");
     }
