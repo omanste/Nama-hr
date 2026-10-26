@@ -145,3 +145,13 @@ Production starts empty. Do the import there; dev data stays on dev.
 * Microsoft sign-in: `server/auth.mjs` has a provider interface for it
 
 Each of these plugs in through `server/modules.mjs` without changing the leave rules.
+
+## Dev login (staff list + shared password)
+
+On **dev** (`APP_ENV=dev`) the login page lists active staff by name and everyone signs in with the shared
+password `2026` (change with `DEV_SHARED_PASSWORD`, or set it empty to switch it off). The first sign-in creates
+the person's staff login; no password change is asked. Admin accounts are not in this — they use their username
+and own password ("Sign in with username").
+
+**Production** (`APP_ENV=production`) never shows the list or accepts the shared password, whatever the setting.
+Every login there gets a temporary password and must choose their own at first sign-in.

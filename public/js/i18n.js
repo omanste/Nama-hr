@@ -211,6 +211,9 @@ const D = {
   holidays_save_hint: ["اضغط «حفظ» لاعتماد التغييرات", "Press Save to keep your changes"],
   // short labels for the phone bottom bar
   nav_calendar_short: ["التقويم", "Calendar"], nav_approvals_short: ["الموافقات", "Approvals"], nav_leave_short: ["إجازاتي", "My leave"], nav_me_short: ["ملفي", "Profile"],
+  // dev login by staff name
+  choose_your_name: ["اختر اسمك", "Choose your name"], staff_name: ["اسم الموظف", "Staff name"],
+  sign_in_username: ["الدخول باسم المستخدم (المسؤول)", "Sign in with username (admin)"], sign_in_staff_list: ["الدخول من قائمة الموظفين", "Sign in from the staff list"],
 };
 
 let lang = "ar";

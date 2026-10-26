@@ -82,7 +82,7 @@ function cookie(req, token, maxAgeSec) {
 
 export const publicUser = (u) => ({ id: u.id, username: u.username, role: u.role, lang: u.lang, mustChange: !!u.must_change, employeeId: u.employee_id });
 
-const PUBLIC = new Set(["/api/health", "/api/login"]);
+const PUBLIC = new Set(["/api/health", "/api/login", "/api/login-options"]);
 const ALLOWED_WHILE_MUST_CHANGE = new Set(["/api/me", "/api/me/password", "/api/me/lang", "/api/logout"]);
 
 export function registerAuth(api, ctx) {
@@ -90,6 +90,34 @@ export function registerAuth(api, ctx) {
   ctx.sessionMs = Number(env.SESSION_HOURS || 12) * 3600e3;
   ensureAdmin(db, env);
   const fails = new Map();
+  // DEV ONLY: pick a staff name on the login page and use one shared password (default "2026").
+  // Never active in production; set DEV_SHARED_PASSWORD="" to switch it off on dev too. Admin accounts keep their own password.
+  const devPw = ctx.appEnv === "dev" ? (env.DEV_SHARED_PASSWORD ?? "2026") : ctx.appEnv === "test" ? env.DEV_SHARED_PASSWORD || "" : "";
+  const sameText = (a, b) => { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length === y.length && crypto.timingSafeEqual(x, y); };
+  const activeStaff = () => db.prepare("SELECT id, emp_no, name_ar, name_en FROM employees WHERE status NOT IN ('resigned','terminated') ORDER BY name_ar").all();
+  /** Login for a staff member chosen from the list; creates their staff login on first use. */
+  function devLogin(employeeId, password) {
+    if (!devPw || !sameText(password, devPw)) return null;
+    const emp = activeStaff().find((e) => e.id === Number(employeeId));
+    if (!emp) return null;
+    let u = db.prepare("SELECT * FROM users WHERE employee_id=?").get(emp.id);
+    if (u && u.role === "admin") return null;
+    if (!u) {
+      let name = String(emp.emp_no || "staff" + emp.id).toLowerCase().replace(/[^a-z0-9._-]/g, "") || "staff" + emp.id;
+      while (db.prepare("SELECT 1 FROM users WHERE username=?").get(name)) name += "1";
+      const h = hashPassword(crypto.randomBytes(12).toString("hex"));
+      db.prepare("INSERT INTO users(username,employee_id,role,pw_hash,pw_salt,pw_iter,must_change,created_at) VALUES(?,?,?,?,?,?,0,?)").run(name, emp.id, "staff", h.hash, h.salt, h.iter, nowIso());
+      u = db.prepare("SELECT * FROM users WHERE employee_id=?").get(emp.id);
+    }
+    if (!usable(db, u)) return null;
+    if (u.must_change) db.prepare("UPDATE users SET must_change=0 WHERE id=?").run(u.id); // dev: no forced change
+    return db.prepare("SELECT * FROM users WHERE id=?").get(u.id);
+  }
+
+  api.get("/api/login-options", (req, res) => {
+    if (!devPw) return send(req, res, 200, { devStaffList: false });
+    send(req, res, 200, { devStaffList: true, people: activeStaff() });
+  });
   // behind Dokploy/Traefik the proxy appends the real client address last; earlier entries can be forged
   const ipOf = (req) => String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",").pop().trim();
 
@@ -105,11 +133,12 @@ export function registerAuth(api, ctx) {
   api.post("/api/login", async (req, res) => {
     const body = await readJson(req);
     // counted per username, so changing address doesn't reset it
-    const key = String(body.username || "").trim().toLowerCase();
+    const byEmployee = body.employee_id !== undefined && body.employee_id !== null && body.employee_id !== "";
+    const key = byEmployee ? `emp:${Number(body.employee_id)}` : String(body.username || "").trim().toLowerCase();
     if (fails.size > 5000) for (const [k, v] of fails) if (v.until < Date.now()) fails.delete(k);
     const f = fails.get(key);
     if (f && f.n >= 6 && f.until > Date.now()) return fail(req, res, 429, "locked", "Too many attempts. Try again in 10 minutes.");
-    const user = providers.local.login(db, body);
+    const user = byEmployee ? devLogin(body.employee_id, body.password) : providers.local.login(db, body);
     if (!user) {
       const g = f && f.until > Date.now() ? f : { n: 0 };
       g.n++; g.until = Date.now() + 10 * 60e3; fails.set(key, g);

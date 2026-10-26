@@ -268,3 +268,4 @@ h1,h2{overflow-wrap:anywhere}
 /* phone on its side: keep the bottom bar slim */
 @media (max-height:500px) and (orientation:landscape){ :root{--bottom:52px} nav.bottom a{flex-direction:row;gap:6px} }
 .bare{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+.linkish{background:none;border:0;color:var(--brand);text-decoration:underline;cursor:pointer;padding:8px 0;min-height:40px;font-size:14px;justify-self:center}
