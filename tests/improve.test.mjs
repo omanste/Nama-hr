@@ -89,3 +89,17 @@ test("team calendar: who is off in a month, by visibility", async () => {
   assert.equal((await staff.c.get("/api/calendar?month=2026-12")).status, 403);
   assert.equal((await hr.c.get("/api/calendar?month=2026-13")).status, 400);
 });
+
+test("an approver must name a deputy for their own annual or emergency leave; cancelling removes the cover", async () => {
+  const no = await tawfiq.c.post("/api/requests", { type: "annual", start: "2027-03-01", end: "2027-03-05" });
+  assert.equal(no.status, 400); assert.equal(no.data.error, "deputy_required");
+  assert.equal((await tawfiq.c.post("/api/requests", { type: "annual", start: "2027-03-01", end: "2027-03-05", deputy_user_id: tawfiq.user.id })).data.error, "deputy_required");
+  const ok = await tawfiq.c.post("/api/requests", { type: "annual", start: "2027-03-01", end: "2027-03-05", deputy_user_id: deputy.user.id });
+  assert.equal(ok.status, 201);
+  const cover = (await tawfiq.c.get("/api/cover")).data.items.find((c) => c.request_id === ok.data.request.id);
+  assert.ok(cover && cover.start_date === "2027-03-01" && cover.end_date === "2027-03-05" && cover.deputy_user_id === deputy.user.id);
+  assert.equal((await staff.c.post("/api/requests", { type: "annual", start: "2027-04-01", end: "2027-04-01" })).status, 201, "staff don't need a deputy");
+  assert.equal((await tawfiq.c.post("/api/requests", { type: "sick", start: "2026-10-20", end: "2026-10-20" })).status, 201, "unplanned leave doesn't need one");
+  await tawfiq.c.post(`/api/requests/${ok.data.request.id}/cancel`, {});
+  assert.ok(!(await tawfiq.c.get("/api/cover")).data.items.some((c) => c.request_id === ok.data.request.id));
+});

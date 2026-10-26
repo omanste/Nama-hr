@@ -62,6 +62,8 @@ const MIGRATIONS = [
   // 5: an approver names a deputy for a period (e.g. while on leave)
   `CREATE TABLE approver_cover(id INTEGER PRIMARY KEY, approver_user_id INTEGER NOT NULL REFERENCES users(id), deputy_user_id INTEGER NOT NULL REFERENCES users(id),
      start_date TEXT NOT NULL, end_date TEXT NOT NULL, created_by INTEGER, created_at TEXT NOT NULL);`,
+  // 6: cover created with an approver's own leave request (removed if that request is cancelled or rejected)
+  `ALTER TABLE approver_cover ADD COLUMN request_id INTEGER;`,
 ];
 
 export function openDb(dataDir) {

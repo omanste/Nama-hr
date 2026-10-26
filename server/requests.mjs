@@ -165,12 +165,20 @@ export function registerRequests(api, ctx) {
     if (!sess.employee) throw err(400, "no_profile", "Your login is not linked to a staff profile");
     const body = await readJson(req);
     const emp = sess.employee;
+    // Company policy: an approver taking planned leave names a deputy for those dates
+    const needsDeputy = ["annual", "emergency"].includes(body.type) && (sess.isApprover || sess.user.role === "ceo"
+      || getSetting(db, "managers_approver_employee_id", null) === emp.id);
+    const deputyId = Number(body.deputy_user_id) || 0;
+    if (needsDeputy && (!deputyId || deputyId === sess.user.id || !db.prepare("SELECT 1 FROM users WHERE id=? AND active=1").get(deputyId)))
+      throw err(400, "deputy_required", "Name a deputy to handle your approvals while you are away", "deputy_user_id");
     const r = tx(db, () => {
       const v = validateRequest(db, emp, body, ctx.today());
       const route = routeFor(db, emp, ctx.today());
       const ins = db.prepare(`INSERT INTO leave_requests(employee_id,type,start_date,end_date,early_time,minutes,reason,status,approver_user_id,route_reason,created_by,created_at,relation,event_date,comp_choice)
         VALUES(?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?)`).run(emp.id, v.type, v.start_date, v.end_date, v.early_time, v.minutes, String(body.reason || "").slice(0, 1000) || null, route.userId, route.reason, sess.user.id, nowIso(), v.relation, v.event_date, v.comp_choice);
       const row = getReq(db, ins.lastInsertRowid);
+      if (needsDeputy) db.prepare("INSERT INTO approver_cover(approver_user_id,deputy_user_id,start_date,end_date,created_by,created_at,request_id) VALUES(?,?,?,?,?,?,?)")
+        .run(sess.user.id, deputyId, v.start_date, v.end_date, sess.user.id, nowIso(), row.id);
       event(db, row.id, "submitted", sess.user.id, row.reason);
       audit(db, sess.user.id, "request.submit", "request", row.id, null, row);
       return row;
@@ -267,6 +275,7 @@ export function registerRequests(api, ctx) {
         } else throw err(409, "not_cancellable", "This request cannot be cancelled");
       }
       const status = { approve: "approved", reject: "rejected", cancel: "cancelled" }[action];
+      if (status !== "approved") db.prepare("DELETE FROM approver_cover WHERE request_id=?").run(r.id);
       db.prepare("UPDATE leave_requests SET status=?, decided_by=?, decided_at=?, decision_comment=coalesce(?,decision_comment) WHERE id=?")
         .run(status, sess.user.id, nowIso(), comment || null, r.id);
       event(db, r.id, status, sess.user.id, comment);

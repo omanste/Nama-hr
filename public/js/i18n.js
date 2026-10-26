@@ -194,6 +194,7 @@ const D = {
   err_not_entitled: ["هذه الإجازة غير متاحة لهذا الموظف", "This leave is not available for this employee"], err_gender_required: ["يجب على الموارد البشرية تسجيل الجنس أولاً", "HR must record the gender first"],
   err_proof_required: ["أرفق المستند المؤيد قبل الموافقة", "Attach the supporting document before approval"], err_too_late: ["لا يجوز التأجيل أكثر من ٦ أشهر", "Postponement can't exceed 6 months"],
   err_consent_required: ["ارفع موافقة الموظف الكتابية أولاً", "Upload the employee's written consent first"],
+  err_deputy_required: ["اختر نائباً يتولى الموافقات أثناء غيابك", "Name a deputy to handle your approvals while you're away"],
   err_weak_password: ["كلمة المرور قصيرة (٨ أحرف على الأقل)", "Password too short (at least 8 characters)"], err_wrong_password: ["كلمة المرور الحالية غير صحيحة", "Current password is wrong"],
   err_same_password: ["اختر كلمة مرور مختلفة", "Choose a different password"], err_no_profile: ["حسابك غير مرتبط بملف موظف", "Your login is not linked to a staff profile"],
 };

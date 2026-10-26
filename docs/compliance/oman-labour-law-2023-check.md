@@ -129,3 +129,10 @@ Still open, for the legal adviser:
   - the pay rate for work on a rest day or holiday (100% extra, or 200%)
   - how sick pay is split between Nama and the Social Protection Fund
   - checking this whole document against the official Arabic text of Royal Decree 53/2023
+
+## 10. More management decisions (2026-10-26)
+
+- **Early leave:** 8 hours = 1 day stays, even though the working day is 7 actual hours.
+- **Annual leave:** counted in calendar days. Weekends are deducted; official holidays are not.
+- **Deputies:** an approver (department manager, CEO, managers' approver) must name a deputy when applying for annual or emergency leave. During those dates, approvals go to the deputy. If the request is cancelled or rejected, the cover is removed.
+- **Lock-out:** after 6 wrong passwords a username is locked for 10 minutes, wherever the attempts come from. Admin can reset a password at any time.

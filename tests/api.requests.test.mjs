@@ -103,12 +103,12 @@ test("owner may cancel a pending request", async () => {
 });
 
 test("managers' leave goes to the CEO; the CEO's goes to admin", async () => {
-  const a = await tawfiq.c.post("/api/requests", { type: "annual", start: "2026-12-20", end: "2026-12-21" });
+  const a = await tawfiq.c.post("/api/requests", { type: "annual", start: "2026-12-20", end: "2026-12-21", deputy_user_id: finMgr.user.id });
   assert.equal(a.data.request.approver_user_id, ceo.user.id);
   assert.equal(a.data.request.route_reason, "managers");
   const h = await hr.c.post("/api/requests", { type: "annual", start: "2026-12-20", end: "2026-12-20" });
   assert.equal(h.data.request.approver_user_id, ceo.user.id);
-  const c = await ceo.c.post("/api/requests", { type: "annual", start: "2026-12-20", end: "2026-12-20" });
+  const c = await ceo.c.post("/api/requests", { type: "annual", start: "2026-12-20", end: "2026-12-20", deputy_user_id: hr.user.id });
   assert.equal(c.data.request.route_reason, "admin");
   assert.equal((await ceo.c.post(`/api/requests/${a.data.request.id}/approve`, {})).status, 200);
 });

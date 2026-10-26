@@ -1,6 +1,6 @@
 // New request: annual, early leave, sick, and the statutory special leaves of Oman's Labour Law (Art. 78–84).
 import { api } from "../api.js";
-import { t } from "../i18n.js";
+import { t, nm } from "../i18n.js";
 import { h, field, select, toast, errText, showFieldError, backLink, daysText, num, dmy, todayIso, empty } from "../ui.js";
 
 // mirrors server/leave.mjs TYPES (the server enforces every limit; this only guides the form)
@@ -21,7 +21,10 @@ const dayCount = (a, b) => (a && b ? Math.round((Date.parse(b) - Date.parse(a)) 
 
 export async function render(el, _p, { me, query }) {
   if (!me.employee) { el.append(empty(t("no_profile"))); return; }
-  const [prof, settings] = await Promise.all([api.get(`/api/employees/${me.employee.id}`), api.get("/api/settings")]);
+  const [prof, settings, cover] = await Promise.all([api.get(`/api/employees/${me.employee.id}`), api.get("/api/settings"), api.get("/api/cover")]);
+  // approvers name a deputy for their own annual or emergency leave (company policy)
+  const deputySel = cover.candidates && (me.isApprover || me.user.role === "ceo" || settings.managers_approver_employee_id === me.employee.id)
+    ? select("deputy_user_id", [["", "—"], ...cover.candidates.map((u) => [u.id, nm(u) || u.username])], "") : null;
   const L = prof.leave, emp = prof.employee;
   const today = todayIso();
   const notYet = L.eligibleFrom && L.eligibleFrom > today;
@@ -93,6 +96,7 @@ export async function render(el, _p, { me, query }) {
       R.relation === "list" ? field(t("relation"), relList, { req: true }) : null,
       R.relation === "text" ? field(t("patient_relation"), relText, { req: true }) : null,
       R.event ? field(t("birth_date"), birth, { req: true }) : null,
+      deputySel && R.deduct && type !== "early" ? field(t("deputy"), deputySel, { req: true, hint: t("cover_hint") }) : null,
       field(t("reason_optional"), reason, { full: true }),
       R.proof ? field(type === "sick" ? t("medical_note") : t("proof"), proofFile, { full: true }) : null].filter(Boolean));
     update();
@@ -113,6 +117,7 @@ export async function render(el, _p, { me, query }) {
     if (R.relation === "text") body.relation = relText.value.trim();
     if (R.event) body.event_date = birth.value;
     if (type === "comp_day") body.comp_choice = compChoice.value;
+    if (deputySel && R.deduct) body.deputy_user_id = Number(deputySel.value) || null;
     submit.disabled = true;
     try {
       const r = await api.post("/api/requests", body);
