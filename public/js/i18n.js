@@ -30,7 +30,7 @@ const D = {
   no_results: ["لا توجد نتائج", "Nothing here yet"], forbidden: ["ليست لديك صلاحية", "You do not have permission"], not_found: ["غير موجود", "Not found"],
   // roles & statuses
   role_staff: ["موظف", "Staff"], role_hr: ["مدير الموارد البشرية", "HR Manager"], role_accounts: ["الحسابات", "Accounts"],
-  role_ceo: ["الرئيس التنفيذي", "CEO"], role_admin: ["مدير النظام", "Admin"], role_manager: ["مدير قسم", "Dept. manager"],
+  role_ceo: ["الرئيس التنفيذي", "CEO"], role_admin: ["مدير النظام", "Admin"], role_manager: ["مدير", "Manager"],
   st_active: ["على رأس العمل", "Active"], st_on_leave: ["في إجازة", "On leave"], st_resigned: ["مستقيل", "Resigned"], st_terminated: ["منتهي الخدمة", "Terminated"],
   rs_pending: ["بانتظار الموافقة", "Pending"], rs_approved: ["موافق عليه", "Approved"], rs_rejected: ["مرفوض", "Rejected"], rs_cancelled: ["ملغى", "Cancelled"],
   ev_submitted: ["قدّم الطلب", "Submitted"], ev_approved: ["وافق", "Approved"], ev_rejected: ["رفض", "Rejected"], ev_cancelled: ["ألغى", "Cancelled"],
@@ -275,6 +275,13 @@ const D = {
   two_years: ["سنتان", "2 years"], two_months: ["شهران", "2 months"], n_years_11: ["{n} سنة", "{n} years"], n_months_11: ["{n} شهراً", "{n} months"], and_sep: [" و", " and "],
   less_than_month: ["أقل من شهر", "Less than a month"], not_started: ["لم يبدأ بعد", "Not started yet"],
   theme_dark: ["الوضع الداكن", "Dark mode"], theme_light: ["الوضع الفاتح", "Light mode"],
+  // disable / enable / delete a staff record
+  st_disabled: ["معطّل", "Disabled"], staff_disable: ["تعطيل", "Disable"], staff_enable: ["تفعيل", "Enable"], staff_delete: ["حذف نهائي", "Delete permanently"],
+  staff_disable_q: ["تعطيل {name}؟ لن يتمكن من الدخول ولن يظهر في قائمة الدخول ولا في قائمة الموظفين، ويبقى سجله محفوظاً. يمكن إعادة التفعيل لاحقاً.", "Disable {name}? They can't sign in, and they leave the login list and the staff list. Their records are kept; you can enable them again later."],
+  staff_enable_q: ["إعادة تفعيل {name}؟", "Enable {name} again?"],
+  staff_delete_q: ["حذف {name} نهائياً؟ يُحذف الملف والمستندات والحساب ولا يمكن التراجع. يُسمح بذلك فقط إذا لم يكن له أي طلبات أو رسائل — وإلا استخدم «تعطيل».", "Delete {name} for good? The profile, documents and login are removed and this can't be undone. Only allowed when they have no requests or messages — otherwise use Disable."],
+  staff_deleted: ["تم الحذف", "Deleted"], err_has_history: ["لهذا الموظف سجل طلبات أو رسائل — استخدم «تعطيل» ليبقى السجل محفوظاً", "This person has requests or messages — use Disable so the records are kept"],
+  disabled_note: ["هذا الموظف معطّل: لا يمكنه الدخول ولا يظهر في القوائم.", "This person is disabled: no sign-in, and hidden from the lists."],
 };
 
 let lang = "ar";

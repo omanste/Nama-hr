@@ -1,4 +1,6 @@
 /* Staff profiles: list, view, create, edit, balance adjustments, logins from a profile. */
+import fs from "node:fs";
+import path from "node:path";
 import { nowIso, tx } from "./db.mjs";
 import { send, readJson, HttpError } from "./http.mjs";
 import { can, canViewEmployee, approvedDepartments } from "./perm.mjs";
@@ -11,7 +13,8 @@ import { permissionSummary } from "./permissions.mjs";
 import { rerouteFallbacks } from "./requests.mjs";
 
 const CONTACT = ["mobile", "address", "emergency_name", "emergency_relation", "emergency_phone"];
-export const STATUSES = ["active", "on_leave", "resigned", "terminated"];
+export const STATUSES = ["active", "on_leave", "resigned", "terminated", "disabled"];
+const GONE = ["resigned", "terminated", "disabled"]; // no access to the portal
 const TEXT = ["name_ar", "name_en", "civil_id", "nationality", "mobile", "address", "emergency_name", "emergency_relation", "emergency_phone", "job_title", "contract_type"];
 const DATES = ["civil_id_expiry", "dob", "join_date", "contract_end"];
 export const LONG = ["education", "specialization", "experience", "languages", "skills", "certifications", "main_tasks"];
@@ -70,7 +73,7 @@ export function insertEmployee(db, values, by) {
 export const getEmployee = (db, id) => db.prepare("SELECT * FROM employees WHERE id=?").get(Number(id));
 
 function deactivateIfLeft(db, emp) {
-  if (emp.status === "resigned" || emp.status === "terminated") {
+  if (GONE.includes(emp.status)) {
     db.prepare("UPDATE users SET active=0 WHERE employee_id=?").run(emp.id);
     db.prepare("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE employee_id=?)").run(emp.id);
   }
@@ -168,7 +171,7 @@ export function registerEmployees(api, ctx) {
     const cur = getEmployee(db, req.params.id);
     if (!cur) throw new HttpError(404, "not_found", "Employee not found");
     const values = cleanEmployee(db, await readJson(req), cur);
-    if (["resigned", "terminated"].includes(values.status) && req.sess.user.role !== "admin"
+    if (GONE.includes(values.status) && req.sess.user.role !== "admin"
       && db.prepare("SELECT 1 FROM users WHERE employee_id=? AND role IN ('admin','ceo')").get(cur.id))
       throw new HttpError(403, "forbidden", "Only Admin can end the service of an Admin or CEO");
     const emp = tx(db, () => {
@@ -224,6 +227,68 @@ export function registerEmployees(api, ctx) {
   });
 
   // HR or Admin create a login from a profile. HR always creates a staff login; Admin may pick the role.
+  // Disable: no access, hidden from the login list and the staff list, history kept. Enable brings the login back.
+  api.post("/api/employees/:id/disable", async (req, res) => {
+    need(req.sess, "employee.edit");
+    const cur = getEmployee(db, req.params.id);
+    if (!cur) throw new HttpError(404, "not_found", "Employee not found");
+    if (cur.id === req.sess.user.employee_id) throw new HttpError(409, "self", "You cannot disable yourself");
+    if (req.sess.user.role !== "admin" && db.prepare("SELECT 1 FROM users WHERE employee_id=? AND role IN ('admin','ceo')").get(cur.id))
+      throw new HttpError(403, "forbidden", "Only Admin can disable an Admin or CEO");
+    const e = tx(db, () => {
+      db.prepare("UPDATE employees SET status='disabled', updated_at=? WHERE id=?").run(nowIso(), cur.id);
+      const row = getEmployee(db, cur.id);
+      deactivateIfLeft(db, row);
+      audit(db, req.sess.user.id, "employee.disable", "employee", cur.id, { status: cur.status }, { status: "disabled" });
+      return row;
+    });
+    send(req, res, 200, { employee: e });
+  });
+  api.post("/api/employees/:id/enable", async (req, res) => {
+    need(req.sess, "employee.edit");
+    const cur = getEmployee(db, req.params.id);
+    if (!cur) throw new HttpError(404, "not_found", "Employee not found");
+    const e = tx(db, () => {
+      db.prepare("UPDATE employees SET status='active', updated_at=? WHERE id=?").run(nowIso(), cur.id);
+      db.prepare("UPDATE users SET active=1 WHERE employee_id=?").run(cur.id);
+      audit(db, req.sess.user.id, "employee.enable", "employee", cur.id, { status: cur.status }, { status: "active" });
+      return getEmployee(db, cur.id);
+    });
+    rerouteFallbacks(ctx);
+    send(req, res, 200, { employee: e });
+  });
+  // Delete for good: Admin only, and only a record with no leave, permission or message history (a mistake or duplicate)
+  api.delete("/api/employees/:id", (req, res) => {
+    if (req.sess.user.role !== "admin") throw new HttpError(403, "forbidden", "Only Admin can delete a staff record");
+    const cur = getEmployee(db, req.params.id);
+    if (!cur) throw new HttpError(404, "not_found", "Employee not found");
+    if (cur.id === req.sess.user.employee_id) throw new HttpError(409, "self", "You cannot delete yourself");
+    const history = db.prepare("SELECT (SELECT count(*) FROM leave_requests WHERE employee_id=?) + (SELECT count(*) FROM voice_messages WHERE employee_id=? OR to_employee_id=?) n").get(cur.id, cur.id, cur.id).n;
+    if (history) throw new HttpError(409, "has_history", "This person has leave, permission or message history — disable instead, so the records are kept");
+    const files = db.prepare("SELECT id FROM files WHERE employee_id=?").all(cur.id).map((f) => f.id);
+    tx(db, () => {
+      const u = db.prepare("SELECT id FROM users WHERE employee_id=?").get(cur.id);
+      if (u) {
+        if (db.prepare("SELECT 1 FROM leave_requests WHERE approver_user_id=? OR decided_by=? OR created_by=?").get(u.id, u.id, u.id) || db.prepare("SELECT 1 FROM voice_replies WHERE user_id=?").get(u.id))
+          throw new HttpError(409, "has_history", "This person has approved or handled requests — disable instead, so the records are kept");
+        db.prepare("DELETE FROM sessions WHERE user_id=?").run(u.id);
+        db.prepare("DELETE FROM notifications WHERE user_id=?").run(u.id);
+        db.prepare("DELETE FROM approver_cover WHERE approver_user_id=? OR deputy_user_id=?").run(u.id, u.id);
+        db.prepare("UPDATE audit_log SET actor_user_id=NULL WHERE actor_user_id=?").run(u.id);
+        db.prepare("DELETE FROM users WHERE id=?").run(u.id);
+      }
+      db.prepare("UPDATE employees SET manager_employee_id=NULL WHERE manager_employee_id=?").run(cur.id);
+      db.prepare("UPDATE departments SET approver_employee_id=NULL WHERE approver_employee_id=?").run(cur.id);
+      db.prepare("DELETE FROM leave_ledger WHERE employee_id=?").run(cur.id);
+      db.prepare("DELETE FROM cap_reviews WHERE employee_id=?").run(cur.id);
+      db.prepare("DELETE FROM files WHERE employee_id=?").run(cur.id);
+      db.prepare("DELETE FROM employees WHERE id=?").run(cur.id);
+      audit(db, req.sess.user.id, "employee.delete", "employee", cur.id, { emp_no: cur.emp_no, name_ar: cur.name_ar, name_en: cur.name_en }, null);
+    });
+    for (const id of files) fs.rmSync(path.join(ctx.dataDir, "uploads", String(id)), { force: true });
+    send(req, res, 200, { ok: true });
+  });
+
   api.post("/api/employees/:id/login", async (req, res) => {
     need(req.sess, "employee.edit");
     const emp = load(req.sess, req.params.id);
@@ -235,7 +300,7 @@ export function registerEmployees(api, ctx) {
   });
 }
 
-export const ROLES = ["staff", "hr", "accounts", "ceo", "admin"];
+export const ROLES = ["staff", "manager", "hr", "accounts", "ceo", "admin"];
 export function createUser(db, sess, { username, role, employee_id }) {
   username = String(username || "").trim().toLowerCase();
   if (!/^[a-z0-9._-]{2,40}$/.test(username)) throw bad("username", "Username may use letters, digits, dot, dash and underscore");

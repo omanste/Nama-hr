@@ -3,7 +3,7 @@ import { t, nm, getLang } from "../i18n.js";
 import { countryOptions, countryName } from "../countries.js";
 import { h, field, select, toast, errText, showFieldError, backLink } from "../ui.js";
 
-const STATUSES = ["active", "on_leave", "resigned", "terminated"];
+const STATUSES = ["active", "on_leave", "resigned", "terminated", "disabled"];
 
 export async function render(el, params, { can }) {
   if (!can.edit()) throw { status: 403 };

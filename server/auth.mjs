@@ -33,7 +33,7 @@ const usable = (db, u) => {
   if (!u || !u.active) return false;
   if (!u.employee_id) return true;
   const e = db.prepare("SELECT status FROM employees WHERE id=?").get(u.employee_id);
-  return !!e && e.status !== "resigned" && e.status !== "terminated";
+  return !!e && !["resigned", "terminated", "disabled"].includes(e.status);
 };
 
 const DUMMY = (() => { const h = hashPassword(crypto.randomBytes(12).toString("hex")); return { pw_hash: h.hash, pw_salt: h.salt, pw_iter: h.iter }; })();
@@ -96,7 +96,7 @@ export function registerAuth(api, ctx) {
   // Never active in production; set DEV_SHARED_PASSWORD="" to switch it off on dev too. Admin accounts keep their own password.
   const devPw = ctx.appEnv === "dev" ? (env.DEV_SHARED_PASSWORD ?? "2026") : ctx.appEnv === "test" ? env.DEV_SHARED_PASSWORD || "" : "";
   const sameText = (a, b) => { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length === y.length && crypto.timingSafeEqual(x, y); };
-  const activeStaff = () => db.prepare("SELECT id, emp_no, name_ar, name_en FROM employees WHERE status NOT IN ('resigned','terminated') ORDER BY name_ar").all();
+  const activeStaff = () => db.prepare("SELECT id, emp_no, name_ar, name_en FROM employees WHERE status NOT IN ('resigned','terminated','disabled') ORDER BY name_ar").all();
   /** Login for a staff member chosen from the list; creates their staff login on first use. */
   function devLogin(employeeId, password) {
     if (!devPw || !sameText(password, devPw)) return null;

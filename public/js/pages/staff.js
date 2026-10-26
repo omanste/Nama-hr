@@ -2,7 +2,7 @@ import { api } from "../api.js";
 import { t, nm, tx } from "../i18n.js";
 import { h, clear, select, pageHead, badge, avatar, daysText, empty, dmy } from "../ui.js";
 
-const STATUSES = ["active", "on_leave", "resigned", "terminated"];
+const STATUSES = ["active", "on_leave", "resigned", "terminated", "disabled"];
 
 export async function render(el, _p, { can, query }) {
   const depts = (await api.get("/api/departments")).items;

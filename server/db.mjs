@@ -81,17 +81,41 @@ const MIGRATIONS = [
   // 11: Staff Voice goes to a person (employee), so a manager without a login yet still receives it at first sign-in
   `ALTER TABLE voice_messages ADD COLUMN to_employee_id INTEGER REFERENCES employees(id);
    UPDATE voice_messages SET to_employee_id=(SELECT employee_id FROM users WHERE users.id=voice_messages.to_user_id) WHERE to_user_id IS NOT NULL;`,
+  // 12: a "manager" role, and a "disabled" staff status (no access, kept on record). SQLite can't change a CHECK in place,
+  // so both tables are rebuilt from their own current definition with only the CHECK widened.
+  (db) => {
+    rebuildWithCheck(db, "users", "CHECK(role IN ('staff','hr','accounts','ceo','admin'))", "CHECK(role IN ('staff','manager','hr','accounts','ceo','admin'))");
+    rebuildWithCheck(db, "employees", "CHECK(status IN ('active','on_leave','resigned','terminated'))", "CHECK(status IN ('active','on_leave','resigned','terminated','disabled'))");
+  },
 ];
+
+/** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */
+function rebuildWithCheck(db, table, from, to) {
+  const { sql } = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?").get(table);
+  if (!sql.includes(from)) throw new Error(`migration: ${table} does not have the expected CHECK`);
+  const indexes = db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL").all(table).map((r) => r.sql);
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name).join(",");
+  db.exec(sql.replace(`CREATE TABLE ${table}`, `CREATE TABLE ${table}__new`).replace(from, to));
+  db.exec(`INSERT INTO ${table}__new(${cols}) SELECT ${cols} FROM ${table}; DROP TABLE ${table}; ALTER TABLE ${table}__new RENAME TO ${table};`);
+  for (const i of indexes) db.exec(i);
+}
 
 export function openDb(dataDir) {
   const db = new DatabaseSync(path.join(dataDir, "hr.db"));
   db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");
   db.exec("CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)");
   const done = new Set(db.prepare("SELECT version FROM schema_migrations").all().map((r) => r.version));
-  MIGRATIONS.forEach((sql, i) => {
+  MIGRATIONS.forEach((m, i) => {
     const v = i + 1;
     if (done.has(v)) return;
-    tx(db, () => { db.exec(sql); db.prepare("INSERT INTO schema_migrations(version,applied_at) VALUES(?,?)").run(v, new Date().toISOString()); });
+    // table rebuilds run with foreign keys off (they must be switched outside a transaction), then are checked
+    if (typeof m === "function") db.exec("PRAGMA foreign_keys=OFF; PRAGMA legacy_alter_table=ON;");
+    try {
+      tx(db, () => { typeof m === "function" ? m(db) : db.exec(m); db.prepare("INSERT INTO schema_migrations(version,applied_at) VALUES(?,?)").run(v, new Date().toISOString()); });
+    } finally {
+      if (typeof m === "function") db.exec("PRAGMA legacy_alter_table=OFF; PRAGMA foreign_keys=ON;");
+    }
+    if (typeof m === "function") { const bad = db.prepare("PRAGMA foreign_key_check").all(); if (bad.length) throw new Error(`migration ${v} broke ${bad.length} links`); }
   });
   return db;
 }

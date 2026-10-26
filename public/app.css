@@ -161,7 +161,7 @@ td.num,th.num{text-align:end;font-variant-numeric:tabular-nums;white-space:nowra
 .b-pending{background:var(--warn-soft);color:var(--warn)}
 .b-approved,.b-active{background:var(--ok-soft);color:var(--ok)}
 .b-rejected,.b-terminated{background:var(--bad-soft);color:var(--bad)}
-.b-cancelled,.b-resigned{background:var(--surface-2);color:var(--muted)}
+.b-cancelled,.b-resigned,.b-disabled{background:var(--surface-2);color:var(--muted)}
 .b-on_leave{background:var(--info-soft);color:var(--info)}
 .avatar{border-radius:50%;object-fit:cover;flex:none;background:var(--surface-2)}
 .avatar.ph{display:inline-grid;place-items:center;background:var(--gold-soft);color:var(--gold);font-family:var(--font-display);font-weight:600}

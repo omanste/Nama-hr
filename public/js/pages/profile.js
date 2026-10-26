@@ -98,7 +98,11 @@ export async function render(el, params, { me, can, opts }) {
       h("div", { class: "row" },
         can.edit() ? h("a", { class: "btn", href: `#/staff/${e.id}/edit` }, t("edit")) : null,
         can.edit() ? h("button", { class: "btn", type: "button", onclick: () => adjustDialog(e) }, t("adjust_balance")) : null,
-        can.edit() ? h("button", { class: "btn", type: "button", onclick: () => encashDialog(e, p.files.filter((f) => f.doc_type === "consent")) }, t("encash")) : null)),
+        can.edit() ? h("button", { class: "btn", type: "button", onclick: () => encashDialog(e, p.files.filter((f) => f.doc_type === "consent")) }, t("encash")) : null,
+        // disable (keeps history) / enable; Admin may delete a mistaken record with no history
+        can.edit() && !own ? h("button", { class: e.status === "disabled" ? "btn" : "btn danger", type: "button", onclick: () => setDisabled(e, e.status !== "disabled") }, t(e.status === "disabled" ? "staff_enable" : "staff_disable")) : null,
+        can.admin() && !own ? h("button", { class: "btn danger", type: "button", onclick: () => deleteStaff(e) }, t("staff_delete")) : null)),
+    e.status === "disabled" ? h("div", { class: "note bad" }, t("disabled_note")) : null,
 
     // my own leave, permissions and requests live on the home page; HR still sees them on a colleague's profile
     opts.me ? null : leaveSections(p, { own }),
@@ -287,4 +291,13 @@ function serviceLength(join) {
   const form = (n, unit) => t(n === 1 ? `one_${unit}` : n === 2 ? `two_${unit}s` : n <= 10 ? `n_${unit}s` : `n_${unit}s_11`, { n: num(n) });
   const parts = [years ? form(years, "year") : null, months ? form(months, "month") : null].filter(Boolean);
   return parts.length ? parts.join(t("and_sep")) : t("less_than_month");
+}
+
+async function setDisabled(e, disable) {
+  if (!(await confirm(t(disable ? "staff_disable_q" : "staff_enable_q", { name: nm(e) }), { danger: disable, okText: t(disable ? "staff_disable" : "staff_enable") }))) return;
+  try { await api.post(`/api/employees/${e.id}/${disable ? "disable" : "enable"}`); toast(t("saved")); rerender(); } catch (er) { toast(errText(er), "bad"); }
+}
+async function deleteStaff(e) {
+  if (!(await confirm(t("staff_delete_q", { name: nm(e) }), { danger: true, okText: t("staff_delete") }))) return;
+  try { await api.del(`/api/employees/${e.id}`); toast(t("staff_deleted")); location.hash = "#/staff"; } catch (er) { toast(errText(er), "bad"); }
 }
