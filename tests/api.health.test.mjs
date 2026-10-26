@@ -19,10 +19,10 @@ test("root serves the Arabic app shell", async () => {
   assert.match(r.data, /lang="ar"/);
 });
 
-test("unknown api route is a JSON 404", async () => {
+test("unknown api route without a session is a JSON 401", async () => {
   const r = await client(t.base).get("/api/nope");
-  assert.equal(r.status, 404);
-  assert.equal(r.data.error, "not_found");
+  assert.equal(r.status, 401);
+  assert.equal(r.data.error, "unauthorized");
 });
 
 test("path traversal outside public is refused", async () => {

@@ -28,10 +28,10 @@ export async function startServer({ dataDir, port = 3000, env = process.env } = 
     const url = new URL(req.url, "http://x");
     try {
       if (url.pathname.startsWith("/api/")) {
+        if (ctx.guard && (await ctx.guard(req, res, url.pathname)) === false) return;
         const m = api.match(req.method, url.pathname);
         if (!m) return fail(req, res, 404, "not_found", "Unknown API route");
         req.params = m.params; req.query = url.searchParams;
-        if (ctx.guard) { const g = await ctx.guard(req, res, url.pathname); if (g === false) return; }
         return await m.handler(req, res, ctx);
       }
       if (req.method !== "GET" && req.method !== "HEAD") return fail(req, res, 405, "method_not_allowed");
