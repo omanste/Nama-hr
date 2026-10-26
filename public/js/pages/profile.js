@@ -121,7 +121,9 @@ export async function render(el, params, { me, can, opts }) {
         ["f_emergency_name", e.emergency_name], ["f_emergency_relation", e.emergency_relation], ["f_emergency_phone", e.emergency_phone && h("span", { dir: "ltr" }, e.emergency_phone)]])),
       h("section", { class: "card" }, h("h2", null, t("sec_job")), facts([
         ["f_department_id", nm(p.department)], ["f_job_title", tx(e.job_title)], ["f_manager_employee_id", nm(p.manager)], ["f_join_date", dmy(e.join_date)], ["f_status", t("st_" + e.status)]])),
-      h("section", { class: "card" }, h("h2", null, t("sec_contract")), facts([["f_contract_type", e.contract_type], ["f_contract_end", e.contract_end ? h("span", null, dmy(e.contract_end), " ", expiryBadge(e.contract_end)) : null]]),
+      h("section", { class: "card" }, h("h2", null, t("sec_contract")), facts([
+        ["f_join_date", dmy(e.join_date)], ["service_length", serviceLength(e.join_date)], ["probation_end", dmy(p.leave.probationEnd)],
+        ["f_contract_type", e.contract_type], ["f_contract_end", e.contract_end ? h("span", null, dmy(e.contract_end), " ", expiryBadge(e.contract_end)) : null]]),
         p.login !== undefined ? h("div", { style: { marginTop: "14px" } }, h("h3", null, t("login_account")),
           p.login ? h("div", { class: "sub" }, `${p.login.username} · ${t("role_" + p.login.role)}${p.login.active ? "" : " · " + t("inactive")}`)
             : h("div", { class: "row" }, h("span", { class: "sub" }, t("no_login")), can.edit() ? h("button", { class: "btn small", type: "button", onclick: () => createLogin(e) }, t("create_login")) : null)) : null)),
@@ -267,12 +269,22 @@ export function leaveSections(p, { own = false, limit = 0 } = {}) {
         L.eligibleFrom && L.eligibleFrom > todayIso() ? h("div", { class: "note" }, t("eligible_from", { d: dmy(L.eligibleFrom) })) : null,
         !e.join_date ? h("div", { class: "note" }, t("no_join_date")) : null),
       h("section", { class: "card" }, h("h2", null, t("by_type")),
-        h("dl", { class: "facts" }, Object.entries(L.byType).map(([k, v]) => h("div", null, h("dt", null, t("lt_" + k)), h("dd", { class: "num" }, isPermission(k) ? t("hours", { n: num(v / 60) }) : daysText(v))))),
-        h("dl", { class: "facts", style: { marginTop: "14px" } },
-          h("div", null, h("dt", null, t("f_join_date")), h("dd", null, dmy(e.join_date))),
-          h("div", null, h("dt", null, t("probation_end")), h("dd", null, dmy(L.probationEnd)))))),
+        h("dl", { class: "facts" }, Object.entries(L.byType).map(([k, v]) => h("div", null, h("dt", null, t("lt_" + k)), h("dd", { class: "num" }, isPermission(k) ? t("hours", { n: num(v / 60) }) : daysText(v))))))),
 
     permissionCard(p.permissions),
     h("section", { class: "card" }, h("h2", null, t("sec_requests")),
       p.requests.length ? h("div", { class: "list" }, p.requests.map((r) => requestItem(r))) : empty())];
+}
+
+/** Time since joining, e.g. "1 year and 6 months" (whole months, as of today). */
+function serviceLength(join) {
+  if (!join) return null;
+  const [y1, m1, d1] = join.split("-").map(Number), [y2, m2, d2] = todayIso().split("-").map(Number);
+  let months = (y2 - y1) * 12 + (m2 - m1) - (d2 < d1 ? 1 : 0);
+  if (months < 0) return t("not_started");
+  const years = Math.floor(months / 12); months %= 12;
+  // Arabic counts: 1 · 2 (dual) · 3–10 (plural) · 11+ (singular)
+  const form = (n, unit) => t(n === 1 ? `one_${unit}` : n === 2 ? `two_${unit}s` : n <= 10 ? `n_${unit}s` : `n_${unit}s_11`, { n: num(n) });
+  const parts = [years ? form(years, "year") : null, months ? form(months, "month") : null].filter(Boolean);
+  return parts.length ? parts.join(t("and_sep")) : t("less_than_month");
 }
