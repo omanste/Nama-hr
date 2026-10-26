@@ -102,3 +102,26 @@ test("backup writes a dated copy and prunes old ones", async () => {
   assert.match(r.headers.get("content-disposition"), /attachment/);
   assert.equal((await hr.c.get("/api/admin/backup")).status, 403);
 });
+
+test("staff created in the app with an old join date get no back-filled credits", async () => {
+  const e = await create({ emp_no: "B1", name_ar: "قديم يدوي", join_date: "2019-05-05" }, "2026-10-26");
+  runAnniversaries(ctx, "2026-10-26");
+  assert.equal(balance(e.id), 14400);
+  runAnniversaries(ctx, "2027-05-05");
+  assert.equal(balance(e.id), 28800);
+});
+
+test("correcting a join date does not give a second credit for the same year", async () => {
+  const e = await create({ emp_no: "B2", name_ar: "تصحيح", join_date: "2026-01-10" }, "2026-10-26");
+  await admin.put(`/api/employees/${e.id}`, { join_date: "2026-01-12" });
+  runAnniversaries(ctx, "2026-10-26");
+  assert.equal(balance(e.id), 14400);
+});
+
+test("a join date set later posts this year's credit once and nothing older", async () => {
+  const e = await create({ emp_no: "B3", name_ar: "بدون تاريخ أولاً" }, "2026-10-26");
+  assert.equal(balance(e.id) ?? 0, 0);
+  await admin.put(`/api/employees/${e.id}`, { join_date: "2015-03-01" });
+  runAnniversaries(ctx, "2026-10-26");
+  assert.equal(balance(e.id), 14400);
+});

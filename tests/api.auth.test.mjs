@@ -103,3 +103,14 @@ test("permission matrix follows the spec", () => {
   assert.ok(can(s("admin"), "request.decide", req));
   assert.ok(!can(s("ceo"), "request.decide", req));
 });
+
+test("state-changing requests need a JSON body type and a same-site origin", async () => {
+  const c = client(t.base);
+  await c.post("/api/login", { username: "admin", password: "NewAdmin#2026" });
+  const plain = await fetch(t.base + "/api/departments", { method: "POST", headers: { cookie: c.cookie, "content-type": "text/plain" }, body: JSON.stringify({ name_ar: "x" }) });
+  assert.equal(plain.status, 415);
+  const evil = await fetch(t.base + "/api/departments", { method: "POST", headers: { cookie: c.cookie, "content-type": "application/json", origin: "https://nama.omanste.com" }, body: JSON.stringify({ name_ar: "x" }) });
+  assert.equal(evil.status, 403);
+  const same = await fetch(t.base + "/api/departments", { method: "POST", headers: { cookie: c.cookie, "content-type": "application/json", origin: t.base }, body: JSON.stringify({ name_ar: "قسم" }) });
+  assert.equal(same.status, 201);
+});

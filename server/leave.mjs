@@ -87,15 +87,17 @@ export function leaveYearStart(joinDate, today) {
   return a <= today ? a : anniversaryOn(joinDate, y - 1);
 }
 
-/** Leave-year starts from the join date up to today that have no credit yet (optionally only from firstCreditFrom on). */
+/** Leave-year starts from the join date up to today that have no credit yet (optionally only from firstCreditFrom on).
+ * `credited` holds leave-year starts already credited; one credit per calendar year of the anniversary. */
 export function dueCredits(joinDate, today, credited, firstCreditFrom) {
   if (!isIsoDate(joinDate)) return [];
+  const years = new Set([...credited].map((d) => String(d).slice(0, 4)));
   const out = [];
   for (let y = +joinDate.slice(0, 4); y <= +today.slice(0, 4); y++) {
     const a = anniversaryOn(joinDate, y);
     if (a < joinDate || a > today) continue;
     if (firstCreditFrom && a < firstCreditFrom) continue;
-    if (!credited.has(a)) out.push(a);
+    if (!years.has(a.slice(0, 4))) out.push(a);
   }
   return out;
 }

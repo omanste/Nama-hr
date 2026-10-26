@@ -2,6 +2,7 @@
 import { api } from "../api.js";
 import { t, nm } from "../i18n.js";
 import { h, clear, field, select, toast, errText, todayIso, dmy, num } from "../ui.js";
+import { parseWorkbook } from "../sheet.js";
 
 const FIELDS = ["name_ar", "name_en", "emp_no", "department", "job_title", "join_date", "opening_days", "civil_id", "civil_id_expiry", "nationality", "dob",
   "mobile", "email", "address", "emergency_name", "emergency_relation", "emergency_phone", "contract_type", "contract_end", "status"];
@@ -111,7 +112,7 @@ export async function render(el, _p, { can }) {
       const f = fileIn.files[0]; if (!f) return;
       try {
         const XLSX = await loadXlsx();
-        S.file = f.name; S.wb = XLSX.read(await f.arrayBuffer(), { type: "array", cellDates: false });
+        S.file = f.name; S.wb = parseWorkbook(XLSX, new Uint8Array(await f.arrayBuffer()), f.name);
         S.sheet = S.wb.SheetNames[0]; detect(); drawOpts(); nextBtn.disabled = false; info.textContent = f.name;
       } catch (e) { toast(errText(e), "bad"); }
     });

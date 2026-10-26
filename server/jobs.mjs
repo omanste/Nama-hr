@@ -17,8 +17,12 @@ export function runAnniversaries(ctx, today) {
   const emps = db.prepare("SELECT * FROM employees WHERE status IN ('active','on_leave') AND join_date IS NOT NULL").all();
   for (const emp of emps) {
     const credited = new Set(db.prepare("SELECT leave_year_start FROM leave_ledger WHERE employee_id=? AND kind='annual_credit'").all(emp.id).map((r) => r.leave_year_start));
+    // never back-fill: only anniversaries after the first credit / the opening balance date count
     const opening = db.prepare("SELECT max(effective_date) d FROM leave_ledger WHERE employee_id=? AND kind='opening'").get(emp.id).d;
-    const due = dueCredits(emp.join_date, today, credited, opening ? addDays(opening, 1) : undefined);
+    const firstCredit = [...credited].sort()[0];
+    const start = [opening, firstCredit].filter(Boolean).sort().pop();
+    if (!start) continue;
+    const due = dueCredits(emp.join_date, today, credited, addDays(start, 1));
     if (!due.length) continue;
     let lastForfeit = 0;
     tx(db, () => {

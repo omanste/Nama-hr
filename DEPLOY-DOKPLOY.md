@@ -121,7 +121,7 @@ Production starts empty. Do the import there; dev data stays on dev.
 * **Automatic:** every night at `BACKUP_TIME` (Muscat time) the app writes `/data/backups/hr-YYYY-MM-DD.db`, and keeps the last `BACKUP_KEEP_DAYS` days.
   Copy that folder off the server regularly. Dokploy's **Volume Backups** can do this on a schedule.
 * **On demand:** Admin → **Settings → Download backup** downloads the current database.
-* **Restore:** stop the app, copy a backup over `/data/hr.db`, then start the app again.
+* **Restore:** stop the app, then delete `/data/hr.db-wal` and `/data/hr.db-shm` if they exist. Leftover journal files would otherwise be replayed onto the restored copy. Copy the backup over `/data/hr.db`, then start the app again.
 
 ## 6. Health and troubleshooting
 

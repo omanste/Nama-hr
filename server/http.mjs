@@ -37,6 +37,8 @@ export function readBody(req, limit) {
 }
 export async function readJson(req, limit = 5 * 1024 * 1024) {
   const b = await readBody(req, limit);
+  // a JSON type can't be sent cross-site without a CORS preflight, which this server never grants
+  if (b.length && !/^application\/json\b/i.test(req.headers["content-type"] || "")) throw new HttpError(415, "unsupported_type", "Send JSON (application/json)");
   try { const v = JSON.parse(b.toString("utf8") || "{}"); return v && typeof v === "object" ? v : {}; }
   catch { throw new HttpError(400, "bad_json", "Invalid JSON body"); }
 }

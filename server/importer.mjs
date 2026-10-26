@@ -60,16 +60,20 @@ export function cutAtFirstNameless(rows, mapping) {
   return i === -1 ? rows : rows.slice(0, i);
 }
 
-const norm = (s) => String(s || "").trim().toLowerCase();
+const norm = (s) => String(s || "").replace(/\s+/g, " ").trim().toLowerCase();
 
 export function validateRows(db, rawRows, mapping, today) {
   const rows = cutAtFirstNameless(rawRows, mapping);
   const depts = db.prepare("SELECT id,name_ar,name_en FROM departments").all();
+  const people = db.prepare("SELECT name_ar, name_en, join_date FROM employees").all();
+  const sameName = (v) => people.filter((p) => (v.name_ar && norm(p.name_ar) === norm(v.name_ar)) || (v.name_en && norm(p.name_en) === norm(v.name_en)));
   const findDept = (name) => depts.find((d) => norm(d.name_ar) === norm(name) || (d.name_en && norm(d.name_en) === norm(name)));
   const out = rows.map((raw, i) => {
     const { values, issues } = normalizeRow(raw, mapping);
     const errors = [...issues], warnings = [];
     if (values.emp_no && db.prepare("SELECT 1 FROM employees WHERE emp_no=?").get(values.emp_no)) errors.push({ field: "emp_no", code: "exists" });
+    if (!values.emp_no && !errors.some((e) => e.field === "join_date") && sameName(values).some((e) => (e.join_date || null) === (values.join_date || null)))
+      errors.push({ field: "name_ar", code: "already_exists" });
     if (values.opening_days !== undefined && values.opening_days !== null) {
       if (values.opening_days < 0) errors.push({ field: "opening_days", code: "negative_balance" });
       else if (values.opening_days * DAY > CAP) warnings.push({ field: "opening_days", code: "over_cap" });
@@ -139,7 +143,8 @@ export function registerImport(api, ctx) {
           fields.department_id = d.id;
         }
         const emp = insertEmployee(db, cleanEmployee(db, fields), by);
-        postLedger(db, emp, { kind: "opening", minutes: Math.round((opening_days || 0) * DAY), date: b.asOf, note: `Imported balance as of ${b.asOf}`, by });
+        // booked on the import date so the first yearly credit is the next anniversary after the import (spec §6)
+        postLedger(db, emp, { kind: "opening", minutes: Math.round((opening_days || 0) * DAY), date: ctx.today(), note: `Imported balance as of ${b.asOf}`, by });
         created++;
         if (b.createLogins) {
           const username = emp.emp_no.toLowerCase().replace(/[^a-z0-9._-]/g, "");

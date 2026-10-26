@@ -113,6 +113,7 @@ const D = {
   ic_invalid_date: ["تاريخ غير صالح", "Invalid date"], ic_invalid_number: ["رقم غير صالح", "Not a number"], ic_negative_balance: ["رصيد سالب", "Negative balance"],
   ic_over_cap: ["أكثر من ٦٠ يوماً (يُطبق الحد عند الاستحقاق القادم)", "Over 60 days (cap applies at next credit)"], ic_generated_id: ["رقم مُنشأ", "Generated ID"],
   ic_missing_join_date: ["بدون تاريخ تعيين", "No join date"], ic_empty_balance: ["رصيد فارغ (٠)", "Empty balance (0)"], ic_unknown_department: ["قسم جديد سيُنشأ", "New department will be created"],
+  ic_already_exists: ["موجود مسبقاً (نفس الاسم وتاريخ التعيين)", "Already exists (same name and join date)"],
   ic_civil_id_expired: ["البطاقة منتهية", "Civil ID expired"], ic_invalid_email: ["بريد غير صالح (سيُتجاهل)", "Invalid email (dropped)"], ic_unknown_status: ["حالة غير معروفة", "Unknown status"],
   // settings / users / audit
   departments: ["الأقسام", "Departments"], add_department: ["إضافة قسم", "Add department"], dept_name_ar: ["اسم القسم بالعربية", "Name (Arabic)"],
@@ -133,6 +134,7 @@ const D = {
   err_not_eligible_yet: ["الإجازة غير متاحة قبل إكمال ٦ أشهر من التعيين", "Leave is available after 6 months of service"],
   err_not_pending: ["تم البت في هذا الطلب مسبقاً", "This request has already been decided"], err_not_cancellable: ["لا يمكن إلغاء هذا الطلب", "This request cannot be cancelled"],
   err_unsupported_type: ["نوع الملف غير مدعوم (PDF أو صورة)", "Unsupported file type (PDF or image)"], err_too_large: ["الملف كبير جداً (الحد ١٠ ميجابايت)", "File too large (10 MB max)"],
+  err_bad_origin: ["طلب مرفوض", "Request refused"],
   err_weak_password: ["كلمة المرور قصيرة (٨ أحرف على الأقل)", "Password too short (at least 8 characters)"], err_wrong_password: ["كلمة المرور الحالية غير صحيحة", "Current password is wrong"],
   err_same_password: ["اختر كلمة مرور مختلفة", "Choose a different password"], err_no_profile: ["حسابك غير مرتبط بملف موظف", "Your login is not linked to a staff profile"],
 };

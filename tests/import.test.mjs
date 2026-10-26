@@ -118,3 +118,21 @@ test("mapping is remembered", async () => {
   assert.equal((await hr.c.put("/api/import/mapping", { headers: ["#", "إسم الموظف"], mapping: { name_ar: 1 } })).status, 200);
   assert.deepEqual((await hr.c.get("/api/import/mapping")).data.mapping, { name_ar: 1 });
 });
+
+test("a balance dated in the past still gets its first credit only after the import date", async () => {
+  t.app.ctx.fakeToday = "2026-10-26";
+  const r = await hr.c.post("/api/import/commit", { rows: [[1, "رصيد سابق", "2019-05-05", "", 20, "P1"]], mapping, asOf: "2026-01-01" });
+  assert.equal(r.data.created, 1);
+  const e = (await hr.c.get("/api/employees?q=رصيد سابق")).data.items[0];
+  runAnniversaries(t.app.ctx, "2026-10-26");
+  assert.equal((await hr.c.get(`/api/employees/${e.id}`)).data.leave.remaining, 20 * 480);
+  runAnniversaries(t.app.ctx, "2027-05-05");
+  assert.equal((await hr.c.get(`/api/employees/${e.id}`)).data.leave.remaining, 50 * 480);
+});
+
+test("re-importing the same sheet without IDs flags people who already exist", async () => {
+  const r = await hr.c.post("/api/import/preview", { rows: [[1, "اليقظان", "2020-11-01", "", 106, ""], [2, "عبد الرحيم", "", "", "", ""], [3, "شخص جديد", "", "", 1, ""]], mapping });
+  assert.ok(r.data.rows[0].errors.some((e) => e.code === "already_exists"));
+  assert.ok(r.data.rows[1].errors.some((e) => e.code === "already_exists"));
+  assert.deepEqual(r.data.rows[2].errors, []);
+});

@@ -32,6 +32,10 @@ export async function startServer({ dataDir, port = 3000, env = process.env } = 
     const url = new URL(req.url, "http://x");
     try {
       if (url.pathname.startsWith("/api/")) {
+        if (req.method !== "GET" && req.method !== "HEAD" && req.headers.origin) {
+          let host = ""; try { host = new URL(req.headers.origin).host; } catch {}
+          if (host !== req.headers.host) return fail(req, res, 403, "bad_origin", "Cross-site request refused");
+        }
         if (ctx.guard && (await ctx.guard(req, res, url.pathname)) === false) return;
         const m = api.match(req.method, url.pathname);
         if (!m) return fail(req, res, 404, "not_found", "Unknown API route");

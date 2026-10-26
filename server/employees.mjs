@@ -137,6 +137,11 @@ export function registerEmployees(api, ctx) {
       if (cols.length) db.prepare(`UPDATE employees SET ${cols.map((c) => `${c}=?`).join(",")},updated_at=? WHERE id=?`).run(...cols.map((c) => values[c]), nowIso(), cur.id);
       const e = getEmployee(db, cur.id);
       deactivateIfLeft(db, e);
+      const hasStart = db.prepare("SELECT 1 FROM leave_ledger WHERE employee_id=? AND kind IN ('annual_credit','opening')").get(e.id);
+      if (e.join_date && !hasStart) {
+        const today = ctx.today();
+        postLedger(db, e, { kind: "annual_credit", minutes: ANNUAL, date: today, yearStart: yearStartFor(e, today), note: "Yearly entitlement", by: req.sess.user.id });
+      }
       audit(db, req.sess.user.id, "employee.update", "employee", e.id, cur, e);
       return e;
     });
