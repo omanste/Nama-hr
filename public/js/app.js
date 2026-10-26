@@ -155,6 +155,8 @@ export async function render() {
     const mod = await import(`./pages/${route.page}.js`);
     if (seq !== renderSeq) return;
     const view = h("div", { class: "view" });
+    // pages pass optional sections as null; never render them as text
+    view.append = (...xs) => Element.prototype.append.apply(view, xs.flat().filter((x) => x !== null && x !== undefined && x !== false));
     await mod.render(view, route.params, { me: state.me, can, opts: route.opts, query: new URLSearchParams(location.hash.split("?")[1] || "") });
     if (seq !== renderSeq) return;
     clear(main).append(view);
