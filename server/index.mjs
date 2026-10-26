@@ -12,6 +12,7 @@ import { openDb } from "./db.mjs";
 import { router, makeStatic, send, fail, HttpError } from "./http.mjs";
 import { registerModules } from "./modules.mjs";
 import { todayMuscat } from "./leave.mjs";
+import { stopOcr } from "./idread.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -53,7 +54,7 @@ export async function startServer({ dataDir, port = 3000, env = process.env } = 
   await new Promise((r) => server.listen(port, r));
   return {
     server, db, ctx,
-    async close() { ctx.timers.forEach(clearInterval); ctx.timers.forEach(clearTimeout); await new Promise((r) => server.close(r)); server.closeAllConnections?.(); db.close(); },
+    async close() { ctx.timers.forEach(clearInterval); ctx.timers.forEach(clearTimeout); await new Promise((r) => server.close(r)); server.closeAllConnections?.(); await stopOcr(); db.close(); },
   };
 }
 

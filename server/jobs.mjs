@@ -66,6 +66,12 @@ export function cappedExcess(db, empId) {
 
 export function registerCapReviews(api, ctx) {
   const { db } = ctx;
+  // documents and dates running out in the next 30 days (HR, accounts, CEO, admin)
+  api.get("/api/expiring", (req, res) => {
+    if (!can(req.sess, "employee.viewAll")) throw new HttpError(403, "forbidden", "You do not have permission for this");
+    const items = expiringItems(db, ctx.today(), 30).map(({ employee: e, ...x }) => ({ ...x, employee: { id: e.id, emp_no: e.emp_no, name_ar: e.name_ar, name_en: e.name_en } }));
+    send(req, res, 200, { items });
+  });
   api.get("/api/cap-reviews", (req, res) => {
     if (!can(req.sess, "employee.viewAll")) throw new HttpError(403, "forbidden", "You do not have permission for this");
     const status = req.query.get("status");
@@ -102,22 +108,57 @@ export function registerCapReviews(api, ctx) {
 }
 
 /** Remind HR (in-app) about probation ending today and civil IDs expiring within 30 days — once per item. */
+const DOC_NAMES = { civil_id: ["البطاقة المدنية", "Civil ID"], passport: ["جواز السفر", "Passport"], visa: ["التأشيرة / الإقامة", "Visa / residence"], contract: ["عقد العمل", "Employment contract"],
+  certificate: ["شهادة", "Certificate"], medical: ["مستند طبي", "Medical document"], consent: ["موافقة", "Consent"], other: ["مستند", "Document"] };
+
+/** Everything with an expiry date that ends within `days` (or already ended), for active staff. */
+export function expiringItems(db, today, days = 30) {
+  const limit = addDays(today, days), out = [];
+  const emps = db.prepare("SELECT * FROM employees WHERE status IN ('active','on_leave')").all();
+  const byId = new Map(emps.map((e) => [e.id, e]));
+  for (const e of emps) {
+    if (e.civil_id_expiry && e.civil_id_expiry <= limit) out.push({ key: `civil:${e.id}`, employee: e, what: "civil_id", expiry: e.civil_id_expiry });
+    if (e.contract_end && e.contract_end <= limit) out.push({ key: `contract_end:${e.id}`, employee: e, what: "contract", expiry: e.contract_end });
+  }
+  for (const f of db.prepare("SELECT * FROM files WHERE kind='doc' AND request_id IS NULL AND expiry IS NOT NULL AND expiry<=?").all(limit)) {
+    const e = byId.get(f.employee_id);
+    if (!e) continue;
+    // the civil ID copy carries the same date as the profile field: one alert is enough
+    if (f.doc_type === "civil_id" && e.civil_id_expiry === f.expiry) continue;
+    // only the newest copy of each kind counts (an older passport stays on file after a renewal)
+    const newer = db.prepare("SELECT 1 FROM files WHERE employee_id=? AND kind='doc' AND doc_type=? AND request_id IS NULL AND expiry>? LIMIT 1").get(e.id, f.doc_type, f.expiry);
+    if (newer) continue;
+    out.push({ key: `file:${f.id}`, employee: e, what: f.doc_type || "other", expiry: f.expiry, file: { id: f.id, name: f.name } });
+  }
+  return out.map((x) => ({ ...x, days: Math.round((Date.parse(x.expiry) - Date.parse(today)) / 864e5) })).sort((a, b) => (a.expiry < b.expiry ? -1 : 1));
+}
+
+/** Alerts to HR and to the person: 30 days before, 7 days before and on/after the date — once each. */
 export function runExpiryCheck(ctx, today) {
   const { db } = ctx;
-  const hrUsers = db.prepare("SELECT id FROM users WHERE role='hr' AND active=1").all().map((r) => r.id);
+  const hrUsers = db.prepare("SELECT id FROM users WHERE role IN ('hr','admin') AND active=1").all().map((r) => r.id);
   const seen = getSetting(db, "expiry_notified", {});
-  const limit = addDays(today, 30);
   let sent = 0;
-  const emps = db.prepare("SELECT * FROM employees WHERE status IN ('active','on_leave')").all();
-  for (const e of emps) {
+  for (const x of expiringItems(db, today, 30)) {
+    const stage = x.days <= 0 ? "expired" : x.days <= 7 ? "7" : "30";
+    const tag = `${x.key}:${x.expiry}:${stage}`;
+    if (seen[tag]) continue;
+    const e = x.employee, nameAr = e.name_ar || e.name_en, nameEn = e.name_en || e.name_ar;
+    const [docAr, docEn] = DOC_NAMES[x.what] || DOC_NAMES.other;
+    const when = { ar: x.days <= 0 ? `انتهى في ${dmy(x.expiry)}` : `ينتهي في ${dmy(x.expiry)} (بعد ${x.days} يوم)`, en: x.days <= 0 ? `expired on ${dmy(x.expiry)}` : `expires on ${dmy(x.expiry)} (in ${x.days} days)` };
+    const title = x.days <= 0 ? { title_ar: `${docAr} منتهي`, title_en: `${docEn} expired` } : { title_ar: `${docAr} قارب على الانتهاء`, title_en: `${docEn} expiring soon` };
+    notify(ctx, hrUsers, { ...title, body_ar: `${nameAr}: ${docAr} ${when.ar}`, body_en: `${nameEn}: ${docEn} ${when.en}`, link: `#/staff/${e.id}` });
+    const own = db.prepare("SELECT id FROM users WHERE employee_id=? AND active=1").get(e.id);
+    if (own && !hrUsers.includes(own.id)) notify(ctx, [own.id], { ...title, body_ar: `${docAr} ${when.ar}. يرجى التجديد ورفع النسخة الجديدة في ملفك.`, body_en: `Your ${docEn.toLowerCase()} ${when.en}. Please renew it and upload the new copy to your profile.`, link: "#/me" });
+    seen[tag] = today; sent++;
+  }
+  // probation ends today (unchanged)
+  const hrOnly = db.prepare("SELECT id FROM users WHERE role='hr' AND active=1").all().map((r) => r.id);
+  for (const e of db.prepare("SELECT * FROM employees WHERE status IN ('active','on_leave')").all()) {
     const name = e.name_ar || e.name_en;
-    if (e.civil_id_expiry && e.civil_id_expiry <= limit && seen[`civil:${e.id}`] !== e.civil_id_expiry) {
-      notify(ctx, hrUsers, { title_ar: "بطاقة مدنية قاربت على الانتهاء", title_en: "Civil ID expiring soon", body_ar: `${name}: تنتهي في ${dmy(e.civil_id_expiry)}`, body_en: `${e.name_en || name}: expires ${dmy(e.civil_id_expiry)}`, link: `#/staff/${e.id}`, inAppOnly: true });
-      seen[`civil:${e.id}`] = e.civil_id_expiry; sent++;
-    }
     const pe = probationEnd(e.join_date);
     if (pe && pe === today && seen[`probation:${e.id}`] !== pe) {
-      notify(ctx, hrUsers, { title_ar: "انتهاء فترة التجربة", title_en: "Probation ends today", body_ar: `${name}: تنتهي فترة التجربة اليوم`, body_en: `${e.name_en || name}: probation ends today`, link: `#/staff/${e.id}`, inAppOnly: true });
+      notify(ctx, hrOnly, { title_ar: "انتهاء فترة التجربة", title_en: "Probation ends today", body_ar: `${name}: تنتهي فترة التجربة اليوم`, body_en: `${e.name_en || name}: probation ends today`, link: `#/staff/${e.id}`, inAppOnly: true });
       seen[`probation:${e.id}`] = pe; sent++;
     }
   }

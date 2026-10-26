@@ -66,6 +66,8 @@ const MIGRATIONS = [
   `ALTER TABLE approver_cover ADD COLUMN request_id INTEGER;`,
   // 7: the consent document behind a cash payment (each consent pays out once)
   `ALTER TABLE leave_ledger ADD COLUMN file_id INTEGER;`,
+  // 8: what was read from an ID/passport photo (suggestions; a person confirms before the profile changes)
+  `ALTER TABLE files ADD COLUMN extracted TEXT;`,
 ];
 
 export function openDb(dataDir) {

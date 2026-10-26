@@ -37,10 +37,9 @@ export async function render(el, _p, { me, can }) {
   const tiles = [];
   if (can.approve()) tiles.push(tile(num(me.pendingApprovals), t("pending_approvals"), "#/approvals", me.pendingApprovals ? "warn" : ""));
   if (can.viewAll()) {
-    jobs.push(Promise.all([api.get("/api/employees"), api.get("/api/requests?scope=all&status=pending")]).then(([emps, pend]) => {
-      const soon = new Date(Date.parse(todayIso()) + 30 * 864e5).toISOString().slice(0, 10);
+    jobs.push(Promise.all([api.get("/api/employees"), api.get("/api/requests?scope=all&status=pending"), api.get("/api/expiring")]).then(([emps, pend, exp]) => {
       const active = emps.items.filter((e) => e.status === "active" || e.status === "on_leave");
-      const expiring = active.filter((e) => e.civil_id_expiry && e.civil_id_expiry <= soon);
+      const expiring = exp.items;
       const noJoin = active.filter((e) => !e.join_date);
       const under30 = active.filter((e) => e.under_30_in_2y);
       return h("div", { class: "grid" },
@@ -53,7 +52,8 @@ export async function render(el, _p, { me, can }) {
           tile(num(under30.length), t("under_30_title"), null, under30.length ? "warn" : "good")),
         expiring.length || noJoin.length || under30.length ? h("section", { class: "card" }, h("h2", null, t("needs_attention")),
           h("div", { class: "list" },
-            expiring.map((e) => h("a", { class: "item", href: `#/staff/${e.id}` }, h("div", { class: "grow" }, h("div", { class: "title" }, nm(e)), h("div", { class: "meta" }, t("f_civil_id_expiry"), ": ", dmy(e.civil_id_expiry))))),
+            expiring.map((x) => h("a", { class: "item", href: `#/staff/${x.employee.id}` }, h("div", { class: "grow" }, h("div", { class: "title" }, nm(x.employee)), h("div", { class: "meta" }, t("dt_" + x.what), " · ", dmy(x.expiry))),
+              h("span", { class: `badge ${x.days <= 0 ? "b-rejected" : "b-pending"}` }, x.days <= 0 ? t("doc_expired") : t("in_days", { n: num(x.days) })))),
             noJoin.map((e) => h("a", { class: "item", href: `#/staff/${e.id}/edit` }, h("div", { class: "grow" }, h("div", { class: "title" }, nm(e)), h("div", { class: "meta" }, t("no_join_date"))))),
             under30.map((e) => h("a", { class: "item", href: `#/staff/${e.id}` }, h("div", { class: "grow" }, h("div", { class: "title" }, nm(e)), h("div", { class: "meta" }, t("under_30_title"))))))) : null);
     }));

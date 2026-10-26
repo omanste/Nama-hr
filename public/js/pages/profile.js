@@ -10,12 +10,57 @@ const DOC_TYPES = ["civil_id", "passport", "contract", "visa", "certificate", "m
 const SELF_DOC_TYPES = ["civil_id", "passport", "visa", "certificate", "medical", "other"];
 const DOC_ACCEPT = "application/pdf,image/png,image/jpeg,image/webp";
 
-async function uploadDoc(e, f, docType, expiry) {
+async function uploadDoc(e, f, docType, expiry, canEditAll) {
   if (!f) return;
   const qs = new URLSearchParams({ kind: "doc", doc_type: docType, name: f.name || `${docType}.jpg` });
   if (expiry) qs.set("expiry", expiry);
-  try { await api.upload(`/api/employees/${e.id}/files?${qs}`, f); toast(t("saved")); rerender(); } catch (er) { toast(errText(er), "bad"); }
+  const reading = ["civil_id", "passport"].includes(docType) && /^image\//.test(f.type);
+  if (reading) toast(t("reading_card"));
+  try {
+    const r = await api.upload(`/api/employees/${e.id}/files?${qs}`, f);
+    toast(t("saved"));
+    if (r.read) await readDialog(e, r, docType, canEditAll);
+    rerender();
+  } catch (er) { toast(errText(er), "bad"); }
 }
+
+/** What the reader found on the card, next to what the profile has now; the person ticks what to update. */
+function readDialog(e, r, docType, canEditAll) {
+  const found = r.read || {}, cur = r.current || {}, verified = new Set(found.verified || []);
+  const show = (k, v) => (v === null || v === undefined || v === "" ? "—" : k === "dob" || k === "expiry" ? dmy(v) : k === "gender" ? t("g_" + v) : k === "nationality" ? countryName(v, getLang()) : String(v));
+  const FIELDS = [["civil_id", "f_civil_id", "civil_id"], ["expiry", docType === "civil_id" ? "f_civil_id_expiry" : "doc_expiry", docType === "civil_id" ? "civil_id_expiry" : null],
+    ["dob", "f_dob", "dob"], ["gender", "f_gender", "gender"], ["nationality", "f_nationality", "nationality"], ["name_en", "f_name_en", "name_en"]];
+  const rows = FIELDS.filter(([k]) => found[k] !== undefined).map(([k, label, col]) => {
+    const now = col ? cur[col] : found[k];
+    const same = col && String(now ?? "") === String(found[k]);
+    const locked = !col || (k === "name_en" && !canEditAll && cur.name_en); // passport expiry is saved on the copy itself
+    const box = h("input", { type: "checkbox", name: k, checked: !same && !locked, disabled: same || locked });
+    return { k, box, row: h("label", { class: "read-row" }, box,
+      h("div", { class: "grow" }, h("div", { class: "sub" }, t(label)),
+        h("div", null, h("b", { dir: "auto" }, show(k, found[k])), verified.has(k) ? h("span", { class: "badge b-approved", style: { marginInlineStart: "8px" } }, "✓ ", t("read_verified")) : h("span", { class: "badge b-pending", style: { marginInlineStart: "8px" } }, t("read_check"))),
+        col ? h("div", { class: "sub" }, t("read_now"), ": ", show(k, now), same ? ` · ${t("read_same")}` : "") : h("div", { class: "sub" }, t("read_saved_on_copy")))) };
+  });
+  if (!rows.length) { toast(t("read_nothing")); return Promise.resolve(); }
+  return new Promise((resolve) => {
+    const err = h("div", { class: "form-error" });
+    const dlg = h("dialog", { class: "dialog" }, h("form", { class: "form", onsubmit: async (ev) => {
+      ev.preventDefault();
+      const fields = rows.filter((x) => x.box.checked).map((x) => x.k);
+      if (!fields.length) { dlg.close(); return; }
+      try { await api.post(`/api/files/${r.file.id}/apply`, { fields }); toast(t("saved")); dlg.close(); } catch (er) { err.textContent = errText(er); }
+    } },
+      h("h2", null, t("read_title")), h("p", { class: "sub" }, t("read_intro")),
+      h("div", { class: "list" }, rows.map((x) => x.row)), err,
+      h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("read_skip")), h("button", { class: "btn primary", type: "submit" }, t("read_apply")))));
+    dlg.addEventListener("close", () => { dlg.remove(); resolve(); });
+    document.body.append(dlg); dlg.showModal();
+  });
+}
+const expiryBadge = (iso) => {
+  if (!iso) return null;
+  const days = Math.round((Date.parse(iso) - Date.parse(todayIso())) / 864e5);
+  return days <= 0 ? h("span", { class: "badge b-rejected" }, t("doc_expired")) : days <= 30 ? h("span", { class: "badge b-pending" }, t("in_days", { n: days })) : null;
+};
 /** Two buttons: open the phone camera (scan) or pick a file. */
 function pickButtons(onFile, { scanLabel = t("scan_camera"), fileLabel = t("upload_file") } = {}) {
   const picker = (attrs) => h("input", { type: "file", hidden: true, ...attrs, onchange: (ev) => { const f = ev.target.files[0]; ev.target.value = ""; onFile(f); } });
@@ -75,13 +120,13 @@ export async function render(el, params, { me, can, opts }) {
     h("div", { class: "grid cols2" },
       h("section", { class: "card" }, h("h2", null, t("sec_personal")), facts([
         ["f_name_ar", e.name_ar], ["f_name_en", e.name_en], ["f_emp_no", e.emp_no], ["f_gender", e.gender ? t("g_" + e.gender) : ""], ["f_nationality", countryName(e.nationality, getLang())], ["f_dob", dmy(e.dob)],
-        ["f_civil_id", e.civil_id], ["f_civil_id_expiry", dmy(e.civil_id_expiry)]]), civilIdCard(p, e, mayUpload)),
+        ["f_civil_id", e.civil_id], ["f_civil_id_expiry", e.civil_id_expiry ? h("span", null, dmy(e.civil_id_expiry), " ", expiryBadge(e.civil_id_expiry)) : null]]), civilIdCard(p, e, mayUpload, can)),
       h("section", { class: "card" }, h("h2", null, t("sec_contact")), facts([
         ["f_mobile", e.mobile && h("a", { href: `tel:${e.mobile}`, dir: "ltr" }, e.mobile)], ["f_email", e.email && h("a", { href: `mailto:${e.email}` }, e.email)], ["f_address", e.address],
         ["f_emergency_name", e.emergency_name], ["f_emergency_relation", e.emergency_relation], ["f_emergency_phone", e.emergency_phone && h("span", { dir: "ltr" }, e.emergency_phone)]])),
       h("section", { class: "card" }, h("h2", null, t("sec_job")), facts([
         ["f_department_id", nm(p.department)], ["f_job_title", tx(e.job_title)], ["f_manager_employee_id", nm(p.manager)], ["f_join_date", dmy(e.join_date)], ["f_status", t("st_" + e.status)]])),
-      h("section", { class: "card" }, h("h2", null, t("sec_contract")), facts([["f_contract_type", e.contract_type], ["f_contract_end", dmy(e.contract_end)]]),
+      h("section", { class: "card" }, h("h2", null, t("sec_contract")), facts([["f_contract_type", e.contract_type], ["f_contract_end", e.contract_end ? h("span", null, dmy(e.contract_end), " ", expiryBadge(e.contract_end)) : null]]),
         p.login !== undefined ? h("div", { style: { marginTop: "14px" } }, h("h3", null, t("login_account")),
           p.login ? h("div", { class: "sub" }, `${p.login.username} · ${t("role_" + p.login.role)}${p.login.active ? "" : " · " + t("inactive")}`)
             : h("div", { class: "row" }, h("span", { class: "sub" }, t("no_login")), can.edit() ? h("button", { class: "btn small", type: "button", onclick: () => createLogin(e) }, t("create_login")) : null)) : null)),
@@ -94,13 +139,13 @@ export async function render(el, params, { me, can, opts }) {
 }
 
 /** Civil ID copy: front/back scans or a PDF, shown as thumbnails right under the ID number. */
-function civilIdCard(p, e, mayUpload) {
+function civilIdCard(p, e, mayUpload, can) {
   const ids = p.files.filter((f) => f.kind === "doc" && f.doc_type === "civil_id");
   return h("div", { style: { marginTop: "14px" } },
     h("h3", null, t("civil_id_copy")),
     ids.length ? h("div", { class: "id-thumbs" }, ids.map((f) => h("a", { href: `/api/files/${f.id}`, target: "_blank", rel: "noopener", title: f.name },
       f.mime.startsWith("image/") ? h("img", { src: `/api/files/${f.id}`, alt: t("dt_civil_id"), loading: "lazy" }) : h("span", { class: "pdf" }, "PDF")))) : h("p", { class: "sub" }, t("civil_id_missing")),
-    mayUpload ? h("div", { style: { marginTop: "8px" } }, pickButtons((f) => uploadDoc(e, f, "civil_id", e.civil_id_expiry))) : null);
+    mayUpload ? h("div", { style: { marginTop: "8px" } }, pickButtons((f) => uploadDoc(e, f, "civil_id", null, can.edit())), h("p", { class: "sub", style: { margin: "6px 0 0" } }, t("scan_tip"))) : null);
 }
 
 function documents(p, e, can, mayUpload) {
@@ -110,11 +155,11 @@ function documents(p, e, can, mayUpload) {
   const expiry = h("input", { type: "date", name: "expiry" });
   const upload = mayUpload ? h("div", { class: "fields", style: { marginTop: "14px" } },
     field(t("doc_type"), type), field(t("doc_expiry"), expiry),
-    h("div", { class: "field", style: { alignSelf: "end" } }, pickButtons((f) => uploadDoc(e, f, type.value, expiry.value)))) : null;
+    h("div", { class: "field", style: { alignSelf: "end" } }, pickButtons((f) => uploadDoc(e, f, type.value, expiry.value, can.edit())))) : null;
   return h("section", { class: "card" }, h("h2", null, t("sec_documents")),
     docs.length ? h("div", { class: "list" }, docs.map((f) => h("div", { class: "item" },
       h("div", { class: "grow" }, h("div", { class: "title" }, h("a", { href: `/api/files/${f.id}`, target: "_blank", rel: "noopener" }, f.name)),
-        h("div", { class: "meta" }, t("dt_" + (f.doc_type || "other")), f.expiry ? ` · ${t("doc_expiry")}: ${dmy(f.expiry)}` : "", ` · ${dateTime(f.uploaded_at)}`)),
+        h("div", { class: "meta" }, t("dt_" + (f.doc_type || "other")), f.expiry ? ` · ${t("doc_expiry")}: ${dmy(f.expiry)}` : "", ` · ${dateTime(f.uploaded_at)} `, expiryBadge(f.expiry))),
       h("a", { class: "btn small", href: `/api/files/${f.id}?download=1` }, t("download")),
       can.edit() ? h("button", { class: "btn small danger", type: "button", onclick: async () => {
         if (!(await confirm(t("delete_file_q"), { danger: true, okText: t("delete") }))) return;

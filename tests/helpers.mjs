@@ -11,7 +11,7 @@ export async function boot(extraEnv = {}) {
   const app = await startServer({
     dataDir,
     port: 0,
-    env: { APP_ENV: "test", ADMIN_USERNAME: ADMIN.username, ADMIN_PASSWORD: ADMIN.password, NO_JOBS: "1", ...extraEnv },
+    env: { APP_ENV: "test", ADMIN_USERNAME: ADMIN.username, ADMIN_PASSWORD: ADMIN.password, NO_JOBS: "1", OCR: "off", ...extraEnv },
   });
   const base = `http://127.0.0.1:${app.server.address().port}`;
   return {

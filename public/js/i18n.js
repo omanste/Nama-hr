@@ -97,7 +97,7 @@ const D = {
   // home
   hello: ["مرحباً {name}", "Hello {name}"], apply_leave: ["طلب إجازة", "Apply for leave"], recent_requests: ["آخر الطلبات", "Recent requests"],
   pending_approvals: ["طلبات بانتظار موافقتك", "Requests awaiting your approval"], staff_count: ["الموظفون على رأس العمل", "Active staff"],
-  ids_expiring: ["بطاقات تنتهي خلال ٣٠ يوماً", "Civil IDs expiring in 30 days"], all_pending: ["طلبات قيد الموافقة", "Pending requests"],
+  ids_expiring: ["مستندات تنتهي خلال 30 يوماً", "Documents expiring in 30 days"], all_pending: ["طلبات قيد الموافقة", "Pending requests"],
   needs_attention: ["بحاجة لاستكمال", "Needs attention"], missing_join: ["بدون تاريخ تعيين", "Missing join date"],
   no_profile: ["حسابك غير مرتبط بملف موظف.", "Your login is not linked to a staff profile."],
   // staff list / profile
@@ -214,6 +214,15 @@ const D = {
   // dev login by staff name
   choose_your_name: ["اختر اسمك", "Choose your name"], staff_name: ["اسم الموظف", "Staff name"],
   sign_in_username: ["الدخول باسم المستخدم (المسؤول)", "Sign in with username (admin)"], sign_in_staff_list: ["الدخول من قائمة الموظفين", "Sign in from the staff list"],
+  both_lang_hint: ["لعرضها باللغتين اكتب: English | عربي", "To show it in both languages write: English | عربي"],
+  // reading ID cards and passports
+  reading_card: ["جارٍ قراءة البيانات من الصورة…", "Reading the card…"], read_title: ["البيانات المقروءة من المستند", "Details read from the document"],
+  read_intro: ["راجع القيم واختر ما تريد تحديثه في الملف. لن يتغير شيء دون تأكيدك.", "Check the values and tick what to update in the profile. Nothing changes until you confirm."],
+  read_verified: ["مؤكد من البطاقة", "Confirmed by the card"], read_check: ["تحقّق منه", "Please check"], read_now: ["في الملف الآن", "Now in profile"],
+  read_same: ["مطابق", "Same"], read_saved_on_copy: ["حُفظ مع نسخة المستند للتنبيه قبل الانتهاء", "Saved with the copy for expiry alerts"],
+  read_nothing: ["حُفظت النسخة. لم تُقرأ بيانات واضحة — صوّر الوجه الخلفي (الأسطر <<<) في إضاءة جيدة.", "Copy saved. No clear details were read — photograph the back (the <<< lines) in good light."],
+  read_skip: ["تخطي", "Skip"], read_apply: ["تحديث الملف", "Update profile"], doc_expired: ["منتهي", "Expired"],
+  scan_tip: ["للقراءة التلقائية صوّر الوجه الخلفي للبطاقة (الأسطر <<<) بشكل مستقيم وفي إضاءة جيدة.", "For automatic reading, photograph the back of the card (the <<< lines) straight and in good light."],
 };
 
 let lang = "ar";
@@ -238,7 +247,6 @@ const ANSWERS = {
   arabic: "العربية", english: "الإنجليزية", hindi: "الهندية", urdu: "الأردية", indian: "الهندية", malayalam: "المالايالامية", bengali: "البنغالية",
   tagalog: "الفلبينية", filipino: "الفلبينية", french: "الفرنسية", persian: "الفارسية", farsi: "الفارسية", swahili: "السواحلية", german: "الألمانية", turkish: "التركية",
   yes: "نعم", no: "لا", "not sure": "غير متأكد", "not applicable": "لا ينطبق",
-  both_lang_hint: ["لعرضها باللغتين اكتب: English | عربي", "To show it in both languages write: English | عربي"],
 };
 const AR_TO_EN = Object.fromEntries(Object.entries(ANSWERS).map(([en, ar]) => [ar, en.replace(/^\w/, (c) => c.toUpperCase())]));
 const isArabic = (x) => /[\u0600-\u06FF]/.test(x);
