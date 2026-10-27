@@ -178,3 +178,20 @@ test("permission times follow the person's shift", async () => {
   assert.equal((await other.c.post("/api/requests", { type: "late", date: "2026-11-03", time: "09:00", reason: "موعد" })).data.request.minutes, 30);
   assert.equal((await hr.c.put(`/api/employees/${other.emp.id}`, { shift: 3 })).status, 400);
 });
+
+test("staff choose their own shift until HR locks it (one person) or Admin switches it off (everyone)", async () => {
+  const p = (await s.c.get(`/api/employees/${s.emp.id}`)).data;
+  assert.equal(p.shiftSelf, true);
+  assert.equal((await s.c.put(`/api/employees/${s.emp.id}/shift`, { shift: 1 })).data.employee.shift, 1);
+  assert.equal((await s.c.put(`/api/employees/${s.emp.id}/shift`, { shift: 3 })).status, 400);
+  assert.equal((await s.c.put(`/api/employees/${other.emp.id}/shift`, { shift: 1 })).status, 403, "only their own");
+  assert.equal((await hr.c.get(`/api/employees/${s.emp.id}`)).data.shiftSelf, false, "HR edits it in the full form");
+  assert.equal((await hr.c.put(`/api/employees/${s.emp.id}`, { shift_locked: 1 })).status, 200);
+  assert.equal((await s.c.put(`/api/employees/${s.emp.id}/shift`, { shift: 2 })).status, 403);
+  assert.equal((await s.c.get(`/api/employees/${s.emp.id}`)).data.shiftSelf, false);
+  await hr.c.put(`/api/employees/${s.emp.id}`, { shift_locked: 0 });
+  assert.equal((await admin.put("/api/settings", { shift_self_select: false })).status, 200);
+  assert.equal((await s.c.put(`/api/employees/${s.emp.id}/shift`, { shift: 2 })).status, 403);
+  await admin.put("/api/settings", { shift_self_select: true });
+  assert.equal((await s.c.put(`/api/employees/${s.emp.id}/shift`, { shift: 2 })).status, 200);
+});

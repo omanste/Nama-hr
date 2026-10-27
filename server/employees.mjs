@@ -1,7 +1,7 @@
 /* Staff profiles: list, view, create, edit, balance adjustments, logins from a profile. */
 import fs from "node:fs";
 import path from "node:path";
-import { nowIso, tx } from "./db.mjs";
+import { nowIso, tx, getSetting } from "./db.mjs";
 import { send, readJson, HttpError } from "./http.mjs";
 import { can, canViewEmployee, approvedDepartments } from "./perm.mjs";
 import { audit } from "./audit.mjs";
@@ -18,7 +18,7 @@ const GONE = ["resigned", "terminated", "disabled"]; // no access to the portal
 const TEXT = ["name_ar", "name_en", "civil_id", "nationality", "mobile", "address", "emergency_name", "emergency_relation", "emergency_phone", "job_title", "contract_type"];
 const DATES = ["civil_id_expiry", "dob", "join_date", "contract_end"];
 export const LONG = ["education", "specialization", "experience", "languages", "skills", "certifications", "main_tasks"];
-export const FIELDS = ["emp_no", ...TEXT, ...LONG, "email", ...DATES, "department_id", "manager_employee_id", "status", "gender", "shift"];
+export const FIELDS = ["emp_no", ...TEXT, ...LONG, "email", ...DATES, "department_id", "manager_employee_id", "status", "gender", "shift", "shift_locked"];
 export const GENDERS = ["male", "female"];
 
 const bad = (field, message) => Object.assign(new HttpError(400, "invalid", message), { field });
@@ -43,6 +43,7 @@ export function cleanEmployee(db, body, cur = null) {
     if (k === "status" && v === null) v = "active";
     if (k === "gender" && v !== null && !GENDERS.includes(v)) throw bad(k, "gender must be male or female");
     if (k === "shift") { if (v === null) continue; v = Number(v); if (![1, 2].includes(v)) throw bad(k, "shift must be 1 or 2"); }
+    if (k === "shift_locked") v = v === true || v === 1 || v === "1" || v === "on" ? 1 : 0;
     if ((k === "name_ar" || k === "name_en") && v === null) v = ""; // names are never NULL, just empty
     if (k === "nationality" && v !== null) v = toCountryCode(v); // stored as a country code, e.g. "OM"
     if (k === "department_id" && v !== null && !db.prepare("SELECT 1 FROM departments WHERE id=?").get(Number(v))) throw bad(k, "unknown department");
@@ -80,13 +81,17 @@ function deactivateIfLeft(db, emp) {
   }
 }
 
+/** May this person pick their own shift? Company switch on (default) and not locked by HR. */
+export const maySelfShift = (db, emp) => getSetting(db, "shift_self_select", true) !== false && !emp.shift_locked;
+
 export function profile(db, sess, emp, today) {
   const files = db.prepare("SELECT id,kind,doc_type,name,mime,size,expiry,note,uploaded_at FROM files WHERE employee_id=? AND request_id IS NULL AND voice_id IS NULL ORDER BY uploaded_at DESC").all(emp.id);
   const requests = db.prepare("SELECT * FROM leave_requests WHERE employee_id=? ORDER BY start_date DESC, id DESC").all(emp.id);
   const dept = emp.department_id ? db.prepare("SELECT * FROM departments WHERE id=?").get(emp.department_id) : null;
   const manager = emp.manager_employee_id ? db.prepare("SELECT id,emp_no,name_ar,name_en FROM employees WHERE id=?").get(emp.manager_employee_id) : null;
   const user = db.prepare("SELECT id,username,role,active FROM users WHERE employee_id=?").get(emp.id) || null;
-  const out = { employee: emp, department: dept, manager, files, requests, leave: leaveSummary(db, emp, today), permissions: permissionSummary(db, emp.id, today), login: can(sess, "employee.viewAll") ? user : undefined };
+  const out = { employee: emp, department: dept, manager, files, requests, leave: leaveSummary(db, emp, today), permissions: permissionSummary(db, emp.id, today),
+    shiftSelf: !!(sess.employee && sess.employee.id === emp.id) && maySelfShift(db, emp), login: can(sess, "employee.viewAll") ? user : undefined };
   if (can(sess, "ledger.adjust")) out.ledger = ledgerRows(db, emp.id);
   return out;
 }
@@ -163,6 +168,21 @@ export function registerEmployees(api, ctx) {
       const e = getEmployee(db, cur.id);
       audit(db, req.sess.user.id, "employee.contact", "employee", cur.id, Object.fromEntries(cols.map((c) => [c, cur[c]])), values);
       return e;
+    });
+    send(req, res, 200, { employee: emp });
+  });
+
+  // staff choose their own shift while the company allows it and HR hasn't fixed theirs (policy §3: HR assigns it in writing)
+  api.put("/api/employees/:id/shift", async (req, res) => {
+    const cur = getEmployee(db, req.params.id);
+    if (!cur) throw new HttpError(404, "not_found", "Employee not found");
+    if (!(req.sess.employee && req.sess.employee.id === cur.id) || !maySelfShift(db, cur)) throw new HttpError(403, "forbidden", "HR sets your shift");
+    const shift = Number((await readJson(req)).shift);
+    if (![1, 2].includes(shift)) throw bad("shift", "shift must be 1 or 2");
+    const emp = tx(db, () => {
+      db.prepare("UPDATE employees SET shift=?, updated_at=? WHERE id=?").run(shift, nowIso(), cur.id);
+      audit(db, req.sess.user.id, "employee.shift", "employee", cur.id, { shift: cur.shift }, { shift });
+      return getEmployee(db, cur.id);
     });
     send(req, res, 200, { employee: emp });
   });

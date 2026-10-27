@@ -128,7 +128,8 @@ export async function render(el, params, { me, can, opts }) {
         ["f_mobile", e.mobile && h("a", { href: `tel:${e.mobile}`, dir: "ltr" }, e.mobile)], ["f_email", e.email && h("a", { href: `mailto:${e.email}` }, e.email)], ["f_address", e.address],
         ["f_emergency_name", e.emergency_name], ["f_emergency_relation", e.emergency_relation], ["f_emergency_phone", e.emergency_phone && h("span", { dir: "ltr" }, e.emergency_phone)]])),
       h("section", { class: "card" }, h("h2", null, t("sec_job")), facts([
-        ["f_department_id", nm(p.department)], ["f_job_title", tx(e.job_title)], ["f_manager_employee_id", nm(p.manager)], ["f_join_date", dmy(e.join_date)], ["f_status", t("st_" + e.status)], ["f_shift", t(e.shift === 1 ? "shift_1_full" : "shift_2_full")]])),
+        ["f_department_id", nm(p.department)], ["f_job_title", tx(e.job_title)], ["f_manager_employee_id", nm(p.manager)], ["f_join_date", dmy(e.join_date)], ["f_status", t("st_" + e.status)],
+        ["f_shift", h("span", null, t(e.shift === 1 ? "shift_1_full" : "shift_2_full"), " ", p.shiftSelf ? h("button", { class: "btn small", type: "button", onclick: () => shiftDialog(e) }, t("shift_change")) : null)]])),
       h("section", { class: "card", style: { gridColumn: "1 / -1" } }, h("h2", null, t("sec_contract")), facts([
         ["f_join_date", dmy(e.join_date)], ["service_length", serviceLength(e.join_date)], ["probation_end", dmy(p.leave.probationEnd)],
         ["f_contract_type", e.contract_type], ["f_contract_end", e.contract_end ? h("span", null, dmy(e.contract_end), " ", expiryBadge(e.contract_end)) : null]]),
@@ -268,6 +269,24 @@ function permissionCard(P) {
 export async function permissionSummaryCard(empId) {
   const p = await api.get(`/api/employees/${empId}`);
   return permissionCard(p.permissions);
+}
+
+/** The person picks their own shift (while the company allows it and HR hasn't fixed it). */
+function shiftDialog(e) {
+  let pick = e.shift === 1 ? 1 : 2;
+  const opt = (n) => h("label", { class: "item", style: { cursor: "pointer" } },
+    h("input", { type: "radio", name: "shift", value: n, checked: pick === n, style: { width: "22px", height: "22px", minHeight: "0" }, onchange: () => { pick = n; } }),
+    h("div", { class: "grow" }, h("div", { class: "title" }, t(`shift_${n}_full`))));
+  const err = h("div", { class: "form-error" });
+  const dlg = h("dialog", { class: "dialog" }, h("form", { class: "form", onsubmit: async (ev) => {
+    ev.preventDefault();
+    try { await api.put(`/api/employees/${e.id}/shift`, { shift: pick }); dlg.close(); toast(t("saved")); rerender(); } catch (er) { err.textContent = errText(er); }
+  } },
+    h("h2", null, t("shift_choose")), h("p", { class: "sub" }, t("shift_choose_hint")),
+    h("div", { class: "list" }, opt(1), opt(2)), err,
+    h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), h("button", { class: "btn primary", type: "submit" }, t("save")))));
+  dlg.addEventListener("close", () => dlg.remove());
+  document.body.append(dlg); dlg.showModal();
 }
 
 function contactDialog(e) {

@@ -317,6 +317,13 @@ const D = {
   // attendance (policy 007/2026)
   nav_attendance: ["حضوري", "My attendance"], my_attendance: ["حضوري وانصرافي", "My attendance"], nav_att_report: ["تقارير الحضور", "Attendance reports"],
   att_of: ["حضور {name}", "Attendance · {name}"],
+  shift_change: ["تغيير", "Change"], shift_choose: ["اختر ورديتك", "Choose your shift"],
+  shift_choose_hint: ["يُحتسب حضورك وأوقات استئذانك حسب الوردية التي تختارها.", "Your attendance and permission times are measured against the shift you choose."],
+  f_shift_locked: ["من يختار الوردية", "Who chooses the shift"], shift_by_staff: ["الموظف من ملفه", "The employee, from their profile"], shift_by_hr: ["الموارد البشرية فقط", "HR only"],
+  f_shift_locked_hint: ["«الموارد البشرية فقط» يمنع الموظف من تغيير ورديته.", "\"HR only\" stops the employee changing their shift."],
+  shift_self_select: ["اختيار الوردية من الموظف", "Staff choose their own shift"],
+  shift_self_on: ["مسموح (من ملف الموظف)", "Allowed (from their profile)"], shift_self_off: ["متوقف — الموارد البشرية فقط", "Off — HR only"],
+  shift_self_hint: ["عند الإيقاف، تحدد الموارد البشرية وردية كل موظف من ملفه.", "When off, HR sets each person's shift on their profile."],
   nav_att_upload: ["رفع ملف البصمة", "Upload fingerprint file"], me_short: ["أنا", "me"], open_profile: ["فتح الملف", "Open profile"],
   shift_1: ["الوردية الأولى", "Shift 1"], shift_2: ["الوردية الثانية", "Shift 2"],
   shift_1_full: ["الوردية الأولى (8:30 – 17:30)", "Shift 1 (8:30 – 17:30)"], shift_2_full: ["الوردية الثانية (9:00 – 18:00)", "Shift 2 (9:00 – 18:00)"],

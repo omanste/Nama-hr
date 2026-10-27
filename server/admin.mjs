@@ -21,6 +21,7 @@ export function readSettings(db) {
     ramadan_end: getSetting(db, "ramadan_end", null),
     ramadan_hours: getSetting(db, "ramadan_hours", 6),
     attendance_start: getSetting(db, "attendance_start", null),
+    shift_self_select: getSetting(db, "shift_self_select", true),
     official_holidays: getSetting(db, "official_holidays", []),
   };
 }
@@ -82,7 +83,7 @@ export function registerAdmin(api, ctx) {
   api.put("/api/settings", async (req, res) => {
     need(req.sess, "settings.edit");
     const b = await readJson(req);
-    const allowed = ["managers_approver_employee_id", "managers_approver_title", "contract_types", "shift_1_start", "shift_1_end", "shift_2_start", "shift_2_end", "ramadan_start", "ramadan_end", "ramadan_hours", "attendance_start", "official_holidays"];
+    const allowed = ["managers_approver_employee_id", "managers_approver_title", "contract_types", "shift_1_start", "shift_1_end", "shift_2_start", "shift_2_end", "ramadan_start", "ramadan_end", "ramadan_hours", "attendance_start", "shift_self_select", "official_holidays"];
     if ("official_holidays" in b) {
       if (!Array.isArray(b.official_holidays) || !b.official_holidays.every((x) => x && isIsoDate(x.date))) throw invalid("official_holidays", "each holiday needs a valid date");
       b.official_holidays = b.official_holidays.map((x) => ({ date: x.date, name: String(x.name || "").trim().slice(0, 80) })).sort((x, y) => (x.date < y.date ? -1 : 1));
@@ -96,6 +97,7 @@ export function registerAdmin(api, ctx) {
     }
     if ("ramadan_hours" in b && !(typeof b.ramadan_hours === "number" && b.ramadan_hours >= 4 && b.ramadan_hours <= 8 && (b.ramadan_hours * 2) % 1 === 0)) throw invalid("ramadan_hours", "Ramadan hours must be 4–8");
     if ("attendance_start" in b && !isIsoDate(b.attendance_start)) throw invalid("attendance_start", "must be a date");
+    if ("shift_self_select" in b && typeof b.shift_self_select !== "boolean") throw invalid("shift_self_select", "must be true or false");
     for (const k of ["ramadan_start", "ramadan_end"]) if (k in b && b[k] !== null && b[k] !== "" && !isIsoDate(b[k])) throw invalid(k, "must be a date");
     if ("ramadan_start" in b && b.ramadan_start === "") b.ramadan_start = null;
     if ("ramadan_end" in b && b.ramadan_end === "") b.ramadan_end = null;

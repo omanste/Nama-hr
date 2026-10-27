@@ -107,6 +107,8 @@ const MIGRATIONS = [
    CREATE TABLE att_reviews(id INTEGER PRIMARY KEY, employee_id INTEGER NOT NULL REFERENCES employees(id), month TEXT NOT NULL,
      user_id INTEGER, note TEXT, at TEXT NOT NULL, UNIQUE(employee_id, month));
    INSERT OR IGNORE INTO settings(key,value) VALUES('attendance_start', '"' || date('now') || '"');`,
+  // 16: HR can stop one person choosing their own shift (the company-wide switch is the "shift_self_select" setting)
+  `ALTER TABLE employees ADD COLUMN shift_locked INTEGER NOT NULL DEFAULT 0;`,
 ];
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */
