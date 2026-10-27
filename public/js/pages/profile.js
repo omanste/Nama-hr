@@ -133,7 +133,7 @@ export async function render(el, params, { me, can, opts }) {
               h("span", { class: "sub" }, `${p.login.username} · ${t("role_" + p.login.role)}${p.login.active ? "" : " · " + t("inactive")}`),
               (can.admin() || (can.edit() && ["staff", "manager", "accounts"].includes(p.login.role))) && p.login.id !== me.user.id
                 ? h("button", { class: "btn small", type: "button", onclick: () => resetPassword(e, p.login) }, "🔑 ", t("reset_password")) : null)
-            : h("div", { class: "row" }, h("span", { class: "sub" }, t("no_login")), can.edit() ? h("button", { class: "btn small", type: "button", onclick: () => createLogin(e) }, t("create_login")) : null)) : null)),
+            : h("div", { class: "row" }, h("span", { class: "sub" }, t("no_login")), can.edit() ? h("button", { class: "btn small", type: "button", onclick: () => createLogin(e) }, "🔑 ", t("reset_password")) : null)) : null)),
 
     h("section", { class: "card" }, h("h2", null, t("sec_qualifications")), h("dl", { class: "facts" },
       ["education", "specialization", "experience", "languages", "certifications"].map((k) => h("div", null, h("dt", null, t("f_" + k)), h("dd", { dir: "auto" }, tx(e[k]) || "—"))),
@@ -172,7 +172,9 @@ function documents(p, e, can, mayUpload) {
     upload);
 }
 
+// no login yet: "Reset password" creates the staff login and shows its temporary password
 async function createLogin(e) {
+  if (!(await confirm(t("reset_password_q", { name: nm(e) }), { okText: t("reset_password") }))) return;
   try {
     const r = await api.post(`/api/employees/${e.id}/login`, {});
     await showTempPassword(r.user.username, r.tempPassword);
