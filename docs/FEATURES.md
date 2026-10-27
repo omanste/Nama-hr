@@ -31,8 +31,19 @@ Everything runs on Nama's own server (Dokploy); no outside services — ID cards
 
 ## Permissions (استئذانات)
 * Early leave, late arrival, personal break (from–to) — reason required, manager approves.
-* Shared free hours each month (default 4); beyond that, deducted from annual leave (8 h = 1 day).
-* **My permissions** page: year/month filter, times and hours per type, free hours left, history. Report for HR/managers with Excel download.
+* Attendance policy §8: no monthly free hours and no automatic deduction. After the manager approves, HR classifies each one:
+  statutory paid / special paid / unpaid / from annual leave (only the last uses the balance; changing it gives the hours back).
+* Times follow the person's shift. **My permissions** page: year/month filter, times and hours per type, history. Report for HR/managers (by HR classification) with Excel download.
+
+## Attendance (policy 007/2026)
+* Two shifts (Shift 1 08:30–17:30, Shift 2 09:00–18:00; times in Settings), 8 actual hours + 1 unpaid hour, Sunday–Thursday. HR sets each person's shift on the profile (default Shift 2). Ramadan: 6 hours from the shift start.
+* HR uploads the fingerprint machine's export (Excel/CSV) weekly — **Upload fingerprint file**. Punches are never added twice. Each machine number is linked to a person once (name match suggested, HR confirms) or set aside.
+* Each day against the person's shift: late from the first minute (no grace), left early, missing punch, unexcused absence, absence with a pending request, leave, external task, weekly rest / holiday (work on those shown for information, not overtime). Days before the policy start date are for information only.
+* **Fingerprint correction** request (§5): employee → manager verifies → HR confirms; the corrected time counts only once confirmed; the original punches are kept.
+* **External work task** (§10): time, place and purpose, manager approves; counts as work.
+* **My attendance**: monthly sheet with totals; the employee confirms the review or sends HR a note (§15). Profile shows this month's summary.
+* **Attendance reports** (§18): by department without names (CEO, Accounts); HR sees everyone by name, a manager their team. Compliance %, lateness, early leaving, missing punches, unexcused absence, unsettled requests, correction turnaround; Excel download. HR's queue of permissions to classify and corrections to confirm. Weekly notice to HR and the CEO each Sunday.
+* Nothing is applied automatically: no penalties (violation cases are a later step).
 
 ## Calendar
 * Month grid for everyone: leave (by what you may see), official holidays, blocked days, company occasions, birthdays (day/month only).

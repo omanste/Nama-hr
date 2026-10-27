@@ -18,7 +18,7 @@ const GONE = ["resigned", "terminated", "disabled"]; // no access to the portal
 const TEXT = ["name_ar", "name_en", "civil_id", "nationality", "mobile", "address", "emergency_name", "emergency_relation", "emergency_phone", "job_title", "contract_type"];
 const DATES = ["civil_id_expiry", "dob", "join_date", "contract_end"];
 export const LONG = ["education", "specialization", "experience", "languages", "skills", "certifications", "main_tasks"];
-export const FIELDS = ["emp_no", ...TEXT, ...LONG, "email", ...DATES, "department_id", "manager_employee_id", "status", "gender"];
+export const FIELDS = ["emp_no", ...TEXT, ...LONG, "email", ...DATES, "department_id", "manager_employee_id", "status", "gender", "shift"];
 export const GENDERS = ["male", "female"];
 
 const bad = (field, message) => Object.assign(new HttpError(400, "invalid", message), { field });
@@ -42,6 +42,7 @@ export function cleanEmployee(db, body, cur = null) {
     if (k === "status" && !STATUSES.includes(v ?? "active")) throw bad(k, "unknown status");
     if (k === "status" && v === null) v = "active";
     if (k === "gender" && v !== null && !GENDERS.includes(v)) throw bad(k, "gender must be male or female");
+    if (k === "shift") { if (v === null) continue; v = Number(v); if (![1, 2].includes(v)) throw bad(k, "shift must be 1 or 2"); }
     if ((k === "name_ar" || k === "name_en") && v === null) v = ""; // names are never NULL, just empty
     if (k === "nationality" && v !== null) v = toCountryCode(v); // stored as a country code, e.g. "OM"
     if (k === "department_id" && v !== null && !db.prepare("SELECT 1 FROM departments WHERE id=?").get(Number(v))) throw bad(k, "unknown department");

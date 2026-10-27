@@ -35,7 +35,7 @@ test("pure rules: sick pay bands, early-leave hours to a given day end, bereavem
 
 test("early leave is recorded in hours and never touches the annual balance", async () => {
   const before = await remaining(man.emp.id);
-  const r = await ask(man, { type: "early", reason: "موعد", date: "2026-11-02", time: "15:30" });
+  const r = await ask(man, { type: "early", reason: "موعد", date: "2026-11-02", time: "16:30" }); // shift 2 ends at 18:00
   assert.equal(r.status, 201); assert.equal(r.data.request.minutes, 90);
   assert.equal((await mgr.c.post(`/api/requests/${r.data.request.id}/approve`, {})).status, 200);
   assert.equal(await remaining(man.emp.id), before);
@@ -43,8 +43,8 @@ test("early leave is recorded in hours and never touches the annual balance", as
   assert.equal(j.status, 201, "early leave is not annual leave, so the 6-month rule does not apply");
 });
 
-test("Ramadan hours: early leave is measured to the Ramadan end of day", async () => {
-  assert.equal((await admin.put("/api/settings", { ramadan_start: "2027-02-08", ramadan_end: "2027-03-09", ramadan_day_end: "15:00" })).status, 200);
+test("Ramadan hours: early leave is measured to the Ramadan end of day (6 hours from the shift start)", async () => {
+  assert.equal((await admin.put("/api/settings", { ramadan_start: "2027-02-08", ramadan_end: "2027-03-09", ramadan_hours: 6 })).status, 200);
   const r = await ask(man, { type: "early", reason: "موعد", date: "2027-02-15", time: "13:30" });
   assert.equal(r.status, 201); assert.equal(r.data.request.minutes, 90);
   assert.equal((await ask(man, { type: "early", reason: "موعد", date: "2027-02-16", time: "16:00" })).status, 400);

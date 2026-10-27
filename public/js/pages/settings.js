@@ -24,14 +24,15 @@ export async function render(el, _p, { can }) {
   const title = select("title", [["ceo", t("title_ceo")], ["chairman", t("title_chairman")]], settings.managers_approver_title);
   const types = h("textarea", { rows: 4 }); types.value = settings.contract_types.join("\n");
   const HALF = []; for (let m = 10 * 60; m <= 20 * 60; m += 30) HALF.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${m % 60 ? "30" : "00"}`);
-  const dayEnd = select("work_day_end", HALF.map((x) => [x, x]), settings.work_day_end);
   const START = []; for (let m = 6 * 60; m <= 12 * 60 + 30; m += 30) START.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${m % 60 ? "30" : "00"}`);
-  const dayStart = select("work_day_start", START.map((x) => [x, x]), settings.work_day_start || "09:00");
+  // the two shifts of the attendance policy (§3); HR sets each person's shift on their profile
+  const sh = {};
+  for (const n of [1, 2]) sh[n] = { start: select(`shift_${n}_start`, START.map((x) => [x, x]), settings[`shift_${n}_start`]), end: select(`shift_${n}_end`, HALF.map((x) => [x, x]), settings[`shift_${n}_end`]) };
+  const attStart = h("input", { type: "date", value: settings.attendance_start || "" });
   const rStart = h("input", { type: "date", value: settings.ramadan_start || "" });
   const rEnd = h("input", { type: "date", value: settings.ramadan_end || "" });
-  const rDayEnd = select("ramadan_day_end", HALF.map((x) => [x, x]), settings.ramadan_day_end);
+  const rHours = select("ramadan_hours", [[5, "5"], [5.5, "5.5"], [6, "6"], [6.5, "6.5"], [7, "7"]], settings.ramadan_hours);
   const hol = holidayEditor(settings.official_holidays || []);
-  const freeH = h("input", { type: "number", min: 0, max: 40, step: 0.5, value: settings.early_free_hours_month ?? 4 });
 
   el.append(pageHead(t("nav_settings"), h("a", { class: "btn", href: "/api/admin/backup" }, t("backup_download"))),
     h("section", { class: "card" }, h("h2", null, t("departments")),
@@ -42,16 +43,20 @@ export async function render(el, _p, { can }) {
     h("section", { class: "card" }, h("h2", null, t("managers_approver")),
       h("div", { class: "fields" }, field(t("managers_approver"), mgr), field(t("managers_approver_title"), title)),
       h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", { managers_approver_employee_id: mgr.value ? Number(mgr.value) : null, managers_approver_title: title.value })) }, t("save")))),
-    h("section", { class: "card" }, h("h2", null, t("ramadan")),
-      h("p", { class: "sub" }, t("ramadan_hint")),
-      h("div", { class: "fields" }, field(t("work_day_start"), dayStart), field(t("work_day_end"), dayEnd), field(t("ramadan_start"), rStart), field(t("ramadan_end"), rEnd), field(t("ramadan_day_end"), rDayEnd)),
-      h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", { work_day_start: dayStart.value, work_day_end: dayEnd.value, ramadan_start: rStart.value || null, ramadan_end: rEnd.value || null, ramadan_day_end: rDayEnd.value })) }, t("save")))),
+    h("section", { class: "card" }, h("h2", null, t("work_hours")),
+      h("p", { class: "sub" }, t("work_hours_hint")),
+      h("div", { class: "fields" },
+        field(t("shift_1_start"), sh[1].start), field(t("shift_1_end"), sh[1].end), field(t("shift_2_start"), sh[2].start), field(t("shift_2_end"), sh[2].end),
+        field(t("attendance_start"), attStart, { hint: t("attendance_start_hint") }),
+        field(t("ramadan_start"), rStart), field(t("ramadan_end"), rEnd), field(t("ramadan_hours"), rHours, { hint: t("ramadan_hours_hint") })),
+      h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", {
+        shift_1_start: sh[1].start.value, shift_1_end: sh[1].end.value, shift_2_start: sh[2].start.value, shift_2_end: sh[2].end.value,
+        ...(attStart.value ? { attendance_start: attStart.value } : {}),
+        ramadan_start: rStart.value || null, ramadan_end: rEnd.value || null, ramadan_hours: Number(rHours.value) })) }, t("save")))),
     h("section", { class: "card" }, h("h2", null, t("official_holidays")),
       hol.el,
-      field(t("early_free_hours"), freeH),
       h("div", { class: "row end", style: { marginTop: "12px" } }, h("span", { class: "sub" }, t("holidays_save_hint")), h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", {
         official_holidays: hol.value(),
-        early_free_hours_month: Number(freeH.value),
       })) }, t("save")))),
     h("section", { class: "card" }, h("h2", null, t("contract_types")),
       field(t("contract_types"), types, { hint: t("contract_types_hint") }),

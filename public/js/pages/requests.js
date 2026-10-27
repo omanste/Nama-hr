@@ -16,7 +16,7 @@ const leaveTypesFor = (emp) => LEAVE_TYPES.filter((k) => !(emp && emp.gender ===
   && !(emp && emp.gender === "female" && k === "paternity") && !(["exam", "patient_care"].includes(k) && emp && emp.nationality && !isOmani(emp.nationality)));
 
 /** Summary of the shown period: times and days/hours of every type (approved requests only). */
-function summary(items, perm, freeLeft, emp) {
+function summary(items, perm, emp) {
   const done = items.filter((r) => r.status === "approved");
   const order = perm ? PERMISSIONS : leaveTypesFor(emp);
   const amount = (m) => (perm ? t("hours", { n: num(m / 60) }) : daysText(m));
@@ -24,7 +24,7 @@ function summary(items, perm, freeLeft, emp) {
   const pending = items.filter((r) => r.status === "pending").length;
   return h("section", { class: "card" },
     h("div", { class: "card-head" }, h("h2", null, t(perm ? "sec_permissions" : "leave_taken")),
-      perm && freeLeft !== undefined ? h("span", { class: "badge" }, t("free_left_month"), ": ", t("hours", { n: num(freeLeft / 60) })) : null),
+      perm ? h("span", { class: "badge" }, t("perm_policy_badge")) : null),
     h("dl", { class: "facts" },
       order.map((k) => { const rs = done.filter((r) => r.type === k); return h("div", null, h("dt", null, t("lt_" + k)), h("dd", { class: "num" }, perm ? t("times_hours", { n: num(rs.length), h: num(rs.reduce((a, r) => a + r.minutes, 0) / 60) }) : `${t("times_n", { n: num(rs.length) })} · ${amount(rs.reduce((a, r) => a + r.minutes, 0))}`)); }),
       h("div", null, h("dt", null, h("b", null, t("total"))), h("dd", { class: "num" }, h("b", null, `${t("times_n", { n: num(done.length) })} · ${amount(total)}`)))),
@@ -35,15 +35,13 @@ export async function render(el, _p, { opts, query, me }) {
   const scope = opts.scope, mine = scope === "mine", perm = opts.kind === "permission";
   const status = select("status", [["", `${t("status")}: ${t("all")}`], ...STATUSES.map((s) => [s, t("rs_" + s)])], query.get("status") || "");
   // my own pages are split (leave / permissions); team and all pages can filter by kind
-  const kindSel = opts.kind ? null : select("kind", [["", `${t("kind")}: ${t("all")}`], ["leave", t("kind_leave")], ["permission", t("kind_permission")]], query.get("kind") || "");
+  const kindSel = opts.kind ? null : select("kind", [["", `${t("kind")}: ${t("all")}`], ["leave", t("kind_leave")], ["permission", t("kind_permission")], ["attendance", t("kind_attendance")]], query.get("kind") || "");
   // period: a year, and optionally a month (permissions open on this month, everything else on this year)
   const now = todayIso(), thisYear = Number(now.slice(0, 4));
   const years = []; for (let y = thisYear + 1; y >= thisYear - 5; y--) years.push(y);
   const yearSel = select("year", [["", `${t("year")}: ${t("all")}`], ...years.map((y) => [y, String(y)])], query.get("year") || (mine ? thisYear : ""));
   const monthSel = select("month", [["", `${t("month")}: ${t("all")}`], ...Array.from({ length: 12 }, (_, i) => [i + 1, monthName(i + 1)])], query.get("month") || (mine && perm ? Number(now.slice(5, 7)) : ""));
   const head = h("div"), out = h("div");
-  let freeLeft;
-  if (perm && me.employee) freeLeft = (await api.get(`/api/employees/${me.employee.id}`)).permissions.freeLeft;
   const load = async () => {
     monthSel.disabled = !yearSel.value;
     const qs = new URLSearchParams({ scope });
@@ -56,7 +54,7 @@ export async function render(el, _p, { opts, query, me }) {
       qs.set("to", m ? `${y}-${pad(m)}-${new Date(Date.UTC(y, m, 0)).getUTCDate()}` : `${y}-12-31`);
     }
     const { items } = await api.get(`/api/requests?${qs}`);
-    if (mine && opts.kind) clear(head).append(summary(items, perm, freeLeft, me.employee));
+    if (mine && opts.kind) clear(head).append(summary(items, perm, me.employee));
     clear(out).append(items.length ? h("div", { class: "list" }, items.map((r) => requestItem(r, !mine))) : empty());
   };
   for (const s of [status, yearSel, monthSel, kindSel]) if (s) s.addEventListener("change", load);

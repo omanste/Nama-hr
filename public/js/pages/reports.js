@@ -37,15 +37,15 @@ export async function render(el, _p, { me, can, query }) {
       ...r.types.map((k) => h("div", { class: "card tile" }, h("div", { class: "n" }, num(sum(k, "count"))), h("div", { class: "l" }, t("lt_" + k), " · ", t("hours", { n: hrs(sum(k, "minutes")) })))),
       h("div", { class: "card tile warn" }, h("div", { class: "n" }, num(sum("total", "count"))), h("div", { class: "l" }, t("total"), " · ", t("hours", { n: hrs(sum("total", "minutes")) }))));
     clear(out).append(
-      h("p", { class: "sub" }, `${dmy(r.from)} – ${dmy(r.to)} · ${t("approved_only")} · ${t("perm_rule", { n: num(r.freeMonthlyHours) })}`),
+      h("p", { class: "sub" }, `${dmy(r.from)} – ${dmy(r.to)} · ${t("approved_only")} · ${t("perm_rule_policy")}`),
       totals,
       r.items.length ? h("div", { class: "table-wrap", style: { marginTop: "12px" } }, h("table", null,
-        h("thead", null, h("tr", null, h("th", null, t("employee")), ...r.types.map((k) => h("th", { class: "num" }, t("lt_" + k))), h("th", { class: "num" }, t("total")), h("th", { class: "num" }, t("from_annual")))),
+        h("thead", null, h("tr", null, h("th", null, t("employee")), ...r.types.map((k) => h("th", { class: "num" }, t("lt_" + k))), h("th", { class: "num" }, t("total")), ...r.classes.map((c) => h("th", { class: "num" }, t("pc_" + c))), h("th", { class: "num" }, t("att_awaiting_hr")))),
         h("tbody", null, r.items.map((x) => h("tr", null,
           h("td", null, h("a", { href: `#/staff/${x.employee.id}` }, nm(x.employee)), h("div", { class: "muted" }, x.employee.emp_no)),
           ...r.types.map((k) => h("td", { class: "num" }, x[k].count ? t("times_hours", { n: num(x[k].count), h: hrs(x[k].minutes) }) : "—")),
           h("td", { class: "num" }, h("b", null, x.total.count ? t("times_hours", { n: num(x.total.count), h: hrs(x.total.minutes) }) : "—")),
-          h("td", { class: "num" }, x.deducted ? t("hours", { n: hrs(x.deducted) }) : "—")))))) : empty(t("perm_none")));
+          ...[...r.classes, "unclassified"].map((c) => h("td", { class: "num" }, x.classes[c] ? t("hours", { n: hrs(x.classes[c]) }) : "—"))))))) : empty(t("perm_none")));
   }
   quick.addEventListener("change", () => { if (quick.value !== "custom") { [from.value, to.value] = period(quick.value); load(); } });
   for (const i of [from, to]) i.addEventListener("change", () => { quick.value = "custom"; if (from.value && to.value && from.value <= to.value) load(); else toast(t("err_end_before_start"), "bad"); });

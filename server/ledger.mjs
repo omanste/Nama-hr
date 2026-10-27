@@ -25,7 +25,7 @@ export function pendingMinutes(db, empId, excludeRequestId = 0) {
 export function leaveSummary(db, emp, today) {
   const yearStart = yearStartFor(emp, today);
   const s = summarize(ledgerRows(db, emp.id), pendingMinutes(db, emp.id), yearStart);
-  const byType = Object.fromEntries(Object.keys(TYPES).map((k) => [k, 0]));
-  for (const r of db.prepare("SELECT type, sum(minutes) n FROM leave_requests WHERE employee_id=? AND status='approved' AND start_date>=? GROUP BY type").all(emp.id, yearStart)) byType[r.type] = r.n;
+  const byType = Object.fromEntries(Object.keys(TYPES).filter((k) => !TYPES[k].attendance).map((k) => [k, 0]));
+  for (const r of db.prepare("SELECT type, sum(minutes) n FROM leave_requests WHERE employee_id=? AND status='approved' AND start_date>=? GROUP BY type").all(emp.id, yearStart)) if (r.type in byType) byType[r.type] = r.n;
   return { ...s, yearStart, eligibleFrom: eligibleFrom(emp.join_date), probationEnd: probationEnd(emp.join_date), byType };
 }

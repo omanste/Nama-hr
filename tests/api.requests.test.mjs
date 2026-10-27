@@ -79,7 +79,7 @@ test("HR cannot approve; the department approver can, and the balance drops", as
 });
 
 test("early leave is recorded in hours and does not reduce annual leave", async () => {
-  const r = await staff.c.post("/api/requests", { type: "early", reason: "موعد", date: "2026-11-10", time: "15:30" });
+  const r = await staff.c.post("/api/requests", { type: "early", reason: "موعد", date: "2026-11-10", time: "16:30" }); // shift 2 ends at 18:00
   assert.equal(r.status, 201);
   assert.equal(r.data.request.minutes, 90);
   assert.equal((await tawfiq.c.post(`/api/requests/${r.data.request.id}/approve`, {})).status, 200);

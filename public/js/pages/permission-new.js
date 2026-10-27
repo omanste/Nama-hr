@@ -11,7 +11,7 @@ const hours = (m) => t("hours", { n: num(m / 60) });
 export async function render(el, _p, { me, query }) {
   if (!me.employee) { el.append(empty(t("no_profile"))); return; }
   const [prof, settings] = await Promise.all([api.get(`/api/employees/${me.employee.id}`), api.get("/api/settings")]);
-  const P = prof.permissions, L = prof.leave;
+  const shiftNo = prof.employee.shift === 1 ? 1 : 2;
   let type = PERMISSIONS.includes(query.get("type")) ? query.get("type") : "early";
   const today = todayIso();
   const holidays = new Set((settings.official_holidays || []).map((x) => x.date));
@@ -24,8 +24,11 @@ export async function render(el, _p, { me, query }) {
   const typeBox = h("div", { class: "seg", role: "group", "aria-label": t("permission_type") });
   const fieldsBox = h("div", { class: "fields" });
 
-  const dayStart = () => hm(settings.work_day_start || "09:00");
-  const dayEnd = (d) => (settings.ramadan_start && settings.ramadan_end && d >= settings.ramadan_start && d <= settings.ramadan_end ? hm(settings.ramadan_day_end) : hm(settings.work_day_end || "17:00"));
+  // the person's own shift (policy §3); in Ramadan the day is shorter
+  const ramadan = (d) => settings.ramadan_start && settings.ramadan_end && d >= settings.ramadan_start && d <= settings.ramadan_end;
+  const dayStart = () => hm(settings[`shift_${shiftNo}_start`]);
+  const dayEnd = (d) => (ramadan(d) ? dayStart() + (settings.ramadan_hours || 6) * 60 : hm(settings[`shift_${shiftNo}_end`]));
+  const restDay = (d) => [5, 6].includes(new Date(d + "T00:00:00Z").getUTCDay());
   const fill = (sel, list, pick) => { const prev = sel.value; sel.replaceChildren(...list.map((x) => h("option", { value: x }, x))); sel.value = list.includes(prev) ? prev : pick(list); };
   function fillTimes() {
     const s = dayStart(), e = dayEnd(date.value);
@@ -43,19 +46,15 @@ export async function render(el, _p, { me, query }) {
   }
   function update() {
     const m = Math.max(0, minutes());
-    const monthNow = date.value.slice(0, 7) === today.slice(0, 7);
-    const freeLeft = monthNow ? P.freeLeft : P.freeMonthly; // another month starts with its own free hours
-    const fromAnnual = Math.max(0, m - freeLeft);
-    const holiday = holidays.has(date.value);
+    const holiday = holidays.has(date.value), rest = restDay(date.value);
     calc.replaceChildren(...[
       h("dl", { class: "facts" },
         h("div", null, h("dt", null, t("this_request")), h("dd", { class: "num" }, hours(m))),
-        h("div", null, h("dt", null, t("free_left_month")), h("dd", { class: "num" }, hours(freeLeft))),
-        h("div", null, h("dt", null, t("from_annual")), h("dd", { class: "num", style: { color: fromAnnual ? "var(--bad)" : null } }, hours(fromAnnual)))),
-      h("p", { class: "sub", style: { margin: "10px 0 0" } }, t("perm_rule", { n: num(P.freeMonthly / 60) })),
-      fromAnnual > L.available ? h("div", { class: "note bad", style: { marginTop: "10px" } }, t("exceeds_balance")) : null,
-      holiday ? h("div", { class: "note bad", style: { marginTop: "10px" } }, t("perm_holiday")) : null].filter(Boolean));
-    submit.disabled = !m || holiday || fromAnnual > L.available;
+        h("div", null, h("dt", null, t("f_shift")), h("dd", { class: "num" }, `${t("shift_" + shiftNo)} · ${clock(dayStart())}–${clock(dayEnd(date.value))}`))),
+      h("p", { class: "sub", style: { margin: "10px 0 0" } }, t("perm_rule_policy")),
+      holiday ? h("div", { class: "note bad", style: { marginTop: "10px" } }, t("perm_holiday")) : null,
+      rest ? h("div", { class: "note bad", style: { marginTop: "10px" } }, t("perm_rest_day")) : null].filter(Boolean));
+    submit.disabled = !m || holiday || rest;
   }
   function draw() {
     typeBox.replaceChildren(...PERMISSIONS.map((k) => h("button", { type: "button", "aria-pressed": String(k === type), onclick: () => { type = k; draw(); } }, t("lt_" + k))));

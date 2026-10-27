@@ -93,6 +93,20 @@ const MIGRATIONS = [
    CREATE INDEX ce_dates ON calendar_events(start_date, end_date);`,
   // 14: Admin can hide a Staff Voice message (then only Admin sees it)
   `ALTER TABLE voice_messages ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;`,
+  // 15: attendance (policy 007/2026) — each person's shift; the fingerprint machine's punches and which number is whom;
+  // HR's classification of a permission or confirmation of a correction; details of an external task; the monthly sheet review
+  `ALTER TABLE employees ADD COLUMN shift INTEGER NOT NULL DEFAULT 2;
+   ALTER TABLE leave_requests ADD COLUMN hr_class TEXT; ALTER TABLE leave_requests ADD COLUMN hr_by INTEGER;
+   ALTER TABLE leave_requests ADD COLUMN hr_at TEXT; ALTER TABLE leave_requests ADD COLUMN details TEXT;
+   CREATE TABLE att_uploads(id INTEGER PRIMARY KEY, name TEXT, rows INTEGER NOT NULL, added INTEGER NOT NULL, from_date TEXT, to_date TEXT,
+     uploaded_by INTEGER, uploaded_at TEXT NOT NULL);
+   CREATE TABLE att_devices(machine_no TEXT PRIMARY KEY, machine_name TEXT, employee_id INTEGER REFERENCES employees(id),
+     ignored INTEGER NOT NULL DEFAULT 0, first_date TEXT, last_date TEXT, updated_at TEXT);
+   CREATE TABLE att_punches(id INTEGER PRIMARY KEY, machine_no TEXT NOT NULL, at TEXT NOT NULL, upload_id INTEGER, UNIQUE(machine_no, at));
+   CREATE INDEX ap_at ON att_punches(at);
+   CREATE TABLE att_reviews(id INTEGER PRIMARY KEY, employee_id INTEGER NOT NULL REFERENCES employees(id), month TEXT NOT NULL,
+     user_id INTEGER, note TEXT, at TEXT NOT NULL, UNIQUE(employee_id, month));
+   INSERT OR IGNORE INTO settings(key,value) VALUES('attendance_start', '"' || date('now') || '"');`,
 ];
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */

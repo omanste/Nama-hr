@@ -171,7 +171,11 @@ export function registerAuth(api, ctx) {
       : db.prepare(`SELECT count(*) n FROM leave_requests WHERE status='pending' AND employee_id<>? AND (approver_user_id=?
           OR approver_user_id IN (SELECT approver_user_id FROM approver_cover WHERE deputy_user_id=? AND start_date<=? AND end_date>=?))`).get(own, s.user.id, s.user.id, today, today).n;
     const pendingCapReviews = ["hr", "admin"].includes(s.user.role) ? db.prepare("SELECT count(*) n FROM cap_reviews WHERE status='pending'").get().n : 0;
-    send(req, res, 200, { user: publicUser(s.user), employee: s.employee, isApprover: s.isApprover, pendingApprovals, pendingCapReviews, voiceInbox: voiceInboxCount(db, s), env: ctx.appEnv });
+    // HR: approved permissions to classify and fingerprint corrections to confirm (attendance policy §5, §8)
+    const pendingHr = ["hr", "admin"].includes(s.user.role) ? db.prepare("SELECT count(*) n FROM leave_requests WHERE status='approved' AND hr_class IS NULL AND type IN ('early','late','break','correction')").get().n : 0;
+    // a manager sees their team's attendance: department approver, or someone's direct manager
+    const hasTeam = !!s.employee && (s.isApprover || !!db.prepare("SELECT 1 FROM employees WHERE manager_employee_id=? AND status IN ('active','on_leave')").get(s.employee.id));
+    send(req, res, 200, { user: publicUser(s.user), employee: s.employee, isApprover: s.isApprover, pendingApprovals, pendingCapReviews, pendingHr, hasTeam, voiceInbox: voiceInboxCount(db, s), env: ctx.appEnv });
   });
 
   api.post("/api/me/password", async (req, res) => {

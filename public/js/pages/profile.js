@@ -1,7 +1,7 @@
 import { api } from "../api.js";
 import { t, nm, getLang, tx } from "../i18n.js";
 import { countryName } from "../countries.js";
-import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, errText, confirm, select, field, backLink, todayIso, isPermission } from "../ui.js";
+import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, errText, confirm, select, field, backLink, todayIso, isPermission, isAttendanceReq, durText } from "../ui.js";
 import { balanceHero, requestItem } from "./home.js";
 import { render as rerender } from "../app.js";
 
@@ -106,6 +106,7 @@ export async function render(el, params, { me, can, opts }) {
         can.edit() && !own ? h("button", { class: e.status === "disabled" ? "btn" : "btn danger", type: "button", onclick: () => setDisabled(e, e.status !== "disabled") }, t(e.status === "disabled" ? "staff_enable" : "staff_disable")) : null,
         can.admin() && !own ? h("button", { class: "btn danger", type: "button", onclick: () => deleteStaff(e) }, t("staff_delete")) : null)),
     e.status === "disabled" ? h("div", { class: "note bad" }, t("disabled_note")) : null,
+    attendanceCard(e),
 
     // my own leave, permissions and requests live on the home page; HR still sees them on a colleague's profile
     opts.me ? null : leaveSections(p, { own }),
@@ -127,7 +128,7 @@ export async function render(el, params, { me, can, opts }) {
         ["f_mobile", e.mobile && h("a", { href: `tel:${e.mobile}`, dir: "ltr" }, e.mobile)], ["f_email", e.email && h("a", { href: `mailto:${e.email}` }, e.email)], ["f_address", e.address],
         ["f_emergency_name", e.emergency_name], ["f_emergency_relation", e.emergency_relation], ["f_emergency_phone", e.emergency_phone && h("span", { dir: "ltr" }, e.emergency_phone)]])),
       h("section", { class: "card" }, h("h2", null, t("sec_job")), facts([
-        ["f_department_id", nm(p.department)], ["f_job_title", tx(e.job_title)], ["f_manager_employee_id", nm(p.manager)], ["f_join_date", dmy(e.join_date)], ["f_status", t("st_" + e.status)]])),
+        ["f_department_id", nm(p.department)], ["f_job_title", tx(e.job_title)], ["f_manager_employee_id", nm(p.manager)], ["f_join_date", dmy(e.join_date)], ["f_status", t("st_" + e.status)], ["f_shift", t(e.shift === 1 ? "shift_1_full" : "shift_2_full")]])),
       h("section", { class: "card", style: { gridColumn: "1 / -1" } }, h("h2", null, t("sec_contract")), facts([
         ["f_join_date", dmy(e.join_date)], ["service_length", serviceLength(e.join_date)], ["probation_end", dmy(p.leave.probationEnd)],
         ["f_contract_type", e.contract_type], ["f_contract_end", e.contract_end ? h("span", null, dmy(e.contract_end), " ", expiryBadge(e.contract_end)) : null]]),
@@ -236,14 +237,31 @@ function encashDialog(e, consents) {
 }
 
 const hrs = (m) => t("hours", { n: num(m / 60) });
+/** This month's attendance (filled when it loads; hidden when this login may not see it). */
+function attendanceCard(e) {
+  const box = h("section", { class: "card", hidden: true });
+  api.get(`/api/attendance/employee/${e.id}`).then((d) => {
+    const s = d.summary;
+    if (!d.linked.length && !s.workDays) return;
+    const f = (k, v) => h("div", null, h("dt", null, t(k)), h("dd", { class: "num" }, v));
+    box.append(h("div", { class: "card-head" }, h("h2", null, t("att_this_month")), h("a", { class: "btn small", href: `#/attendance?${d.own ? "" : `emp=${e.id}&`}m=${d.month}` }, t("att_open_sheet"))),
+      h("dl", { class: "facts" },
+        f("att_compliance", s.compliance === null ? "—" : `${num(s.compliance)}%`), f("att_on_time_days", `${num(s.onTime)} / ${num(s.workDays)}`),
+        f("att_late", `${num(s.late)} · ${durText(s.lateMin)}`), f("att_early", `${num(s.early)} · ${durText(s.earlyMin)}`),
+        f("att_missing", num(s.missing)), f("att_absent", num(s.absent))));
+    box.hidden = false;
+  }).catch(() => {});
+  return box;
+}
 /** Times and hours of early leave, late arrival and personal breaks — this month and this year. */
 function permissionCard(P) {
   if (!P) return null;
   const col = (title, S) => h("div", null, h("h3", null, title),
     h("dl", { class: "facts" }, ["early", "late", "break"].map((k) => h("div", null, h("dt", null, t("lt_" + k)), h("dd", { class: "num" }, t("times_hours", { n: num(S[k].count), h: num(S[k].minutes / 60) })))),
       h("div", null, h("dt", null, h("b", null, t("total"))), h("dd", { class: "num" }, h("b", null, t("times_hours", { n: num(S.total.count), h: num(S.total.minutes / 60) })))),
-      S.deducted ? h("div", null, h("dt", null, t("from_annual")), h("dd", { class: "num" }, hrs(S.deducted))) : null));
-  return h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_permissions")), h("span", { class: "badge" }, t("free_left_month"), ": ", hrs(P.freeLeft))),
+      S.deducted ? h("div", null, h("dt", null, t("from_annual")), h("dd", { class: "num" }, hrs(S.deducted))) : null,
+      S.classes && S.classes.unclassified ? h("div", null, h("dt", null, t("att_awaiting_hr")), h("dd", { class: "num" }, hrs(S.classes.unclassified))) : null));
+  return h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_permissions")), h("span", { class: "badge" }, t("perm_policy_badge"))),
     h("div", { class: "grid cols2" }, col(t("this_month"), P.month), col(t("this_year"), P.year)));
 }
 /** Small summary at the top of "My permissions". */
@@ -284,7 +302,7 @@ export function leaveSections(p, { own = false, limit = 0 } = {}) {
 
     permissionCard(p.permissions),
     h("section", { class: "card" }, h("h2", null, t("sec_requests")),
-      p.requests.length ? h("div", { class: "list" }, p.requests.map((r) => requestItem(r))) : empty())];
+      p.requests.length ? h("div", { class: "list" }, p.requests.filter((r) => !isAttendanceReq(r.type)).map((r) => requestItem(r))) : empty())];
 }
 
 /** Time since joining, e.g. "1 year and 6 months" (whole months, as of today). */

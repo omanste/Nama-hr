@@ -46,6 +46,7 @@ export async function render(el, params, { can }) {
       field(t("f_manager_employee_id"), select("manager_employee_id", [["", "—"], ...emps.items.filter((x) => x.id !== e.id).map((x) => [x.id, `${nm(x)} (${x.emp_no})`])], e.manager_employee_id)),
       field(t("f_join_date"), date("join_date")),
       field(t("f_status"), select("status", STATUSES.map((s) => [s, t("st_" + s)]), e.status)),
+      field(t("f_shift"), select("shift", [[2, t("shift_2_full")], [1, t("shift_1_full")]], e.shift || 2), { hint: t("f_shift_hint") }),
       isNew ? field(t("f_opening_days"), h("input", { name: "opening_days", type: "number", min: "0", step: "0.25", inputmode: "decimal" }), { hint: t("f_opening_hint") }) : null)),
     h("section", { class: "card" }, h("h2", null, t("sec_contract")), h("div", { class: "fields" },
       field(t("f_contract_type"), select("contract_type", [["", "—"], ...contractTypes.map((c) => [c, c])], e.contract_type)),

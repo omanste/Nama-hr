@@ -7,20 +7,21 @@ import { createUser, ROLES, getEmployee } from "./employees.mjs";
 import { tempPassword, setPassword } from "./auth.mjs";
 import { isIsoDate } from "./leave.mjs";
 import { rerouteFallbacks } from "./requests.mjs";
+import { shiftTimes } from "./shifts.mjs";
 
 export const DEFAULT_CONTRACT_TYPES = ["Unlimited", "Limited", "Probation", "Part-time"];
 export function readSettings(db) {
+  const S = shiftTimes(db);
   return {
     managers_approver_employee_id: getSetting(db, "managers_approver_employee_id", null),
     managers_approver_title: getSetting(db, "managers_approver_title", "ceo"),
     contract_types: getSetting(db, "contract_types", DEFAULT_CONTRACT_TYPES),
-    work_day_start: getSetting(db, "work_day_start", "09:00"),
-    work_day_end: getSetting(db, "work_day_end", "17:00"),
+    shift_1_start: S[1].start, shift_1_end: S[1].end, shift_2_start: S[2].start, shift_2_end: S[2].end,
     ramadan_start: getSetting(db, "ramadan_start", null),
     ramadan_end: getSetting(db, "ramadan_end", null),
-    ramadan_day_end: getSetting(db, "ramadan_day_end", "15:00"),
+    ramadan_hours: getSetting(db, "ramadan_hours", 6),
+    attendance_start: getSetting(db, "attendance_start", null),
     official_holidays: getSetting(db, "official_holidays", []),
-    early_free_hours_month: getSetting(db, "early_free_hours_month", 4),
   };
 }
 
@@ -81,15 +82,20 @@ export function registerAdmin(api, ctx) {
   api.put("/api/settings", async (req, res) => {
     need(req.sess, "settings.edit");
     const b = await readJson(req);
-    const allowed = ["managers_approver_employee_id", "managers_approver_title", "contract_types", "work_day_start", "work_day_end", "ramadan_start", "ramadan_end", "ramadan_day_end", "official_holidays", "early_free_hours_month"];
+    const allowed = ["managers_approver_employee_id", "managers_approver_title", "contract_types", "shift_1_start", "shift_1_end", "shift_2_start", "shift_2_end", "ramadan_start", "ramadan_end", "ramadan_hours", "attendance_start", "official_holidays"];
     if ("official_holidays" in b) {
       if (!Array.isArray(b.official_holidays) || !b.official_holidays.every((x) => x && isIsoDate(x.date))) throw invalid("official_holidays", "each holiday needs a valid date");
       b.official_holidays = b.official_holidays.map((x) => ({ date: x.date, name: String(x.name || "").trim().slice(0, 80) })).sort((x, y) => (x.date < y.date ? -1 : 1));
     }
-    if ("early_free_hours_month" in b && !(typeof b.early_free_hours_month === "number" && b.early_free_hours_month >= 0 && b.early_free_hours_month <= 40 && (b.early_free_hours_month * 2) % 1 === 0))
-      throw invalid("early_free_hours_month", "hours must be 0–40 in half hours");
-    if ("work_day_start" in b && !/^(0[6-9]|1[0-2]):(00|30)$/.test(String(b.work_day_start))) throw invalid("work_day_start", "start time must be 06:00–12:30 (on the hour or half hour)");
-    for (const k of ["work_day_end", "ramadan_day_end"]) if (k in b && !/^(1[0-9]|2[0-3]):(00|30)$/.test(String(b[k]))) throw invalid(k, "time must be HH:MM (on the hour or half hour)");
+    for (const n of [1, 2]) {
+      const a = `shift_${n}_start`, z = `shift_${n}_end`;
+      if (a in b && !/^(0[6-9]|1[0-2]):(00|30)$/.test(String(b[a]))) throw invalid(a, "start time must be 06:00–12:30 (on the hour or half hour)");
+      if (z in b && !/^(1[0-9]|2[0-3]):(00|30)$/.test(String(b[z]))) throw invalid(z, "time must be HH:MM (on the hour or half hour)");
+      const s1 = a in b ? b[a] : shiftTimes(db)[n].start, e1 = z in b ? b[z] : shiftTimes(db)[n].end;
+      if (e1 <= s1) throw invalid(z, "the shift must end after it starts");
+    }
+    if ("ramadan_hours" in b && !(typeof b.ramadan_hours === "number" && b.ramadan_hours >= 4 && b.ramadan_hours <= 8 && (b.ramadan_hours * 2) % 1 === 0)) throw invalid("ramadan_hours", "Ramadan hours must be 4–8");
+    if ("attendance_start" in b && !isIsoDate(b.attendance_start)) throw invalid("attendance_start", "must be a date");
     for (const k of ["ramadan_start", "ramadan_end"]) if (k in b && b[k] !== null && b[k] !== "" && !isIsoDate(b[k])) throw invalid(k, "must be a date");
     if ("ramadan_start" in b && b.ramadan_start === "") b.ramadan_start = null;
     if ("ramadan_end" in b && b.ramadan_end === "") b.ramadan_end = null;

@@ -13,10 +13,11 @@ export const DAY_END = 17 * 60;    // 17:00
  *   proof: a document must be attached before approval (Art. 84; Art. 47 for sickness) · paid: false = without wage */
 export const TYPES = {
   annual: { effect: "deduct", range: true, maxDays: 60 },
-  // permissions (company policy): short absences inside a working day. They share free hours each month; the rest comes from annual leave
-  early: { effect: "early", hours: true, permission: true },      // leave before the end of the day
-  late: { effect: "early", hours: true, permission: true },       // arrive after the start of the day
-  break: { effect: "early", hours: true, permission: true },      // step out for a while during the day
+  // permissions (attendance policy §8): short absences inside a working day. The manager approves, then HR classifies each one
+  // (statutory paid / special paid / unpaid / taken from annual leave) — nothing is deducted automatically, no monthly free balance
+  early: { effect: "hours", hours: true, permission: true },      // leave before the end of the day
+  late: { effect: "hours", hours: true, permission: true },       // arrive after the start of the day
+  break: { effect: "hours", hours: true, permission: true },      // step out for a while during the day
   emergency: { effect: "deduct", range: true, maxDays: 60 },      // company policy: taken from annual leave (not in the 2023 law)
   sick: { effect: "record", range: true, proof: true, yearCap: 182, maxDays: 182 },
   bereavement: { effect: "record", range: true, proof: true, relation: "list", event: "death" },
@@ -29,7 +30,14 @@ export const TYPES = {
   childcare: { effect: "record", range: true, maxDays: 365, gender: "female", paid: false, event: "child" },
   unpaid: { effect: "record", range: true, maxDays: 365, paid: false },
   comp_day: { effect: "credit" },
+  // attendance requests (policy §5, §10): a forgotten fingerprint (manager verifies, HR confirms) and an external task (counts as work)
+  correction: { effect: "record", attendance: true },
+  mission: { effect: "record", attendance: true },
 };
+export const ATTENDANCE_TYPES = Object.keys(TYPES).filter((k) => TYPES[k].attendance);
+/** How HR classifies an approved permission (§8), and confirms a fingerprint correction (§5). */
+export const PERM_CLASSES = ["statutory", "special", "unpaid", "leave"];
+export const CORRECTION_CLASSES = ["confirmed", "refused"];
 
 /** Art. 84: days of paid bereavement leave by relation. A widow's leave (iddah) is for women. */
 export const BEREAVEMENT_DAYS = Object.freeze({
@@ -140,15 +148,18 @@ export function annualMinutes(start, end, maxDays = MAX_RANGE_DAYS) {
   return days * DAY;
 }
 
-/** Minutes from the leave time to the end of the working day (17:00, or the Ramadan end time). 30-minute steps, from 09:30. */
-export function earlyMinutes(time, dayEnd = DAY_END) {
+/** Minutes from the leave time to the end of the working day (the shift's end, or the Ramadan end time). 30-minute steps,
+ * from 30 minutes after the start of the day. */
+export function earlyMinutes(time, dayEnd = DAY_END, dayStart = 9 * 60) {
   const m = /^(\d{2}):(\d{2})$/.exec(String(time || ""));
   if (!m) throw new RangeError("invalid time");
   const t = +m[1] * 60 + +m[2];
-  if (+m[2] % 30 !== 0 || t < 9 * 60 + 30 || t > dayEnd - 30) throw new RangeError("time must be from 09:30 to 30 minutes before the end of the day, in 30-minute steps");
+  if (+m[2] % 30 !== 0 || t < dayStart + 30 || t > dayEnd - 30) throw new RangeError("time must be from 30 minutes after the start of the day to 30 minutes before its end, in 30-minute steps");
   return dayEnd - t;
 }
 
+/** "HH:MM" → minutes after midnight, or null (any minute, for punches, corrections and tasks). */
+export const clockMin = (s) => { const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(s || "")); return m ? +m[1] * 60 + +m[2] : null; };
 export const PERMISSION_TYPES = Object.keys(TYPES).filter((k) => TYPES[k].permission);
 const toMin = (time) => { const m = /^(\d{2}):(\d{2})$/.exec(String(time || "")); if (!m || +m[2] % 30 !== 0) throw new RangeError("invalid time (30-minute steps)"); return +m[1] * 60 + +m[2]; };
 /** Late arrival: minutes from the start of the day to the arrival time (09:30 at the earliest, 30 minutes before the end at the latest). */
@@ -173,7 +184,9 @@ export function permissionSpan(type, { time, endTime, dayStart = 9 * 60, dayEnd 
 export function requestMinutes(type, { start, end, time, endTime, dayStart = 9 * 60, dayEnd } = {}) {
   const T = TYPES[type];
   if (!T) throw new RangeError("unknown leave type");
-  if (type === "early") return earlyMinutes(time, dayEnd);
+  if (type === "early") return earlyMinutes(time, dayEnd, dayStart);
+  if (type === "correction") return 0;
+  if (type === "mission") { const a = clockMin(time), b = clockMin(endTime); if (a === null || b === null || b <= a) throw new RangeError("the task must end after it starts"); return b - a; }
   if (type === "late") return lateMinutes(time, dayStart, dayEnd);
   if (type === "break") return breakMinutes(time, endTime, dayStart, dayEnd);
   if (type === "comp_day") return DAY;

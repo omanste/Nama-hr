@@ -42,23 +42,18 @@ test("emergency leave is deducted from annual leave (and follows the 6-month rul
   assert.equal((await s.c.post("/api/requests", { type: "emergency", start: "2027-01-01", end: "2027-01-30" })).data.error, "insufficient_balance");
 });
 
-test("early leave: free hours each month, the rest deducted from annual leave", async () => {
-  assert.equal((await admin.put("/api/settings", { early_free_hours_month: 3 })).status, 200);
-  assert.equal((await admin.put("/api/settings", { early_free_hours_month: -1 })).status, 400);
+test("early leave: no free monthly hours and no automatic deduction; HR's \"from annual leave\" is undone by cancelling", async () => {
+  assert.equal((await admin.put("/api/settings", { early_free_hours_month: 3 })).status, 400, "the setting is gone (policy §8)");
   const before = await remaining(s.emp.id);
-  const a = await s.c.post("/api/requests", { type: "early", reason: "موعد", date: "2026-12-07", time: "15:00" }); // 2 h, free
+  const a = await s.c.post("/api/requests", { type: "early", reason: "موعد", date: "2026-12-07", time: "15:00" });
   assert.equal((await approve(a.data.request.id)).status, 200);
   assert.equal(await remaining(s.emp.id), before);
-  const b = await s.c.post("/api/requests", { type: "early", reason: "موعد", date: "2026-12-08", time: "14:00" }); // 3 h: 1 free + 2 deducted
-  assert.equal((await approve(b.data.request.id)).status, 200);
-  assert.equal(await remaining(s.emp.id), before - 120);
-  const c = await s.c.post("/api/requests", { type: "early", reason: "موعد", date: "2027-01-05", time: "16:00" }); // new month, free again
-  assert.equal((await approve(c.data.request.id)).status, 200);
-  assert.equal(await remaining(s.emp.id), before - 120);
-  await mgr.c.post(`/api/requests/${b.data.request.id}/cancel`, {});
+  assert.equal((await admin.post(`/api/requests/${a.data.request.id}/hr`, { class: "leave" })).status, 200);
+  assert.equal(await remaining(s.emp.id), before - 180);
+  await mgr.c.post(`/api/requests/${a.data.request.id}/cancel`, {});
   assert.equal(await remaining(s.emp.id), before);
-  const d = (await s.c.get(`/api/requests/${b.data.request.id}`)).data;
-  assert.equal(typeof d.earlyFreeHours, "number");
+  const d = (await s.c.get(`/api/requests/${a.data.request.id}`)).data;
+  assert.equal(d.canClassify, false);
 });
 
 test("worked on a holiday: the employee chooses a day off or payment", async () => {

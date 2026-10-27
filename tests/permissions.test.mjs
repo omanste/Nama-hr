@@ -1,5 +1,5 @@
 // Permissions: early leave, late arrival and personal break — reason required, manager decides,
-// shared monthly free hours then annual leave; counted on the profile and in the report.
+// then HR classifies each (attendance policy §8) — nothing is deducted automatically; counted on the profile and in the report.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { boot, adminClient, makePerson, client } from "./helpers.mjs";
@@ -31,7 +31,7 @@ test("late arrival and personal break are measured in hours inside the working d
   assert.equal((await ask(s.c, { type: "early", date: "2026-11-02", time: "16:00" })).status, 201);
   // bad times
   for (const b of [{ type: "late", date: "2026-11-03", time: "09:00" }, { type: "late", date: "2026-11-03", time: "10:15" },
-    { type: "break", date: "2026-11-03", time: "13:00", end_time: "12:00" }, { type: "break", date: "2026-11-03", time: "16:30", end_time: "17:30" }])
+    { type: "break", date: "2026-11-03", time: "13:00", end_time: "12:00" }, { type: "break", date: "2026-11-03", time: "17:30", end_time: "18:30" }, { type: "late", date: "2026-11-06", time: "10:00" } /* Friday: rest day */])
     assert.equal((await ask(s.c, b)).status, 400, JSON.stringify(b));
   // a reason is required
   assert.equal((await s.c.post("/api/requests", { type: "late", date: "2026-11-04", time: "10:00" })).status, 400);
@@ -40,17 +40,33 @@ test("late arrival and personal break are measured in hours inside the working d
   assert.equal((await ask(s.c, { type: "late", date: "2026-11-05", time: "10:00" })).status, 409);
 });
 
-test("the manager decides; free hours are shared by all three each month, the rest comes from annual leave", async () => {
+test("the manager decides, then HR classifies; only \"from annual leave\" touches the balance", async () => {
   const before = (await hr.c.get(`/api/employees/${other.emp.id}`)).data.leave.remaining;
   const ids = [];
   for (const b of [{ type: "late", date: "2026-11-09", time: "11:00" }, { type: "break", date: "2026-11-10", time: "12:00", end_time: "13:00" }, { type: "early", date: "2026-11-11", time: "15:00" }]) {
     const r = await ask(other.c, b); assert.equal(r.status, 201); ids.push(r.data.request.id);
   }
   assert.equal((await outsider.c.post(`/api/requests/${ids[0]}/approve`, {})).status, 403);
+  // HR can't classify before the manager approves
+  assert.equal((await hr.c.post(`/api/requests/${ids[2]}/hr`, { class: "leave" })).status, 409);
   for (const id of ids) assert.equal((await mgr.c.post(`/api/requests/${id}/approve`, {})).status, 200);
-  // 2 h + 1 h + 2 h = 5 h; 4 h free → 1 h from annual leave
+  assert.equal((await hr.c.get(`/api/employees/${other.emp.id}`)).data.leave.remaining, before, "approval alone deducts nothing");
+  const q = (await hr.c.get("/api/attendance/hr-queue")).data.items.map((x) => x.id);
+  assert.ok(ids.every((id) => q.includes(id)));
+  assert.equal((await mgr.c.post(`/api/requests/${ids[2]}/hr`, { class: "leave" })).status, 403); // HR only
+  assert.equal((await hr.c.post(`/api/requests/${ids[2]}/hr`, { class: "free" })).status, 400);
+  assert.equal((await hr.c.post(`/api/requests/${ids[0]}/hr`, { class: "statutory" })).status, 200);
+  assert.equal((await hr.c.post(`/api/requests/${ids[1]}/hr`, { class: "unpaid" })).status, 200);
+  // early leave 15:00–18:00 = 3 h from annual leave; re-classifying gives it back, classifying again takes it once
+  assert.equal((await hr.c.post(`/api/requests/${ids[2]}/hr`, { class: "leave" })).status, 200);
+  assert.equal((await hr.c.get(`/api/employees/${other.emp.id}`)).data.leave.remaining, before - 180);
+  assert.equal((await hr.c.post(`/api/requests/${ids[2]}/hr`, { class: "special" })).status, 200);
+  assert.equal((await hr.c.get(`/api/employees/${other.emp.id}`)).data.leave.remaining, before);
+  assert.equal((await hr.c.post(`/api/requests/${ids[2]}/hr`, { class: "leave" })).status, 200);
   const p = (await hr.c.get(`/api/employees/${other.emp.id}`)).data;
-  assert.equal(p.leave.remaining, before - 60);
+  assert.equal(p.leave.remaining, before - 180);
+  assert.ok(!(await hr.c.get("/api/attendance/hr-queue")).data.items.some((x) => ids.includes(x.id)));
+  assert.equal((await hr.c.get(`/api/requests/${ids[2]}`)).data.request.hr_class, "leave");
   assert.equal(p.permissions.month.total.count, 0); // October summary: these are in November
   const rejected = await ask(other.c, { type: "late", date: "2026-11-12", time: "10:00" });
   assert.equal((await mgr.c.post(`/api/requests/${rejected.data.request.id}/reject`, {})).status, 400); // reason needed
@@ -62,14 +78,15 @@ test("profile shows times and hours this month and this year", async () => {
   await mgr.c.post(`/api/requests/${r.data.request.id}/approve`, {});
   const p = (await other.c.get(`/api/employees/${other.emp.id}`)).data.permissions;
   assert.equal(p.month.late.count, 1); assert.equal(p.month.late.minutes, 60);
-  assert.equal(p.year.total.count, 4); assert.equal(p.year.total.minutes, 360);
-  assert.equal(p.freeMonthly, 240); assert.equal(p.freeLeft, 180);
+  assert.equal(p.year.total.count, 4); assert.equal(p.year.total.minutes, 420);
+  assert.equal(p.freeLeft, undefined, "no monthly free balance (policy §8)");
 });
 
 test("report: per person times and hours by type; HR sees all, a manager only their departments, staff nothing", async () => {
   const r = (await hr.c.get("/api/reports/permissions?from=2026-11-01&to=2026-11-30")).data;
   const row = r.items.find((x) => x.employee.id === other.emp.id);
-  assert.deepEqual([row.late.count, row.late.minutes, row.break.count, row.early.count, row.total.minutes, row.deducted], [1, 120, 1, 1, 300, 60]);
+  assert.deepEqual([row.late.count, row.late.minutes, row.break.count, row.early.count, row.total.minutes, row.deducted], [1, 120, 1, 1, 360, 180]);
+  assert.deepEqual([row.classes.statutory, row.classes.unpaid, row.classes.leave, row.classes.special], [120, 60, 180, 0]);
   assert.ok(r.items.some((x) => x.employee.id === outsider.emp.id));
   const m = (await mgr.c.get("/api/reports/permissions?from=2026-11-01&to=2026-11-30")).data;
   assert.ok(!m.items.some((x) => x.employee.id === outsider.emp.id));

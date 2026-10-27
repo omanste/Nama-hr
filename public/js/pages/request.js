@@ -1,6 +1,6 @@
 import { api } from "../api.js";
 import { t, nm } from "../i18n.js";
-import { h, badge, when, amountText, dateTime, daysText, confirm, toast, errText, backLink, dmy, field, isPermission } from "../ui.js";
+import { h, badge, when, amountText, dateTime, daysText, confirm, toast, errText, backLink, dmy, field, isPermission, isAttendanceReq } from "../ui.js";
 import { render as rerender, refreshMe } from "../app.js";
 
 export async function decide(id, action) {
@@ -30,6 +30,19 @@ async function postpone(r) {
   document.body.append(dlg); dlg.showModal(); input.focus();
 }
 
+/** HR (policy §8): how an approved permission is treated — or (§5) whether a fingerprint correction is confirmed. */
+function classifyBox(r, classes) {
+  const comment = h("input", { placeholder: t("comment_optional"), maxlength: 500 });
+  const pick = (c) => async () => {
+    if (c === "leave" && !(await confirm(t("pc_leave_q"), { okText: t("confirm") }))) return;
+    try { await api.post(`/api/requests/${r.id}/hr`, { class: c, comment: comment.value.trim() }); toast(t("saved")); await refreshMe(); rerender(); } catch (e) { toast(errText(e), "bad"); }
+  };
+  return h("section", { class: "card" }, h("h2", null, t(r.type === "correction" ? "hr_confirm_title" : "hr_classify_title")),
+    h("p", { class: "sub" }, t(r.type === "correction" ? "hr_confirm_hint" : "hr_classify_hint")),
+    h("div", { class: "row" }, classes.map((c) => h("button", { class: `btn ${r.hr_class === c ? "primary" : c === "refused" ? "danger" : ""}`, type: "button", "aria-pressed": String(r.hr_class === c), onclick: pick(c) }, t("pc_" + c)))),
+    h("div", { style: { marginTop: "10px" } }, comment));
+}
+
 export async function render(el, params, { me, can }) {
   const d = await api.get(`/api/requests/${params.id}`);
   const r = d.request;
@@ -38,11 +51,14 @@ export async function render(el, params, { me, can }) {
   const act = (action) => async () => { if (await decide(r.id, action)) rerender(); };
   const row = (k, v) => h("div", null, h("dt", null, t(k)), h("dd", null, v || "—"));
   el.append(
-    backLink(own ? "#/leave" : d.canDecide ? "#/approvals" : "#/requests"),
+    backLink(own ? (isAttendanceReq(r.type) ? "#/attendance" : isPermission(r.type) ? "#/permissions" : "#/leave") : d.canDecide ? "#/approvals" : "#/requests"),
     h("div", { class: "page-head" }, h("h1", null, t("lt_" + r.type)), badge(r.status)),
     h("section", { class: "card" }, h("dl", { class: "facts" },
       row("employee", can.staffList() ? h("a", { href: `#/staff/${r.employee_id}` }, nm(r)) : nm(r)),
-      row("date", when(r)), row("amount", amountText(r)),
+      row("date", when(r)), r.type === "correction" ? null : row("amount", amountText(r)),
+      r.type === "mission" && r.details ? row("mission_place", JSON.parse(r.details).place) : null,
+      d.classes ? row(r.type === "correction" ? "hr_confirmation" : "hr_classification", r.hr_class ? h("span", { class: `badge ${r.hr_class === "refused" ? "b-rejected" : "b-approved"}` }, t("pc_" + r.hr_class))
+        : r.status === "approved" ? h("span", { class: "badge b-pending" }, t("att_awaiting_hr")) : "—") : null,
       ["annual", "emergency"].includes(r.type) ? row("current_balance", daysText(r.balance)) : null,
       isPermission(r.type) && d.deducted > 0 ? row("deducted_from_annual", t("hours", { n: d.deducted / 60 })) : null,
       r.type === "comp_day" ? row("comp_choice", t(r.comp_choice === "pay" ? "comp_pay" : "comp_leave")) : null,
@@ -66,6 +82,7 @@ export async function render(el, params, { me, can }) {
       d.canDecide ? h("button", { class: "btn danger", type: "button", onclick: act("reject") }, t("reject")) : null,
       d.canPostpone ? h("button", { class: "btn", type: "button", onclick: () => postpone(r) }, t("postpone")) : null,
       canCancel ? h("button", { class: "btn", type: "button", onclick: act("cancel") }, t("cancel_request")) : null) : null,
+    d.canClassify ? classifyBox(r, d.classes) : null,
     h("section", { class: "card" }, h("h2", null, t("history")),
       h("ol", { class: "timeline" }, d.events.map((e) => h("li", null, h("div", null,
         h("div", null, h("b", null, (e.actor_name && (nm({ name_ar: e.actor_name, name_en: e.actor_name_en }))) || e.actor_username || "—"), " · ", t("ev_" + e.action)),

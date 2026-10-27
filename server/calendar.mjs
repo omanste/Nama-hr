@@ -73,7 +73,7 @@ export function registerCalendar(api, ctx) {
     }
     const items = db.prepare(`SELECT r.id, r.employee_id, r.type, r.status, r.start_date, r.end_date, r.early_time, r.end_time, r.minutes, e.name_ar, e.name_en, e.emp_no, e.department_id
       FROM leave_requests r JOIN employees e ON e.id=r.employee_id
-      WHERE r.status IN ('pending','approved') AND r.type<>'comp_day' AND r.start_date<=? AND r.end_date>=? ${where.length ? "AND " + where.join(" AND ") : ""}
+      WHERE r.status IN ('pending','approved') AND r.type NOT IN ('comp_day','correction','mission') AND r.start_date<=? AND r.end_date>=? ${where.length ? "AND " + where.join(" AND ") : ""}
       ORDER BY r.start_date, e.name_ar`).all(last, first, ...args);
     const holidays = getSetting(db, "official_holidays", []).filter((x) => x.date >= first && x.date <= last);
     const events = db.prepare("SELECT * FROM calendar_events WHERE start_date<=? AND end_date>=? ORDER BY start_date").all(last, first);

@@ -4,13 +4,14 @@ import { nowIso, tx, getSetting } from "./db.mjs";
 import { send, readJson, HttpError } from "./http.mjs";
 import { can, canViewEmployee, approvedDepartments } from "./perm.mjs";
 import { audit } from "./audit.mjs";
-import { TYPES, PERMISSION_TYPES, permissionSpan, requestMinutes, eligibleFrom, isIsoDate, fmtDays, DAY, checkLeaveRules, RuleError, sickPayBands, addMonths, daysBetweenInclusive, addDays, daysExcludingHolidays } from "./leave.mjs";
+import { TYPES, PERMISSION_TYPES, ATTENDANCE_TYPES, PERM_CLASSES, CORRECTION_CLASSES, clockMin, permissionSpan, requestMinutes, eligibleFrom, isIsoDate, fmtDays, DAY, checkLeaveRules, RuleError, sickPayBands, addMonths, daysBetweenInclusive, addDays, daysExcludingHolidays } from "./leave.mjs";
 import { approverFor } from "./routing.mjs";
 import { postLedger, balanceOf, pendingMinutes, yearStartFor } from "./ledger.mjs";
 import { notify } from "./notify.mjs";
 import { getEmployee } from "./employees.mjs";
 import { storeUpload } from "./files.mjs";
 import { blockedOverlap } from "./calendar.mjs";
+import { shiftFor, isRestDay } from "./shifts.mjs";
 
 export const TYPE_NAMES = {
   annual: ["إجازة سنوية", "Annual leave"], early: ["مغادرة مبكرة", "Early leave"], late: ["تأخير في الحضور", "Late arrival"], break: ["استئذان خلال الدوام", "Personal break"], emergency: ["إجازة اضطرارية", "Emergency leave"],
@@ -18,31 +19,18 @@ export const TYPE_NAMES = {
   marriage: ["إجازة زواج", "Marriage leave"], paternity: ["إجازة أبوة", "Paternity leave"], maternity: ["إجازة أمومة", "Maternity leave"],
   hajj: ["إجازة الحج", "Hajj leave"], exam: ["إجازة امتحانات", "Exam leave"], patient_care: ["إجازة مرافقة مريض", "Accompanying a patient"],
   childcare: ["إجازة رعاية طفل (بدون أجر)", "Child-care leave (unpaid)"], unpaid: ["إجازة خاصة بدون أجر", "Special unpaid leave"],
+  correction: ["تصحيح بصمة", "Fingerprint correction"], mission: ["مهمة عمل خارجية", "External work task"],
 };
+export const CLASS_NAMES = { statutory: ["حق نظامي مدفوع", "Statutory paid"], special: ["إذن خاص مدفوع", "Special paid permission"],
+  unpaid: ["بدون أجر", "Unpaid"], leave: ["من الإجازة السنوية", "From annual leave"], confirmed: ["معتمد", "Confirmed"], refused: ["غير معتمد", "Not confirmed"] };
 const RULE_STATUS = { invalid: 400, too_long: 400, outside_window: 400 };
-const hm = (s) => { const [h, m] = String(s).split(":").map(Number); return h * 60 + m; };
 
-/** End of the working day on a date: 17:00 by default, or the Ramadan end time inside the Ramadan dates (Art. 70). */
-export function dayEndOn(db, date) {
-  const rs = getSetting(db, "ramadan_start", null), re = getSetting(db, "ramadan_end", null);
-  if (rs && re && date >= rs && date <= re) return hm(getSetting(db, "ramadan_day_end", "15:00"));
-  return hm(getSetting(db, "work_day_end", "17:00"));
-}
-
-/** Start of the working day (09:00 unless changed in settings). */
-export const dayStartOn = (db) => hm(getSetting(db, "work_day_start", "09:00"));
 const PERM_SQL = `(${PERMISSION_TYPES.map((t) => `'${t}'`).join(",")})`;
 const isPermission = (type) => !!(TYPES[type] && TYPES[type].permission);
+const ATT_SQL = `(${ATTENDANCE_TYPES.map((t) => `'${t}'`).join(",")})`;
 
 const holidaySet = (db) => new Set(getSetting(db, "official_holidays", []).map((h) => h.date));
 
-/** Permissions (early leave, late arrival, personal break): the part beyond this month's free hours, deducted from annual leave (company policy). */
-export function earlyDeduction(db, empId, date, minutes, excludeId = 0, statuses = "('approved')") {
-  const free = Math.round(Number(getSetting(db, "early_free_hours_month", 4)) * 60);
-  const used = db.prepare(`SELECT coalesce(sum(minutes),0) n FROM leave_requests WHERE employee_id=? AND type IN ${PERM_SQL} AND status IN ${statuses}
-    AND substr(start_date,1,7)=? AND id<>?`).get(empId, date.slice(0, 7), excludeId).n;
-  return Math.max(0, minutes - Math.max(0, free - used));
-}
 
 /** Days already requested (pending or approved) of a type, for the legal limits. */
 function usedDays(db, empId, type, start, end, eventDate, relation, excludeId = 0) {
@@ -82,6 +70,14 @@ export function mayDecide(db, sess, r, today) {
   if (sess.employee && sess.employee.id === r.employee_id) return false;
   if (sess.user.role === "admin" || r.approver_user_id === sess.user.id) return true;
   return deputyOf(db, r.approver_user_id, today) === sess.user.id;
+}
+
+const hrUsers = (db) => db.prepare("SELECT id FROM users WHERE role='hr' AND active=1").all().map((u) => u.id);
+
+/** Undo whatever a request took from (or added to) the balance — the net per leave year, so it can run more than once. */
+function reverseRequest(db, emp, requestId, date, by, note) {
+  for (const l of db.prepare("SELECT leave_year_start, sum(minutes) n FROM leave_ledger WHERE request_id=? GROUP BY leave_year_start HAVING sum(minutes)<>0").all(requestId))
+    postLedger(db, emp, { kind: "reversal", minutes: -l.n, date, yearStart: l.leave_year_start, requestId, note, by });
 }
 
 export function routeFor(db, emp, today) {
@@ -136,8 +132,10 @@ export function validateRequest(db, emp, body, today) {
     if (!String(body.reason || "").trim()) throw err(400, "invalid", "Please give a reason", "reason");
     if (holidaySet(db).has(start)) throw err(400, "invalid", "This day is an official holiday", "date");
   }
+  if (TYPES[type].attendance) return validateAttendance(db, emp, type, start, body, today);
   let minutes;
-  const dayStart = dayStartOn(db), dayEnd = dayEndOn(db, start);
+  const sh = shiftFor(db, emp, start), dayStart = sh.start, dayEnd = sh.end;
+  if (isPermission(type) && isRestDay(start)) throw err(400, "invalid", "This day is a weekly rest day", "date");
   try { minutes = requestMinutes(type, { start, end, time, endTime, dayStart, dayEnd }); }
   catch (e) { throw err(400, "invalid", e.message, isPermission(type) ? (type === "break" && /end|after/.test(e.message) ? "end_time" : "time") : "end"); }
   // official holidays inside leave taken from the annual balance are not deducted
@@ -164,7 +162,7 @@ export function validateRequest(db, emp, body, today) {
       throw err(409, "overlap", "This day has already been claimed");
   } else if (isPermission(type)) {
     // a permission can't fall on a day already taken as leave, nor overlap another permission's hours that day
-    if (db.prepare(`SELECT 1 FROM leave_requests WHERE employee_id=? AND type<>'comp_day' AND type NOT IN ${PERM_SQL} AND status IN ${ACTIVE} AND start_date<=? AND end_date>=?`).get(emp.id, start, start))
+    if (db.prepare(`SELECT 1 FROM leave_requests WHERE employee_id=? AND type<>'comp_day' AND type NOT IN ${PERM_SQL} AND type NOT IN ${ATT_SQL} AND status IN ${ACTIVE} AND start_date<=? AND end_date>=?`).get(emp.id, start, start))
       throw err(409, "overlap", "You already have leave on this day");
     const [a, b] = permissionSpan(type, { time, endTime, dayStart, dayEnd });
     for (const o of db.prepare(`SELECT * FROM leave_requests WHERE employee_id=? AND type IN ${PERM_SQL} AND status IN ${ACTIVE} AND start_date=?`).all(emp.id, start)) {
@@ -172,7 +170,7 @@ export function validateRequest(db, emp, body, today) {
       if (a < d && c < b) throw err(409, "overlap", "These hours overlap another permission on the same day");
     }
   } else {
-    const clash = db.prepare(`SELECT id FROM leave_requests WHERE employee_id=? AND type<>'comp_day' AND status IN ${ACTIVE} AND start_date<=? AND end_date>=?`).get(emp.id, end, start);
+    const clash = db.prepare(`SELECT id FROM leave_requests WHERE employee_id=? AND type<>'comp_day' AND type NOT IN ${ATT_SQL} AND status IN ${ACTIVE} AND start_date<=? AND end_date>=?`).get(emp.id, end, start);
     if (clash) throw err(409, "overlap", "These dates overlap another request");
   }
 
@@ -184,12 +182,33 @@ export function validateRequest(db, emp, body, today) {
     const available = balanceOf(db, emp.id) - pendingMinutes(db, emp.id);
     if (minutes > available) throw err(409, "insufficient_balance", `This exceeds your available balance (${fmtDays(available)} days)`);
   }
-  if (isPermission(type)) {
-    const extra = earlyDeduction(db, emp.id, start, minutes, 0, ACTIVE);
-    const available = balanceOf(db, emp.id) - pendingMinutes(db, emp.id);
-    if (extra > available) throw err(409, "insufficient_balance", `This exceeds your available balance (${fmtDays(available)} days)`);
-  }
   return { type, start_date: start, end_date: end, early_time: time, end_time: endTime, minutes, relation, event_date: TYPES[type].event ? eventDate : null, comp_choice: compChoice };
+}
+
+/** A fingerprint correction (§5) or an external task (§10): one date, times of any minute. */
+function validateAttendance(db, emp, type, date, body, today) {
+  if (date > today && type === "correction") throw err(400, "invalid", "You can't correct a day that hasn't happened yet", "date");
+  if (!String(body.reason || "").trim()) throw err(400, "invalid", type === "mission" ? "Describe the purpose of the task" : "Please give a reason", "reason");
+  const time = body.time || null, endTime = body.end_time || null;
+  if (time !== null && clockMin(time) === null) throw err(400, "invalid", "Enter a valid time (HH:MM)", "time");
+  if (endTime !== null && clockMin(endTime) === null) throw err(400, "invalid", "Enter a valid time (HH:MM)", "end_time");
+  let minutes = 0, details = null;
+  if (type === "correction") {
+    if (!time && !endTime) throw err(400, "invalid", "Enter the arrival time, the leaving time, or both", "time");
+    if (time && endTime && clockMin(endTime) <= clockMin(time)) throw err(400, "invalid", "Leaving must be after arriving", "end_time");
+    if (db.prepare(`SELECT 1 FROM leave_requests WHERE employee_id=? AND type='correction' AND start_date=? AND status IN ${ACTIVE}`).get(emp.id, date))
+      throw err(409, "overlap", "There is already a correction for this day");
+  } else {
+    if (date < addDays(today, -30)) throw err(400, "invalid", "A task more than 30 days ago can't be added", "date");
+    if (!time || !endTime) throw err(400, "invalid", "Enter when the task starts and ends", !time ? "time" : "end_time");
+    try { minutes = requestMinutes(type, { time, endTime }); } catch (e) { throw err(400, "invalid", e.message, "end_time"); }
+    const place = String(body.place || "").trim().slice(0, 200);
+    if (!place) throw err(400, "invalid", "Where is the task (client or place)?", "place");
+    details = JSON.stringify({ place });
+    for (const o of db.prepare(`SELECT * FROM leave_requests WHERE employee_id=? AND type='mission' AND status IN ${ACTIVE} AND start_date=?`).all(emp.id, date))
+      if (clockMin(time) < clockMin(o.end_time) && clockMin(o.early_time) < clockMin(endTime)) throw err(409, "overlap", "These hours overlap another task on the same day");
+  }
+  return { type, start_date: date, end_date: date, early_time: time, end_time: endTime, minutes, relation: null, event_date: null, comp_choice: null, details };
 }
 
 function event(db, requestId, action, actorId, comment) {
@@ -200,8 +219,8 @@ const ownerUser = (db, empId) => (db.prepare("SELECT id FROM users WHERE employe
 
 function describe(r, emp) {
   const [ar, en] = TYPE_NAMES[r.type];
-  const when = isPermission(r.type) ? `${dmy(r.start_date)} ${r.early_time}${r.end_time ? "–" + r.end_time : ""}` : r.start_date === r.end_date ? dmy(r.start_date) : `${dmy(r.start_date)} – ${dmy(r.end_date)}`;
-  const amount = isPermission(r.type) ? `${r.minutes / 60} h` : `${fmtDays(r.minutes)} d`;
+  const when = isPermission(r.type) || TYPES[r.type].attendance ? `${dmy(r.start_date)} ${r.early_time || "…"}${r.end_time ? "–" + r.end_time : ""}` : r.start_date === r.end_date ? dmy(r.start_date) : `${dmy(r.start_date)} – ${dmy(r.end_date)}`;
+  const amount = isPermission(r.type) || r.type === "mission" ? `${r.minutes / 60} h` : r.type === "correction" ? "—" : `${fmtDays(r.minutes)} d`;
   return { ar: `${emp.name_ar || emp.name_en}: ${ar} · ${when} · ${amount}`, en: `${emp.name_en || emp.name_ar}: ${en} · ${when} · ${amount}` };
 }
 
@@ -229,8 +248,8 @@ export function registerRequests(api, ctx) {
     const r = tx(db, () => {
       const v = validateRequest(db, emp, body, ctx.today());
       const route = routeFor(db, emp, ctx.today());
-      const ins = db.prepare(`INSERT INTO leave_requests(employee_id,type,start_date,end_date,early_time,minutes,reason,status,approver_user_id,route_reason,created_by,created_at,relation,event_date,comp_choice,end_time)
-        VALUES(?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?,?)`).run(emp.id, v.type, v.start_date, v.end_date, v.early_time, v.minutes, String(body.reason || "").slice(0, 1000) || null, route.userId, route.reason, sess.user.id, nowIso(), v.relation, v.event_date, v.comp_choice, v.end_time);
+      const ins = db.prepare(`INSERT INTO leave_requests(employee_id,type,start_date,end_date,early_time,minutes,reason,status,approver_user_id,route_reason,created_by,created_at,relation,event_date,comp_choice,end_time,details)
+        VALUES(?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?,?,?)`).run(emp.id, v.type, v.start_date, v.end_date, v.early_time, v.minutes, String(body.reason || "").slice(0, 1000) || null, route.userId, route.reason, sess.user.id, nowIso(), v.relation, v.event_date, v.comp_choice, v.end_time, v.details || null);
       const row = getReq(db, ins.lastInsertRowid);
       if (needsDeputy) db.prepare("INSERT INTO approver_cover(approver_user_id,deputy_user_id,start_date,end_date,created_by,created_at,request_id) VALUES(?,?,?,?,?,?,?)")
         .run(sess.user.id, deputyId, v.start_date, v.end_date, sess.user.id, nowIso(), row.id);
@@ -271,9 +290,10 @@ export function registerRequests(api, ctx) {
     if (status) { where.push("r.status=?"); args.push(status); }
     const emp = req.query.get("employee");
     if (emp) { where.push("r.employee_id=?"); args.push(Number(emp)); }
-    const kind = req.query.get("kind"); // permission = early/late/break; leave = everything else
+    const kind = req.query.get("kind"); // permission = early/late/break; attendance = corrections and external tasks; leave = everything else
     if (kind === "permission") where.push(`r.type IN ${PERM_SQL}`);
-    else if (kind === "leave") where.push(`r.type NOT IN ${PERM_SQL}`);
+    else if (kind === "attendance") where.push(`r.type IN ${ATT_SQL}`);
+    else if (kind === "leave") where.push(`r.type NOT IN ${PERM_SQL} AND r.type NOT IN ${ATT_SQL}`);
     const items = db.prepare(`${withNames} ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY r.created_at DESC, r.id DESC LIMIT 500`).all(...args);
     send(req, res, 200, { items });
   });
@@ -293,7 +313,8 @@ export function registerRequests(api, ctx) {
       sickPay = sickPayBands(prior, daysBetweenInclusive(r.start_date, r.end_date));
     }
     const deducted = -db.prepare("SELECT coalesce(sum(minutes),0) n FROM leave_ledger WHERE request_id=?").get(r.id).n;
-    send(req, res, 200, { request: r, events, approver, files, sickPay, deducted, earlyFreeHours: Number(getSetting(db, "early_free_hours_month", 4)), needsProof: !!TYPES[r.type].proof && !files.length,
+    const classes = isPermission(r.type) ? PERM_CLASSES : r.type === "correction" ? CORRECTION_CLASSES : null;
+    send(req, res, 200, { request: r, events, approver, files, sickPay, deducted, classes, canClassify: !!classes && r.status === "approved" && can(req.sess, "employee.edit") && !(req.sess.employee && req.sess.employee.id === r.employee_id), needsProof: !!TYPES[r.type].proof && !files.length,
       canDecide: r.status === "pending" && mayDecide(db, req.sess, r, ctx.today()), canPostpone: r.status === "pending" && r.type === "annual" && mayDecide(db, req.sess, r, ctx.today()) });
   });
 
@@ -318,13 +339,6 @@ export function registerRequests(api, ctx) {
             const available = balanceOf(db, emp.id) - pendingMinutes(db, emp.id, r.id);
             if (r.minutes > available) throw err(409, "insufficient_balance", `The balance is no longer enough (${fmtDays(available)} days available)`);
             postLedger(db, emp, { kind: r.type === "emergency" ? "emergency_leave" : "annual_leave", minutes: -r.minutes, date: r.start_date, requestId: r.id, by: sess.user.id });
-          } else if (effect === "early") {
-            const extra = earlyDeduction(db, emp.id, r.start_date, r.minutes, r.id);
-            if (extra > 0) {
-              const available = balanceOf(db, emp.id) - pendingMinutes(db, emp.id);
-              if (extra > available) throw err(409, "insufficient_balance", `The balance is no longer enough (${fmtDays(available)} days available)`);
-              postLedger(db, emp, { kind: "early_leave", minutes: -extra, date: r.start_date, requestId: r.id, note: "Beyond the monthly free hours", by: sess.user.id });
-            }
           } else if (effect === "credit" && r.comp_choice !== "pay") {
             postLedger(db, emp, { kind: "comp_credit", minutes: DAY, date: r.start_date, requestId: r.id, note: "Worked on a holiday", by: sess.user.id });
           }
@@ -333,8 +347,7 @@ export function registerRequests(api, ctx) {
         if (r.status === "pending") { if (!(isOwner || can(sess, "employee.edit") || sess.user.role === "admin")) throw forbidden(); }
         else if (r.status === "approved") {
           if (!(sess.user.role === "admin" || r.approver_user_id === sess.user.id)) throw forbidden();
-          for (const l of db.prepare("SELECT * FROM leave_ledger WHERE request_id=? AND kind<>'reversal'").all(r.id))
-            postLedger(db, emp, { kind: "reversal", minutes: -l.minutes, date: ctx.today(), yearStart: l.leave_year_start, requestId: r.id, note: "Cancelled", by: sess.user.id });
+          reverseRequest(db, emp, r.id, ctx.today(), sess.user.id, "Cancelled");
         } else throw err(409, "not_cancellable", "This request cannot be cancelled");
       }
       const status = { approve: "approved", reject: "rejected", cancel: "cancelled" }[action];
@@ -353,8 +366,45 @@ export function registerRequests(api, ctx) {
     // tell the owner and the approver, except whoever just acted
     const to = [ownerUser(db, r.employee_id), r.approver_user_id].filter((id) => id && id !== sess.user.id);
     notify(ctx, to, { title_ar: T[0], title_en: T[1], body_ar: d.ar + extra.ar, body_en: d.en + extra.en, link: `#/leave/${r.id}` });
+    // §5, §8: after the manager, HR classifies a permission or confirms a fingerprint correction
+    if (r.status === "approved" && (isPermission(r.type) || r.type === "correction"))
+      notify(ctx, hrUsers(db).filter((id) => id !== sess.user.id), { title_ar: r.type === "correction" ? "تصحيح بصمة بانتظار اعتماد الموارد البشرية" : "استئذان بانتظار تصنيف الموارد البشرية",
+        title_en: r.type === "correction" ? "Fingerprint correction awaiting HR" : "Permission awaiting HR classification", body_ar: d.ar, body_en: d.en, link: `#/leave/${r.id}` });
     send(req, res, 200, { request: r });
   }
+
+  // HR: classify an approved permission (§8) or confirm / refuse an approved fingerprint correction (§5).
+  // "leave" takes the hours from annual leave; changing the classification undoes the earlier deduction.
+  api.post("/api/requests/:id/hr", async (req, res) => {
+    const sess = req.sess;
+    if (!can(sess, "employee.edit")) throw forbidden();
+    const b = await readJson(req);
+    const out = tx(db, () => {
+      const r = getReq(db, req.params.id);
+      if (!r) throw new HttpError(404, "not_found", "Request not found");
+      if (sess.employee && sess.employee.id === r.employee_id) throw forbidden();
+      const classes = isPermission(r.type) ? PERM_CLASSES : r.type === "correction" ? CORRECTION_CLASSES : null;
+      if (!classes) throw err(400, "invalid", "This request has no HR classification");
+      if (r.status !== "approved") throw err(409, "not_approved", "The manager must approve it first");
+      if (!classes.includes(b.class)) throw err(400, "invalid", "Choose a classification", "class");
+      const emp = getEmployee(db, r.employee_id);
+      reverseRequest(db, emp, r.id, ctx.today(), sess.user.id, "Classification changed");
+      if (b.class === "leave") {
+        const available = balanceOf(db, emp.id) - pendingMinutes(db, emp.id);
+        if (r.minutes > available) throw err(409, "insufficient_balance", `The balance is not enough (${fmtDays(available)} days available)`);
+        postLedger(db, emp, { kind: "early_leave", minutes: -r.minutes, date: r.start_date, requestId: r.id, note: "Permission taken from annual leave (HR)", by: sess.user.id });
+      }
+      db.prepare("UPDATE leave_requests SET hr_class=?, hr_by=?, hr_at=? WHERE id=?").run(b.class, sess.user.id, nowIso(), r.id);
+      const comment = String(b.comment || "").trim().slice(0, 500);
+      event(db, r.id, "hr_" + b.class, sess.user.id, comment || null);
+      const after = getReq(db, r.id);
+      audit(db, sess.user.id, "request.hr_class", "request", r.id, r, after);
+      return { r: after, emp };
+    });
+    const d = describe(out.r, out.emp), [ar, en] = CLASS_NAMES[out.r.hr_class];
+    notify(ctx, [ownerUser(db, out.r.employee_id)].filter(Boolean), { title_ar: `الموارد البشرية: ${ar}`, title_en: `HR: ${en}`, body_ar: d.ar, body_en: d.en, link: `#/leave/${out.r.id}` });
+    send(req, res, 200, { request: out.r });
+  });
   api.post("/api/requests/:id/approve", (req, res) => decide(req, res, "approve"));
   api.post("/api/requests/:id/reject", (req, res) => decide(req, res, "reject"));
   api.post("/api/requests/:id/cancel", (req, res) => decide(req, res, "cancel"));

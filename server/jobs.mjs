@@ -9,6 +9,7 @@ import { ANNUAL, dueCredits, capForfeit, probationEnd, addDays, fmtDays, todayMu
 import { postLedger, balanceOf } from "./ledger.mjs";
 import { notify } from "./notify.mjs";
 import { runBirthdayAlerts } from "./calendar.mjs";
+import { runWeeklyAttendance } from "./attendance.mjs";
 
 const dmy = (iso) => iso.split("-").reverse().join("/");
 
@@ -196,7 +197,7 @@ export function registerJobs(api, ctx) {
   const tick = () => {
     try {
       const today = todayMuscat();
-      if (state.daily !== today) { state.daily = today; const r = runAnniversaries(ctx, today); runExpiryCheck(ctx, today); runBirthdayAlerts(ctx, today); if (r.credits) console.log(`Leave credits posted: ${r.credits}, balances over the cap for review: ${r.reviews}`); }
+      if (state.daily !== today) { state.daily = today; const r = runAnniversaries(ctx, today); runExpiryCheck(ctx, today); runBirthdayAlerts(ctx, today); runWeeklyAttendance(ctx, today); if (r.credits) console.log(`Leave credits posted: ${r.credits}, balances over the cap for review: ${r.reviews}`); }
       if (state.backup !== today && muscatTime() >= (env.BACKUP_TIME || "02:00")) { state.backup = today; backup(ctx, today, Number(env.BACKUP_KEEP_DAYS || 14)); }
     } catch (e) { console.error("scheduled job failed:", e); }
   };

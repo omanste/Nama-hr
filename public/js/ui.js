@@ -39,9 +39,17 @@ export const daysText = (min) => t("days", { n: num(daysOf(min)) });
 /** Permissions: short absences inside a working day, counted in hours. */
 export const PERMISSIONS = ["early", "late", "break"];
 export const isPermission = (type) => PERMISSIONS.includes(type);
-export const amountText = (r) => (isPermission(r.type) ? t("hours", { n: num(r.minutes / 60) }) : daysText(r.minutes));
-const permWhen = (r) => r.type === "late" ? t("arrive_at", { t: r.early_time }) : r.type === "break" ? `${r.early_time}–${r.end_time}` : t("leave_at", { t: r.early_time });
-export const when = (r) => (isPermission(r.type) ? `${dmy(r.start_date)} · ${permWhen(r)}` : r.start_date === r.end_date ? dmy(r.start_date) : `${dmy(r.start_date)} – ${dmy(r.end_date)}`);
+/** Attendance requests: a fingerprint correction and an external work task (one day, with times). */
+export const ATTENDANCE_REQS = ["correction", "mission"];
+export const isAttendanceReq = (type) => ATTENDANCE_REQS.includes(type);
+export const amountText = (r) => (r.type === "correction" ? "—" : isPermission(r.type) || r.type === "mission" ? t("hours", { n: num(r.minutes / 60) }) : daysText(r.minutes));
+const permWhen = (r) => r.type === "late" ? t("arrive_at", { t: r.early_time }) : r.type === "break" || r.type === "mission" ? `${r.early_time}–${r.end_time}`
+  : r.type === "correction" ? [r.early_time ? t("corr_in_at", { t: r.early_time }) : null, r.end_time ? t("corr_out_at", { t: r.end_time }) : null].filter(Boolean).join(" · ")
+  : t("leave_at", { t: r.early_time });
+export const when = (r) => (isPermission(r.type) || isAttendanceReq(r.type) ? `${dmy(r.start_date)} · ${permWhen(r)}` : r.start_date === r.end_date ? dmy(r.start_date) : `${dmy(r.start_date)} – ${dmy(r.end_date)}`);
+/** Minutes after midnight → "HH:MM"; a duration in minutes → "1:05". */
+export const clockText = (m) => (m === null || m === undefined ? "—" : `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`);
+export const durText = (m) => (m ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}` : "—");
 
 export const badge = (status, prefix = "rs_") => h("span", { class: `badge b-${status}` }, t(prefix + status));
 
