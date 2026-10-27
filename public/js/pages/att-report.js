@@ -55,7 +55,7 @@ export async function render(el, _p, { me, can, query }) {
         h("div", { class: "table-wrap" }, h("table", null,
           h("thead", null, h("tr", null, h("th", null, t("employee")), head.map((x) => h("th", { class: "num" }, x)))),
           h("tbody", null, r.people.map((p) => h("tr", null,
-            h("td", null, h("a", { href: `#/attendance?emp=${p.employee.id}&m=${r.to.slice(0, 7)}` }, nm(p.employee)), h("div", { class: "muted" }, `${p.employee.emp_no} · ${t("shift_" + (p.employee.shift === 1 ? 1 : 2))}`)),
+            h("td", null, h("a", { href: `#/attendance?emp=${p.employee.id}&m=${r.to.slice(0, 7)}` }, nm(p.employee)), h("div", { class: "muted" }, `${p.employee.emp_no} · ${t("shift_" + (p.employee.shift || 2))}`)),
             cells(p))))))) : null].filter(Boolean));
   }
 

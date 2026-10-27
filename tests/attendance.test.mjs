@@ -176,7 +176,7 @@ test("permission times follow the person's shift", async () => {
   const r = await other.c.post("/api/requests", { type: "early", date: "2026-11-02", time: "16:30", reason: "موعد" });
   assert.equal(r.status, 201); assert.equal(r.data.request.minutes, 60);
   assert.equal((await other.c.post("/api/requests", { type: "late", date: "2026-11-03", time: "09:00", reason: "موعد" })).data.request.minutes, 30);
-  assert.equal((await hr.c.put(`/api/employees/${other.emp.id}`, { shift: 3 })).status, 400);
+  assert.equal((await hr.c.put(`/api/employees/${other.emp.id}`, { shift: 4 })).status, 400);
 });
 
 test("staff choose their own shift until HR locks it (one person) or Admin switches it off (everyone)", async () => {
@@ -194,4 +194,19 @@ test("staff choose their own shift until HR locks it (one person) or Admin switc
   assert.equal((await s.c.put(`/api/employees/${s.emp.id}/shift`, { shift: 2 })).status, 403);
   await admin.put("/api/settings", { shift_self_select: true });
   assert.equal((await s.c.put(`/api/employees/${s.emp.id}/shift`, { shift: 2 })).status, 200);
+});
+
+test("shift 3 (10:00–17:00) is a special case only HR/Admin assign; the day is measured from 10:00", async () => {
+  assert.equal((await s.c.put(`/api/employees/${s.emp.id}/shift`, { shift: 3 })).status, 400, "staff can't pick it");
+  assert.equal((await hr.c.put(`/api/employees/${s.emp.id}`, { shift: 3 })).data.employee.shift, 3);
+  assert.equal((await s.c.get(`/api/employees/${s.emp.id}`)).data.shiftSelf, false, "and can't switch away from it");
+  assert.equal((await s.c.put(`/api/employees/${s.emp.id}/shift`, { shift: 2 })).status, 403);
+  // 26 Oct: in 09:30, out 17:30 → on time and no early leaving on 10:00–17:00
+  const d = (await s.c.get(`/api/attendance/employee/${s.emp.id}?month=2026-10`)).data.days.find((x) => x.date === "2026-10-26");
+  assert.deepEqual([d.late, d.early, d.shift.start, d.shift.end], [0, 0, 600, 1020]);
+  const r = await s.c.post("/api/requests", { type: "early", date: "2026-11-09", time: "16:00", reason: "موعد" });
+  assert.equal(r.data.request.minutes, 60);
+  assert.equal((await admin.put("/api/settings", { shift_3_start: "10:30" })).status, 200);
+  assert.equal((await admin.get("/api/settings")).data.shift_3_start, "10:30");
+  await hr.c.put(`/api/employees/${s.emp.id}`, { shift: 2 });
 });

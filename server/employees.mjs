@@ -11,6 +11,7 @@ import { tempPassword, hashPassword } from "./auth.mjs";
 import { toCountryCode } from "../public/js/countries.js";
 import { permissionSummary } from "./permissions.mjs";
 import { rerouteFallbacks } from "./requests.mjs";
+import { SHIFTS, SELF_SHIFTS } from "./shifts.mjs";
 
 const CONTACT = ["mobile", "address", "emergency_name", "emergency_relation", "emergency_phone"];
 export const STATUSES = ["active", "on_leave", "resigned", "terminated", "disabled"];
@@ -42,7 +43,7 @@ export function cleanEmployee(db, body, cur = null) {
     if (k === "status" && !STATUSES.includes(v ?? "active")) throw bad(k, "unknown status");
     if (k === "status" && v === null) v = "active";
     if (k === "gender" && v !== null && !GENDERS.includes(v)) throw bad(k, "gender must be male or female");
-    if (k === "shift") { if (v === null) continue; v = Number(v); if (![1, 2].includes(v)) throw bad(k, "shift must be 1 or 2"); }
+    if (k === "shift") { if (v === null) continue; v = Number(v); if (!SHIFTS.includes(v)) throw bad(k, "shift must be 1, 2 or 3"); }
     if (k === "shift_locked") v = v === true || v === 1 || v === "1" || v === "on" ? 1 : 0;
     if ((k === "name_ar" || k === "name_en") && v === null) v = ""; // names are never NULL, just empty
     if (k === "nationality" && v !== null) v = toCountryCode(v); // stored as a country code, e.g. "OM"
@@ -82,7 +83,7 @@ function deactivateIfLeft(db, emp) {
 }
 
 /** May this person pick their own shift? Company switch on (default) and not locked by HR. */
-export const maySelfShift = (db, emp) => getSetting(db, "shift_self_select", true) !== false && !emp.shift_locked;
+export const maySelfShift = (db, emp) => getSetting(db, "shift_self_select", true) !== false && !emp.shift_locked && SELF_SHIFTS.includes(Number(emp.shift));
 
 export function profile(db, sess, emp, today) {
   const files = db.prepare("SELECT id,kind,doc_type,name,mime,size,expiry,note,uploaded_at FROM files WHERE employee_id=? AND request_id IS NULL AND voice_id IS NULL ORDER BY uploaded_at DESC").all(emp.id);
@@ -178,7 +179,7 @@ export function registerEmployees(api, ctx) {
     if (!cur) throw new HttpError(404, "not_found", "Employee not found");
     if (!(req.sess.employee && req.sess.employee.id === cur.id) || !maySelfShift(db, cur)) throw new HttpError(403, "forbidden", "HR sets your shift");
     const shift = Number((await readJson(req)).shift);
-    if (![1, 2].includes(shift)) throw bad("shift", "shift must be 1 or 2");
+    if (!SELF_SHIFTS.includes(shift)) throw bad("shift", "shift must be 1 or 2");
     const emp = tx(db, () => {
       db.prepare("UPDATE employees SET shift=?, updated_at=? WHERE id=?").run(shift, nowIso(), cur.id);
       audit(db, req.sess.user.id, "employee.shift", "employee", cur.id, { shift: cur.shift }, { shift });

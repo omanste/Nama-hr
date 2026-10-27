@@ -27,7 +27,7 @@ export async function render(el, _p, { can }) {
   const START = []; for (let m = 6 * 60; m <= 12 * 60 + 30; m += 30) START.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${m % 60 ? "30" : "00"}`);
   // the two shifts of the attendance policy (§3); HR sets each person's shift on their profile
   const sh = {};
-  for (const n of [1, 2]) sh[n] = { start: select(`shift_${n}_start`, START.map((x) => [x, x]), settings[`shift_${n}_start`]), end: select(`shift_${n}_end`, HALF.map((x) => [x, x]), settings[`shift_${n}_end`]) };
+  for (const n of [1, 2, 3]) sh[n] = { start: select(`shift_${n}_start`, START.map((x) => [x, x]), settings[`shift_${n}_start`]), end: select(`shift_${n}_end`, HALF.map((x) => [x, x]), settings[`shift_${n}_end`]) };
   const attStart = h("input", { type: "date", value: settings.attendance_start || "" });
   const selfShift = select("shift_self_select", [["1", t("shift_self_on")], ["0", t("shift_self_off")]], settings.shift_self_select === false ? "0" : "1");
   const rStart = h("input", { type: "date", value: settings.ramadan_start || "" });
@@ -48,11 +48,12 @@ export async function render(el, _p, { can }) {
       h("p", { class: "sub" }, t("work_hours_hint")),
       h("div", { class: "fields" },
         field(t("shift_1_start"), sh[1].start), field(t("shift_1_end"), sh[1].end), field(t("shift_2_start"), sh[2].start), field(t("shift_2_end"), sh[2].end),
+        field(t("shift_3_start"), sh[3].start, { hint: t("shift_3_hint") }), field(t("shift_3_end"), sh[3].end),
         field(t("attendance_start"), attStart, { hint: t("attendance_start_hint") }),
         field(t("shift_self_select"), selfShift, { hint: t("shift_self_hint") }),
         field(t("ramadan_start"), rStart), field(t("ramadan_end"), rEnd), field(t("ramadan_hours"), rHours, { hint: t("ramadan_hours_hint") })),
       h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", {
-        shift_1_start: sh[1].start.value, shift_1_end: sh[1].end.value, shift_2_start: sh[2].start.value, shift_2_end: sh[2].end.value,
+        shift_1_start: sh[1].start.value, shift_1_end: sh[1].end.value, shift_2_start: sh[2].start.value, shift_2_end: sh[2].end.value, shift_3_start: sh[3].start.value, shift_3_end: sh[3].end.value,
         ...(attStart.value ? { attendance_start: attStart.value } : {}), shift_self_select: selfShift.value === "1",
         ramadan_start: rStart.value || null, ramadan_end: rEnd.value || null, ramadan_hours: Number(rHours.value) })) }, t("save")))),
     h("section", { class: "card" }, h("h2", null, t("official_holidays")),

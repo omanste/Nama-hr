@@ -49,7 +49,7 @@ export async function render(el, _p, { me, query, can }) {
   const notes = [];
   if (!d.linked.length) notes.push(h("div", { class: "note" }, t("att_not_linked")));
   if (d.start && `${month}-01` < d.start) notes.push(h("div", { class: "note" }, t("att_info_before", { d: dmy(d.start) })));
-  if (d.dataTo) notes.push(h("p", { class: "sub" }, t("att_data_to", { d: dmy(d.dataTo) }), " · ", t("att_shift_now"), ": ", h("b", null, t("shift_" + (d.employee.shift === 1 ? 1 : 2)))));
+  if (d.dataTo) notes.push(h("p", { class: "sub" }, t("att_data_to", { d: dmy(d.dataTo) }), " · ", t("att_shift_now"), ": ", h("b", null, t("shift_" + (d.employee.shift || 2)))));
 
   const rows = d.days.filter((x) => x.status !== "no_data" || x.date <= todayIso()).map((x) => {
     const reqLinks = x.requests.filter((r) => r.type !== "comp_day").map((r) => h("a", { class: "chip", href: `#/leave/${r.id}` }, t("lt_" + r.type), r.status === "pending" ? ` · ${t("rs_pending")}` : r.hr_class === null && ["correction", "early", "late", "break"].includes(r.type) ? ` · ${t("att_awaiting_hr")}` : ""));

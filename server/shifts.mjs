@@ -1,14 +1,16 @@
-/* Work schedules (attendance policy §3): two shifts of 8 actual hours with a one-hour unpaid break, Sunday–Thursday.
- * HR assigns each person a shift on their profile. In Ramadan the day is shorter (6 hours by default, no break). */
+/* Work schedules (attendance policy §3): two shifts of 8 actual hours with a one-hour unpaid break, Sunday–Thursday,
+ * and a special shift 3 (10:00–17:00) that only HR/Admin assign. HR assigns each person a shift on their profile. In Ramadan the day is shorter (6 hours by default, no break). */
 import { getSetting } from "./db.mjs";
 
-export const SHIFT_DEFAULTS = { 1: ["08:30", "17:30"], 2: ["09:00", "18:00"] };
+export const SHIFTS = [1, 2, 3];
+export const SELF_SHIFTS = [1, 2]; // the ones staff may pick themselves; 3 is a special case HR assigns
+export const SHIFT_DEFAULTS = { 1: ["08:30", "17:30"], 2: ["09:00", "18:00"], 3: ["10:00", "17:00"] };
 export const REST_DAYS = [5, 6]; // Friday, Saturday
 const hm = (s) => { const [h, m] = String(s).split(":").map(Number); return h * 60 + m; };
 
 export function shiftTimes(db) {
   const out = {};
-  for (const n of [1, 2]) out[n] = { start: getSetting(db, `shift_${n}_start`, SHIFT_DEFAULTS[n][0]), end: getSetting(db, `shift_${n}_end`, SHIFT_DEFAULTS[n][1]) };
+  for (const n of SHIFTS) out[n] = { start: getSetting(db, `shift_${n}_start`, SHIFT_DEFAULTS[n][0]), end: getSetting(db, `shift_${n}_end`, SHIFT_DEFAULTS[n][1]) };
   return out;
 }
 export const inRamadan = (db, date) => {
@@ -18,7 +20,7 @@ export const inRamadan = (db, date) => {
 
 /** The working day of a person on a date, in minutes after midnight: {no, start, end, expected, ramadan}. */
 export function shiftFor(db, emp, date) {
-  const no = emp && Number(emp.shift) === 1 ? 1 : 2;
+  const no = emp && SHIFTS.includes(Number(emp.shift)) ? Number(emp.shift) : 2;
   const s = shiftTimes(db)[no];
   const start = hm(s.start);
   if (inRamadan(db, date)) {

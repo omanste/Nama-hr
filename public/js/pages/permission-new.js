@@ -11,7 +11,7 @@ const hours = (m) => t("hours", { n: num(m / 60) });
 export async function render(el, _p, { me, query }) {
   if (!me.employee) { el.append(empty(t("no_profile"))); return; }
   const [prof, settings] = await Promise.all([api.get(`/api/employees/${me.employee.id}`), api.get("/api/settings")]);
-  const shiftNo = prof.employee.shift === 1 ? 1 : 2;
+  const shiftNo = [1, 2, 3].includes(prof.employee.shift) ? prof.employee.shift : 2;
   let type = PERMISSIONS.includes(query.get("type")) ? query.get("type") : "early";
   const today = todayIso();
   const holidays = new Set((settings.official_holidays || []).map((x) => x.date));

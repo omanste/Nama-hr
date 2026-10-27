@@ -7,7 +7,7 @@ import { createUser, ROLES, getEmployee } from "./employees.mjs";
 import { tempPassword, setPassword } from "./auth.mjs";
 import { isIsoDate } from "./leave.mjs";
 import { rerouteFallbacks } from "./requests.mjs";
-import { shiftTimes } from "./shifts.mjs";
+import { shiftTimes, SHIFTS } from "./shifts.mjs";
 
 export const DEFAULT_CONTRACT_TYPES = ["Unlimited", "Limited", "Probation", "Part-time"];
 export function readSettings(db) {
@@ -16,7 +16,7 @@ export function readSettings(db) {
     managers_approver_employee_id: getSetting(db, "managers_approver_employee_id", null),
     managers_approver_title: getSetting(db, "managers_approver_title", "ceo"),
     contract_types: getSetting(db, "contract_types", DEFAULT_CONTRACT_TYPES),
-    shift_1_start: S[1].start, shift_1_end: S[1].end, shift_2_start: S[2].start, shift_2_end: S[2].end,
+    shift_1_start: S[1].start, shift_1_end: S[1].end, shift_2_start: S[2].start, shift_2_end: S[2].end, shift_3_start: S[3].start, shift_3_end: S[3].end,
     ramadan_start: getSetting(db, "ramadan_start", null),
     ramadan_end: getSetting(db, "ramadan_end", null),
     ramadan_hours: getSetting(db, "ramadan_hours", 6),
@@ -83,12 +83,12 @@ export function registerAdmin(api, ctx) {
   api.put("/api/settings", async (req, res) => {
     need(req.sess, "settings.edit");
     const b = await readJson(req);
-    const allowed = ["managers_approver_employee_id", "managers_approver_title", "contract_types", "shift_1_start", "shift_1_end", "shift_2_start", "shift_2_end", "ramadan_start", "ramadan_end", "ramadan_hours", "attendance_start", "shift_self_select", "official_holidays"];
+    const allowed = ["managers_approver_employee_id", "managers_approver_title", "contract_types", "shift_1_start", "shift_1_end", "shift_2_start", "shift_2_end", "shift_3_start", "shift_3_end", "ramadan_start", "ramadan_end", "ramadan_hours", "attendance_start", "shift_self_select", "official_holidays"];
     if ("official_holidays" in b) {
       if (!Array.isArray(b.official_holidays) || !b.official_holidays.every((x) => x && isIsoDate(x.date))) throw invalid("official_holidays", "each holiday needs a valid date");
       b.official_holidays = b.official_holidays.map((x) => ({ date: x.date, name: String(x.name || "").trim().slice(0, 80) })).sort((x, y) => (x.date < y.date ? -1 : 1));
     }
-    for (const n of [1, 2]) {
+    for (const n of SHIFTS) {
       const a = `shift_${n}_start`, z = `shift_${n}_end`;
       if (a in b && !/^(0[6-9]|1[0-2]):(00|30)$/.test(String(b[a]))) throw invalid(a, "start time must be 06:00–12:30 (on the hour or half hour)");
       if (z in b && !/^(1[0-9]|2[0-3]):(00|30)$/.test(String(b[z]))) throw invalid(z, "time must be HH:MM (on the hour or half hour)");
