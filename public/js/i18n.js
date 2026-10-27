@@ -308,6 +308,12 @@ const D = {
   voice_delete_q: ["حذف الرسالة وردودها ومرفقاتها نهائياً؟ لا يمكن التراجع.", "Delete the message, its replies and attachments for good? This can't be undone."],
   voice_hidden_note: ["هذه الرسالة مخفية: يراها المسؤول فقط.", "This message is hidden: only Admin can see it."],
   reset_password_q: ["إعادة تعيين كلمة مرور {name}؟ تُنشأ كلمة مرور مؤقتة ويُطلب منه تغييرها عند الدخول، ويُسجَّل خروجه من كل الأجهزة.", "Reset {name}'s password? A temporary password is created, they must change it at sign-in, and they're signed out everywhere."],
+  pw_type_own: ["أكتب كلمة المرور بنفسي", "I'll type the password"], pw_generate: ["أنشئ كلمة مرور مؤقتة تلقائياً", "Make up a temporary password"],
+  show_password: ["إظهار كلمة المرور", "Show password"],
+  must_change_next: ["اطلب منه تغييرها عند الدخول القادم", "Ask them to change it at next sign-in"],
+  reset_signs_out: ["سيُسجَّل خروجه من كل الأجهزة.", "They'll be signed out on every device."],
+  password_set: ["تم ضبط كلمة المرور لـ {user}", "Password set for {user}"],
+  login_created: ["تم إنشاء حساب دخول", "login created"],
 };
 
 let lang = "ar";

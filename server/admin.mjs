@@ -138,17 +138,22 @@ export function registerAdmin(api, ctx) {
     send(req, res, 200, { user: db.prepare("SELECT id,username,role,active,employee_id FROM users WHERE id=?").get(cur.id) });
   });
   // Admin resets anyone; HR resets staff, manager and accounts logins (never Admin, CEO or HR)
-  api.post("/api/users/:id/reset", (req, res) => {
+  // Body (optional): {password, must_change} — a password typed by Admin/HR (8+ characters) instead of a generated one
+  api.post("/api/users/:id/reset", async (req, res) => {
     const cur = db.prepare("SELECT id, role FROM users WHERE id=?").get(Number(req.params.id));
     if (!can(req.sess, "users.manage") && !(req.sess.user.role === "hr" && cur && ["staff", "manager", "accounts"].includes(cur.role) && cur.id !== req.sess.user.id))
       throw new HttpError(403, "forbidden", "You do not have permission for this");
     if (!cur) throw new HttpError(404, "not_found", "User not found");
-    const pw = tempPassword();
+    const b = await readJson(req).catch(() => ({}));
+    const typed = typeof b.password === "string" && b.password !== "";
+    if (typed && (b.password.length < 8 || b.password.length > 200)) throw Object.assign(new HttpError(400, "weak_password", "The password must be at least 8 characters"), { field: "password" });
+    const pw = typed ? b.password : tempPassword();
+    const mustChange = b.must_change !== false;
     tx(db, () => {
-      setPassword(db, cur.id, pw, true);
+      setPassword(db, cur.id, pw, mustChange);
       db.prepare("DELETE FROM sessions WHERE user_id=?").run(cur.id);
-      audit(db, req.sess.user.id, "user.reset_password", "user", cur.id);
+      audit(db, req.sess.user.id, "user.reset_password", "user", cur.id, null, { chosen_by_admin: typed, must_change: mustChange }); // never the password
     });
-    send(req, res, 200, { tempPassword: pw });
+    send(req, res, 200, typed ? { ok: true, mustChange } : { tempPassword: pw, mustChange });
   });
 }

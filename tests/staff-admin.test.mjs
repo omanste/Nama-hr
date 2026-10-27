@@ -77,3 +77,16 @@ test("reset password: Admin anyone; HR staff/manager/accounts only; the old sess
   assert.equal((await p.c.post(`/api/users/${mgr.user.id}/reset`, {})).status, 401);
   assert.equal((await admin.post(`/api/users/${ceo.user.id}/reset`, {})).status, 200);
 });
+
+test("Admin types the new password, and chooses whether a change is asked at next sign-in", async () => {
+  const p = await makePerson(t.base, admin, { emp_no: "P2", name_ar: "كتابة", join_date: "2022-01-01" }, "staff");
+  assert.equal((await admin.post(`/api/users/${p.user.id}/reset`, { password: "short" })).status, 400);
+  const r = await admin.post(`/api/users/${p.user.id}/reset`, { password: "Nama#2026ok", must_change: false });
+  assert.equal(r.status, 200); assert.equal(r.data.tempPassword, undefined); // never sent back
+  const s1 = await client(t.base).post("/api/login", { username: p.user.username, password: "Nama#2026ok" });
+  assert.equal(s1.status, 200); assert.equal(s1.data.mustChange, false);
+  await admin.post(`/api/users/${p.user.id}/reset`, { password: "Second#2026", must_change: true });
+  assert.equal((await client(t.base).post("/api/login", { username: p.user.username, password: "Second#2026" })).data.mustChange, true);
+  const log = (await admin.get("/api/audit")).data.items.find((a) => a.action === "user.reset_password");
+  assert.ok(log && !JSON.stringify(log).includes("Second#2026"));          // the password is never logged
+});

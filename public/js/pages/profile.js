@@ -177,10 +177,9 @@ function documents(p, e, can, mayUpload) {
 
 // no login yet: "Reset password" creates the staff login and shows its temporary password
 async function createLogin(e) {
-  if (!(await confirm(t("reset_password_q", { name: nm(e) }), { okText: t("reset_password") }))) return;
   try {
     const r = await api.post(`/api/employees/${e.id}/login`, {});
-    await showTempPassword(r.user.username, r.tempPassword);
+    await resetPassword(e, r.user, { created: true }); // then set the password the same way
     rerender();
   } catch (er) { toast(errText(er), "bad"); }
 }
@@ -310,7 +309,41 @@ async function deleteStaff(e) {
   try { await api.del(`/api/employees/${e.id}`); toast(t("staff_deleted")); location.hash = "#/staff"; } catch (er) { toast(errText(er), "bad"); }
 }
 
-async function resetPassword(e, login) {
-  if (!(await confirm(t("reset_password_q", { name: nm(e) }), { okText: t("reset_password") }))) return;
-  try { const r = await api.post(`/api/users/${login.id}/reset`, {}); await showTempPassword(login.username, r.tempPassword); } catch (er) { toast(errText(er), "bad"); }
+/** Reset: type the password yourself, or let the portal make one up; optionally ask for a change at next sign-in. */
+function resetPassword(e, login, { created = null } = {}) {
+  return new Promise((resolve) => {
+    const mode = { v: "type" };
+    const pw = h("input", { type: "password", autocomplete: "new-password", minlength: 8, dir: "ltr", name: "password" });
+    const pw2 = h("input", { type: "password", autocomplete: "new-password", minlength: 8, dir: "ltr", name: "password2" });
+    const show = h("input", { type: "checkbox", style: { width: "20px", height: "20px", minHeight: "0" }, onchange: () => { pw.type = pw2.type = show.checked ? "text" : "password"; } });
+    const must = h("input", { type: "checkbox", checked: true, style: { width: "20px", height: "20px", minHeight: "0" } });
+    const typeBox = h("div", { class: "fields" }, field(t("new_password"), pw), field(t("confirm_password"), pw2),
+      h("label", { class: "row full" }, show, t("show_password")));
+    const radio = (v, label) => h("label", { class: "read-row" }, h("input", { type: "radio", name: "pwmode", value: v, checked: mode.v === v, onchange: () => { mode.v = v; typeBox.hidden = v !== "type"; } }), h("div", { class: "grow" }, h("b", null, t(label))));
+    const err = h("div", { class: "form-error" });
+    const dlg = h("dialog", { class: "dialog" }, h("form", { class: "form", onsubmit: async (ev) => {
+      ev.preventDefault(); err.textContent = "";
+      const body = { must_change: must.checked };
+      if (mode.v === "type") {
+        if (pw.value.length < 8) { err.textContent = t("err_weak_password"); return; }
+        if (pw.value !== pw2.value) { err.textContent = t("passwords_differ"); return; }
+        body.password = pw.value;
+      }
+      try {
+        const r = await api.post(`/api/users/${login.id}/reset`, body);
+        dlg.close();
+        if (r.tempPassword) await showTempPassword(login.username, r.tempPassword);
+        else toast(t("password_set", { user: login.username }));
+      } catch (er) { err.textContent = errText(er); }
+    } },
+      h("h2", null, t("reset_password"), " · ", nm(e)),
+      h("p", { class: "sub" }, t("username"), ": ", h("b", { dir: "ltr" }, login.username), created ? ` · ${t("login_created")}` : ""),
+      h("div", { class: "grid" }, radio("type", "pw_type_own"), radio("auto", "pw_generate")),
+      typeBox,
+      h("label", { class: "row" }, must, t("must_change_next")),
+      h("p", { class: "sub" }, t("reset_signs_out")), err,
+      h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), h("button", { class: "btn primary", type: "submit" }, t("save")))));
+    dlg.addEventListener("close", () => { dlg.remove(); resolve(); });
+    document.body.append(dlg); dlg.showModal(); pw.focus();
+  });
 }
