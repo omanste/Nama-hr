@@ -307,6 +307,7 @@ const D = {
   voice_unhide_q: ["إظهار الرسالة للمرسل والمستلم من جديد؟", "Show the message to the sender and recipient again?"],
   voice_delete_q: ["حذف الرسالة وردودها ومرفقاتها نهائياً؟ لا يمكن التراجع.", "Delete the message, its replies and attachments for good? This can't be undone."],
   voice_hidden_note: ["هذه الرسالة مخفية: يراها المسؤول فقط.", "This message is hidden: only Admin can see it."],
+  reset_password_q: ["إعادة تعيين كلمة مرور {name}؟ تُنشأ كلمة مرور مؤقتة ويُطلب منه تغييرها عند الدخول، ويُسجَّل خروجه من كل الأجهزة.", "Reset {name}'s password? A temporary password is created, they must change it at sign-in, and they're signed out everywhere."],
 };
 
 let lang = "ar";

@@ -137,9 +137,11 @@ export function registerAdmin(api, ctx) {
     rerouteFallbacks(ctx);
     send(req, res, 200, { user: db.prepare("SELECT id,username,role,active,employee_id FROM users WHERE id=?").get(cur.id) });
   });
+  // Admin resets anyone; HR resets staff, manager and accounts logins (never Admin, CEO or HR)
   api.post("/api/users/:id/reset", (req, res) => {
-    need(req.sess, "users.manage");
-    const cur = db.prepare("SELECT id FROM users WHERE id=?").get(Number(req.params.id));
+    const cur = db.prepare("SELECT id, role FROM users WHERE id=?").get(Number(req.params.id));
+    if (!can(req.sess, "users.manage") && !(req.sess.user.role === "hr" && cur && ["staff", "manager", "accounts"].includes(cur.role) && cur.id !== req.sess.user.id))
+      throw new HttpError(403, "forbidden", "You do not have permission for this");
     if (!cur) throw new HttpError(404, "not_found", "User not found");
     const pw = tempPassword();
     tx(db, () => {

@@ -64,3 +64,16 @@ test("delete removes a mistaken record completely; anyone with history must be d
   const res = await admin.del(`/api/employees/${mgr.emp.id}`);
   assert.equal(res.status, 409); assert.equal(res.data.error, "has_history");
 });
+
+test("reset password: Admin anyone; HR staff/manager/accounts only; the old sessions end", async () => {
+  const p = await makePerson(t.base, admin, { emp_no: "P1", name_ar: "كلمة سر", join_date: "2022-01-01" }, "staff");
+  const r = await hr.c.post(`/api/users/${p.user.id}/reset`, {});
+  assert.equal(r.status, 200); assert.ok(r.data.tempPassword.length >= 8);
+  assert.equal((await p.c.get("/api/me")).status, 401);                    // signed out everywhere
+  const fresh = await client(t.base).post("/api/login", { username: p.user.username, password: r.data.tempPassword });
+  assert.equal(fresh.status, 200); assert.equal(fresh.data.mustChange, true); // must choose a new one
+  assert.equal((await hr.c.post(`/api/users/${ceo.user.id}/reset`, {})).status, 403);
+  assert.equal((await hr.c.post(`/api/users/${hr.user.id}/reset`, {})).status, 403);
+  assert.equal((await p.c.post(`/api/users/${mgr.user.id}/reset`, {})).status, 401);
+  assert.equal((await admin.post(`/api/users/${ceo.user.id}/reset`, {})).status, 200);
+});

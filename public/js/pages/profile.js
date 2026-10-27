@@ -129,7 +129,10 @@ export async function render(el, params, { me, can, opts }) {
         ["f_join_date", dmy(e.join_date)], ["service_length", serviceLength(e.join_date)], ["probation_end", dmy(p.leave.probationEnd)],
         ["f_contract_type", e.contract_type], ["f_contract_end", e.contract_end ? h("span", null, dmy(e.contract_end), " ", expiryBadge(e.contract_end)) : null]]),
         p.login !== undefined ? h("div", { style: { marginTop: "14px" } }, h("h3", null, t("login_account")),
-          p.login ? h("div", { class: "sub" }, `${p.login.username} · ${t("role_" + p.login.role)}${p.login.active ? "" : " · " + t("inactive")}`)
+          p.login ? h("div", { class: "row", style: { justifyContent: "space-between" } },
+              h("span", { class: "sub" }, `${p.login.username} · ${t("role_" + p.login.role)}${p.login.active ? "" : " · " + t("inactive")}`),
+              (can.admin() || (can.edit() && ["staff", "manager", "accounts"].includes(p.login.role))) && p.login.id !== me.user.id
+                ? h("button", { class: "btn small", type: "button", onclick: () => resetPassword(e, p.login) }, "🔑 ", t("reset_password")) : null)
             : h("div", { class: "row" }, h("span", { class: "sub" }, t("no_login")), can.edit() ? h("button", { class: "btn small", type: "button", onclick: () => createLogin(e) }, t("create_login")) : null)) : null)),
 
     h("section", { class: "card" }, h("h2", null, t("sec_qualifications")), h("dl", { class: "facts" },
@@ -300,4 +303,9 @@ async function setDisabled(e, disable) {
 async function deleteStaff(e) {
   if (!(await confirm(t("staff_delete_q", { name: nm(e) }), { danger: true, okText: t("staff_delete") }))) return;
   try { await api.del(`/api/employees/${e.id}`); toast(t("staff_deleted")); location.hash = "#/staff"; } catch (er) { toast(errText(er), "bad"); }
+}
+
+async function resetPassword(e, login) {
+  if (!(await confirm(t("reset_password_q", { name: nm(e) }), { okText: t("reset_password") }))) return;
+  try { const r = await api.post(`/api/users/${login.id}/reset`, {}); await showTempPassword(login.username, r.tempPassword); } catch (er) { toast(errText(er), "bad"); }
 }
