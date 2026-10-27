@@ -100,6 +100,9 @@ export async function render(el, params, { me, can, opts }) {
         can.edit() ? h("button", { class: "btn", type: "button", onclick: () => adjustDialog(e) }, t("adjust_balance")) : null,
         can.edit() ? h("button", { class: "btn", type: "button", onclick: () => encashDialog(e, p.files.filter((f) => f.doc_type === "consent")) }, t("encash")) : null,
         // disable (keeps history) / enable; Admin may delete a mistaken record with no history
+        // reset password (creates the login first if there isn't one); HR can't reset Admin, CEO or HR logins
+        can.edit() && !own && (can.admin() || !p.login || ["staff", "manager", "accounts"].includes(p.login.role))
+          ? h("button", { class: "btn", type: "button", onclick: () => (p.login ? resetPassword(e, p.login) : createLogin(e)) }, "🔑 ", t("reset_password")) : null,
         can.edit() && !own ? h("button", { class: e.status === "disabled" ? "btn" : "btn danger", type: "button", onclick: () => setDisabled(e, e.status !== "disabled") }, t(e.status === "disabled" ? "staff_enable" : "staff_disable")) : null,
         can.admin() && !own ? h("button", { class: "btn danger", type: "button", onclick: () => deleteStaff(e) }, t("staff_delete")) : null)),
     e.status === "disabled" ? h("div", { class: "note bad" }, t("disabled_note")) : null,
