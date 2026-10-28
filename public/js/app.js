@@ -56,7 +56,7 @@ export const can = {
 function navItems() {
   const me = state.me;
   const items = [["#/", "nav_home", "home"]];
-  if (me.employee) items.push(["#/leave", "nav_leave", "leave"], ["#/permissions", "nav_permissions", "clock"], ["#/me", "nav_me", "user"], ["#/attendance", "nav_attendance", "finger"]);
+  if (me.employee) items.push(["#/leave", "nav_leave", "leave"], ["#/permissions", "nav_permissions", "clock"], ["#/attendance", "nav_attendance", "finger"]);
   if (can.approve()) items.push(["#/approvals", "nav_approvals", "check", me.pendingApprovals]);
   if (me.employee || ["hr", "ceo", "admin"].includes(me.user.role)) items.push(["#/voice", "nav_voice", "chat", me.voiceInbox]);
   if (can.staffList()) items.push(["#/staff", "nav_staff", "people"]);
@@ -68,6 +68,7 @@ function navItems() {
   if (can.edit()) items.push(["#/cap-reviews", "nav_cap_reviews", "clock", me.pendingCapReviews], ["#/import", "nav_import", "upload"]);
   if (can.admin()) items.push(["#/settings", "nav_settings", "gear"], ["#/users", "nav_users", "key"]);
   if (can.viewAll()) items.push(["#/audit", "nav_audit", "clock"]);
+  if (me.employee) items.push(["#/me", "nav_me", "user"]); // my profile is always the last entry
   return items;
 }
 export const menuItems = navItems;
