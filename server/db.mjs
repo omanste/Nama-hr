@@ -127,6 +127,10 @@ const MIGRATIONS = [
   `ALTER TABLE calendar_events ADD COLUMN visibility TEXT NOT NULL DEFAULT 'company';`,
   // 22: a renewed ID, passport or visa: the old copy is archived (HR/Admin still see it; the person sees only the new one)
   `ALTER TABLE files ADD COLUMN archived_at TEXT; ALTER TABLE files ADD COLUMN replaced_by INTEGER;`,
+  // 23: the Chairman: sees everything, approves the CEO and any request; no leave of his own
+  (db) => rebuildWithCheck(db, "users", "CHECK(role IN ('staff','manager','hr','accounts','ceo','admin'))", "CHECK(role IN ('staff','manager','hr','accounts','ceo','chairman','admin'))"),
+  // 24: a request that needs the CEO's final approval after the manager's: who approved it first
+  `ALTER TABLE leave_requests ADD COLUMN first_approved_by INTEGER; ALTER TABLE leave_requests ADD COLUMN first_approved_at TEXT;`,
 ];
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */
@@ -135,7 +139,8 @@ function rebuildWithCheck(db, table, from, to) {
   if (!sql.includes(from)) throw new Error(`migration: ${table} does not have the expected CHECK`);
   const indexes = db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL").all(table).map((r) => r.sql);
   const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name).join(",");
-  db.exec(sql.replace(`CREATE TABLE ${table}`, `CREATE TABLE ${table}__new`).replace(from, to));
+  // after a rename SQLite keeps the name quoted ("users"), so match it either way
+  db.exec(sql.replace(new RegExp(`CREATE TABLE "?${table}"?`), `CREATE TABLE ${table}__new`).replace(from, to));
   db.exec(`INSERT INTO ${table}__new(${cols}) SELECT ${cols} FROM ${table}; DROP TABLE ${table}; ALTER TABLE ${table}__new RENAME TO ${table};`);
   for (const i of indexes) db.exec(i);
 }

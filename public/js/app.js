@@ -44,28 +44,30 @@ const ROUTES = [
   return { re, keys, page, opts };
 });
 
-const VIEW_ALL = ["hr", "accounts", "ceo", "admin"];
+const VIEW_ALL = ["hr", "accounts", "ceo", "chairman", "admin"];
 export const state = { me: null };
 export const can = {
   viewAll: () => VIEW_ALL.includes(state.me?.user.role),
   edit: () => ["hr", "admin"].includes(state.me?.user.role),
   admin: () => state.me?.user.role === "admin",
-  approve: () => state.me && (state.me.isApprover || ["ceo", "admin"].includes(state.me.user.role) || state.me.pendingApprovals > 0),
+  approve: () => state.me && (state.me.isApprover || ["ceo", "chairman", "admin"].includes(state.me.user.role) || state.me.pendingApprovals > 0),
   staffList: () => can.viewAll() || !!state.me?.isApprover,
 };
 
 function navItems() {
   const me = state.me;
   const items = [["#/", "nav_home", "home"]];
-  if (me.employee) items.push(["#/leave", "nav_leave", "leave"], ["#/permissions", "nav_permissions", "clock"], ["#/attendance", "nav_attendance", "finger"]);
+  // the Chairman has no leave in the portal; he and the CEO are outside the fingerprint policy
+  if (me.employee && !me.noLeave) items.push(["#/leave", "nav_leave", "leave"], ["#/permissions", "nav_permissions", "clock"]);
+  if (me.employee && !me.attendanceExempt) items.push(["#/attendance", "nav_attendance", "finger"]);
   if (can.approve()) items.push(["#/approvals", "nav_approvals", "check", me.pendingApprovals]);
-  if (me.employee || ["hr", "ceo", "admin"].includes(me.user.role)) items.push(["#/voice", "nav_voice", "chat", me.voiceInbox]);
+  if (me.employee || ["hr", "ceo", "chairman", "admin"].includes(me.user.role)) items.push(["#/voice", "nav_voice", "chat", me.voiceInbox]);
   if (can.staffList()) items.push(["#/staff", "nav_staff", "people"]);
   items.push(["#/calendar", "nav_calendar", "leave"]); // everyone: holidays, occasions, birthdays and their own leave
   if (me.isApprover && !can.viewAll()) items.push(["#/team", "team_requests", "list"]);
   if (can.viewAll()) items.push(["#/requests", "nav_requests", "list"]);
   if (can.viewAll() || me.isApprover) items.push(["#/reports", "nav_reports", "chart"]);
-  if (["hr", "admin", "ceo", "accounts"].includes(me.user.role) || me.isApprover) items.push(["#/attendance/report", "nav_att_report", "chart", me.pendingHr]);
+  if (["hr", "admin", "ceo", "chairman", "accounts"].includes(me.user.role) || me.isApprover) items.push(["#/attendance/report", "nav_att_report", "chart", me.pendingHr]);
   if (can.edit()) items.push(["#/profile-changes", "nav_profile_changes", "check", me.pendingProfileChanges], ["#/cap-reviews", "nav_cap_reviews", "clock", me.pendingCapReviews], ["#/import", "nav_import", "upload"]);
   if (can.admin()) items.push(["#/settings", "nav_settings", "gear"], ["#/users", "nav_users", "key"]);
   if (can.viewAll()) items.push(["#/audit", "nav_audit", "clock"]);

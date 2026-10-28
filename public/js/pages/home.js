@@ -36,7 +36,7 @@ export async function render(el, _p, { me, can }) {
         left(b.date) === 0 ? t("today") : left(b.date) === 1 ? t("tomorrow") : t("in_n_days", { n: num(left(b.date)) })))));
   }).catch(() => null));
   // my leave balance, leave by type, permissions and request history
-  if (me.employee) jobs.push(api.get(`/api/employees/${me.employee.id}`).then((p) => h("div", { class: "grid" }, leaveSections(p, { own: true, limit: 10 }))));
+  if (me.employee && !me.noLeave) jobs.push(api.get(`/api/employees/${me.employee.id}`).then((p) => h("div", { class: "grid" }, leaveSections(p, { own: true, limit: 10 }))));
   else jobs.push(Promise.resolve(h("div", { class: "note" }, t("no_profile"))));
 
   // tiles: tap one to list its records right below (50 a page)

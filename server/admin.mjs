@@ -10,11 +10,33 @@ import { rerouteFallbacks } from "./requests.mjs";
 import { shiftTimes, SHIFTS } from "./shifts.mjs";
 
 export const DEFAULT_CONTRACT_TYPES = ["Unlimited", "Limited", "Probation", "Part-time"];
+/** Leave that needs the CEO's final approval after the manager's (exceptions to the normal policy). */
+export const DEFAULT_CEO_FINAL = ["unpaid"];
+const FINAL_OK = ["annual", "emergency", "sick", "bereavement", "marriage", "paternity", "maternity", "hajj", "exam", "patient_care", "childcare", "unpaid", "comp_day"];
+/** "CEO Office" and "Chairman's Office": departments for the people who report to them directly, approved by them. */
+function ensureOffices(db) {
+  for (const [key, setKey, ar, en] of [["managers_approver_employee_id", "ceo_office_dept_id", "مكتب الرئيس التنفيذي", "CEO Office"],
+    ["chairman_employee_id", "chairman_office_dept_id", "مكتب رئيس مجلس الإدارة", "Chairman's Office"]]) {
+    const who = getSetting(db, key, null);
+    if (!who) continue;
+    const id = getSetting(db, setKey, null);
+    if (id && db.prepare("SELECT 1 FROM departments WHERE id=?").get(id)) db.prepare("UPDATE departments SET approver_employee_id=? WHERE id=?").run(who, id);
+    else {
+      const have = db.prepare("SELECT id FROM departments WHERE name_en=? OR name_ar=?").get(en, ar);
+      const newId = have ? have.id : Number(db.prepare("INSERT INTO departments(name_ar,name_en,approver_employee_id,active) VALUES(?,?,?,1)").run(ar, en, who).lastInsertRowid);
+      if (have) db.prepare("UPDATE departments SET approver_employee_id=? WHERE id=?").run(who, newId);
+      setSetting(db, setKey, newId);
+    }
+  }
+}
 export function readSettings(db) {
   const S = shiftTimes(db);
   return {
+    // top management: the CEO approves the managers (and has the final word on exceptions); the Chairman approves the CEO
     managers_approver_employee_id: getSetting(db, "managers_approver_employee_id", null),
     managers_approver_title: getSetting(db, "managers_approver_title", "ceo"),
+    chairman_employee_id: getSetting(db, "chairman_employee_id", null),
+    ceo_final_types: getSetting(db, "ceo_final_types", DEFAULT_CEO_FINAL),
     contract_types: getSetting(db, "contract_types", DEFAULT_CONTRACT_TYPES),
     shift_1_start: S[1].start, shift_1_end: S[1].end, shift_2_start: S[2].start, shift_2_end: S[2].end, shift_3_start: S[3].start, shift_3_end: S[3].end,
     ramadan_start: getSetting(db, "ramadan_start", null),
@@ -83,7 +105,7 @@ export function registerAdmin(api, ctx) {
   api.put("/api/settings", async (req, res) => {
     need(req.sess, "settings.edit");
     const b = await readJson(req);
-    const allowed = ["managers_approver_employee_id", "managers_approver_title", "contract_types", "shift_1_start", "shift_1_end", "shift_2_start", "shift_2_end", "shift_3_start", "shift_3_end", "ramadan_start", "ramadan_end", "ramadan_hours", "attendance_start", "shift_self_select", "official_holidays"];
+    const allowed = ["managers_approver_employee_id", "managers_approver_title", "chairman_employee_id", "ceo_final_types", "contract_types", "shift_1_start", "shift_1_end", "shift_2_start", "shift_2_end", "shift_3_start", "shift_3_end", "ramadan_start", "ramadan_end", "ramadan_hours", "attendance_start", "shift_self_select", "official_holidays"];
     if ("official_holidays" in b) {
       if (!Array.isArray(b.official_holidays) || !b.official_holidays.every((x) => x && isIsoDate(x.date))) throw invalid("official_holidays", "each holiday needs a valid date");
       b.official_holidays = b.official_holidays.map((x) => ({ date: x.date, name: String(x.name || "").trim().slice(0, 80) })).sort((x, y) => (x.date < y.date ? -1 : 1));
@@ -106,10 +128,16 @@ export function registerAdmin(api, ctx) {
     for (const k of Object.keys(b)) if (!allowed.includes(k)) throw invalid(k, `unknown setting ${k}`);
     if ("managers_approver_employee_id" in b && b.managers_approver_employee_id !== null && !getEmployee(db, b.managers_approver_employee_id)) throw invalid("managers_approver_employee_id", "unknown employee");
     if ("managers_approver_title" in b && !["ceo", "chairman"].includes(b.managers_approver_title)) throw invalid("managers_approver_title", "title must be ceo or chairman");
+    if ("chairman_employee_id" in b && b.chairman_employee_id !== null && !getEmployee(db, b.chairman_employee_id)) throw invalid("chairman_employee_id", "unknown employee");
+    const ceoId = "managers_approver_employee_id" in b ? b.managers_approver_employee_id : getSetting(db, "managers_approver_employee_id", null);
+    const chId = "chairman_employee_id" in b ? b.chairman_employee_id : getSetting(db, "chairman_employee_id", null);
+    if (ceoId && chId && Number(ceoId) === Number(chId)) throw invalid("chairman_employee_id", "The CEO and the Chairman are two different people");
+    if ("ceo_final_types" in b && (!Array.isArray(b.ceo_final_types) || !b.ceo_final_types.every((x) => FINAL_OK.includes(x)))) throw invalid("ceo_final_types", "unknown leave type");
     if ("contract_types" in b && (!Array.isArray(b.contract_types) || !b.contract_types.every((x) => typeof x === "string" && x.trim()))) throw invalid("contract_types", "contract types must be a list of names");
     const before = readSettings(db);
     tx(db, () => {
-      for (const k of Object.keys(b)) setSetting(db, k, k === "managers_approver_employee_id" && b[k] !== null ? Number(b[k]) : k === "contract_types" ? b[k].map((x) => x.trim()) : b[k]);
+      for (const k of Object.keys(b)) setSetting(db, k, ["managers_approver_employee_id", "chairman_employee_id"].includes(k) && b[k] !== null ? Number(b[k]) : k === "contract_types" ? b[k].map((x) => x.trim()) : b[k]);
+      ensureOffices(db);
       audit(db, req.sess.user.id, "settings.update", "settings", null, before, readSettings(db));
     });
     rerouteFallbacks(ctx);

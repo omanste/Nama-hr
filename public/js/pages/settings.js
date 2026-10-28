@@ -21,7 +21,9 @@ export async function render(el, _p, { can }) {
   const newAr = h("input", { placeholder: t("dept_name_ar") }), newEn = h("input", { placeholder: t("dept_name_en"), dir: "ltr" });
 
   const mgr = select("managers", people, settings.managers_approver_employee_id);
-  const title = select("title", [["ceo", t("title_ceo")], ["chairman", t("title_chairman")]], settings.managers_approver_title);
+  const chair = select("chairman", people, settings.chairman_employee_id);
+  const FINAL = ["unpaid", "annual", "emergency", "hajj", "exam", "patient_care", "childcare", "comp_day"];
+  const finalBoxes = FINAL.map((k) => [k, h("input", { type: "checkbox", checked: (settings.ceo_final_types || []).includes(k) })]);
   const types = h("textarea", { rows: 4 }); types.value = settings.contract_types.join("\n");
   const HALF = []; for (let m = 10 * 60; m <= 20 * 60; m += 30) HALF.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${m % 60 ? "30" : "00"}`);
   const START = []; for (let m = 6 * 60; m <= 12 * 60 + 30; m += 30) START.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${m % 60 ? "30" : "00"}`);
@@ -41,9 +43,14 @@ export async function render(el, _p, { can }) {
         h("thead", null, h("tr", null, [t("dept_name_ar"), t("dept_name_en"), t("dept_approver"), t("nav_staff"), t("active"), ""].map((x) => h("th", null, x)))),
         h("tbody", null, depts.items.map(deptRow),
           h("tr", null, h("td", null, newAr), h("td", null, newEn), h("td", { colspan: 3 }), h("td", null, h("button", { class: "btn small", type: "button", onclick: () => save(() => api.post("/api/departments", { name_ar: newAr.value, name_en: newEn.value })) }, t("add_department")))))))),
-    h("section", { class: "card" }, h("h2", null, t("managers_approver")),
-      h("div", { class: "fields" }, field(t("managers_approver"), mgr), field(t("managers_approver_title"), title)),
-      h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", { managers_approver_employee_id: mgr.value ? Number(mgr.value) : null, managers_approver_title: title.value })) }, t("save")))),
+    // top management: who the CEO and the Chairman are, and which leave needs the CEO's final approval
+    h("section", { class: "card" }, h("h2", null, t("top_mgmt")), h("p", { class: "sub" }, t("top_mgmt_hint")),
+      h("div", { class: "fields" }, field(t("role_ceo"), mgr, { hint: t("ceo_hint") }), field(t("role_chairman"), chair, { hint: t("chairman_hint") })),
+      h("h3", null, t("ceo_final")), h("p", { class: "sub" }, t("ceo_final_hint")),
+      h("div", { class: "row", style: { gap: "6px 16px" } }, finalBoxes.map(([k, box]) => h("label", { class: "row", style: { gap: "6px" } }, box, t("lt_" + k)))),
+      h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", {
+        managers_approver_employee_id: mgr.value ? Number(mgr.value) : null, managers_approver_title: "ceo", chairman_employee_id: chair.value ? Number(chair.value) : null,
+        ceo_final_types: finalBoxes.filter(([, x]) => x.checked).map(([k]) => k) })) }, t("save")))),
     h("section", { class: "card" }, h("h2", null, t("work_hours")),
       h("p", { class: "sub" }, t("work_hours_hint")),
       h("div", { class: "fields" },

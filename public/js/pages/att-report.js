@@ -17,7 +17,7 @@ function period(key) {
 const pct = (x) => (x === null || x === undefined ? "—" : `${num(x)}%`);
 
 export async function render(el, _p, { me, can, query }) {
-  if (!["hr", "admin", "ceo", "accounts"].includes(me.user.role) && !me.isApprover) throw { status: 403 };
+  if (!["hr", "admin", "ceo", "chairman", "accounts"].includes(me.user.role) && !me.isApprover) throw { status: 403 };
   const depts = can.viewAll() ? (await api.get("/api/departments")).items : [];
   const [f0, t0] = query.get("from") ? [query.get("from"), query.get("to")] : period("last_week");
   const from = h("input", { type: "date", value: f0 }), to = h("input", { type: "date", value: t0 });

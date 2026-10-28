@@ -1,5 +1,7 @@
 /* Role and permission checks — the single place the spec §4 matrix lives. The UI only mirrors these. */
-const ALL_VIEW = ["hr", "accounts", "ceo", "admin"];
+const ALL_VIEW = ["hr", "accounts", "ceo", "chairman", "admin"];
+/** Top management: may approve or reject any pending request in the company (never their own). */
+export const TOP = ["ceo", "chairman"];
 const MATRIX = {
   "employee.viewAll": ALL_VIEW,
   "employee.edit": ["hr", "admin"],

@@ -5,13 +5,43 @@ import { tx, getSetting, setSetting } from "./db.mjs";
 import { sendRaw, send, readJson, HttpError } from "./http.mjs";
 import { can } from "./perm.mjs";
 import { audit } from "./audit.mjs";
-import { ANNUAL, dueCredits, capForfeit, probationEnd, addDays, fmtDays, todayMuscat } from "./leave.mjs";
+import { ANNUAL, DAY, dueCredits, capForfeit, probationEnd, addDays, fmtDays, todayMuscat } from "./leave.mjs";
 import { postLedger, balanceOf } from "./ledger.mjs";
 import { notify } from "./notify.mjs";
 import { runBirthdayAlerts } from "./calendar.mjs";
 import { runWeeklyAttendance } from "./attendance.mjs";
 
 const dmy = (iso) => iso.split("-").reverse().join("/");
+
+/** On the 1st of each month: a summary of the month before for the CEO and the Chairman — once.
+ * Leave days and permission hours taken, requests decided and still waiting, headcount, and documents expiring soon. */
+export function runMonthlySummary(ctx, today, force = false) {
+  const { db } = ctx;
+  if (!force && today.slice(8) !== "01") return null;
+  const month = addDays(today.slice(0, 8) + "01", -1).slice(0, 7); // the month before
+  if (!force && getSetting(db, "monthly_summary_sent", null) === month) return null;
+  const to = db.prepare("SELECT id FROM users WHERE role IN ('ceo','chairman') AND active=1").all().map((u) => u.id);
+  setSetting(db, "monthly_summary_sent", month);
+  if (!to.length) return null;
+  const inMonth = "substr(start_date,1,7)=?";
+  const leave = db.prepare(`SELECT count(*) n, coalesce(sum(minutes),0) m FROM leave_requests WHERE status='approved' AND ${inMonth} AND type NOT IN ('early','late','break','correction','mission','comp_day')`).get(month);
+  const perm = db.prepare(`SELECT count(*) n, coalesce(sum(minutes),0) m FROM leave_requests WHERE status='approved' AND ${inMonth} AND type IN ('early','late','break')`).get(month);
+  const decided = db.prepare("SELECT status, count(*) n FROM leave_requests WHERE substr(decided_at,1,7)=? AND status IN ('approved','rejected') GROUP BY status").all(month);
+  const nd = (s) => (decided.find((x) => x.status === s) || { n: 0 }).n;
+  const waiting = db.prepare("SELECT count(*) n FROM leave_requests WHERE status='pending'").get().n;
+  const staff = db.prepare("SELECT count(*) n FROM employees WHERE status IN ('active','on_leave')").get().n;
+  const expiring = expiringItems(db, today, 30).length;
+  const s = { month, staff, leaveRequests: leave.n, leaveDays: Math.round((leave.m / DAY) * 10) / 10, permissions: perm.n, permissionHours: Math.round((perm.m / 60) * 10) / 10,
+    approved: nd("approved"), rejected: nd("rejected"), waiting, expiring };
+  const [y, m] = month.split("-");
+  notify(ctx, to, {
+    title_ar: `ملخص شهر ${m}/${y}`, title_en: `Summary for ${m}/${y}`,
+    body_ar: `الموظفون: ${s.staff} · إجازات: ${s.leaveRequests} طلب (${s.leaveDays} يوم) · استئذانات: ${s.permissions} (${s.permissionHours} ساعة) · وُوفق على ${s.approved} ورُفض ${s.rejected} · بانتظار القرار الآن: ${s.waiting} · مستندات تنتهي خلال 30 يوماً: ${s.expiring}`,
+    body_en: `Staff: ${s.staff} · Leave: ${s.leaveRequests} requests (${s.leaveDays} days) · Permissions: ${s.permissions} (${s.permissionHours} h) · Approved ${s.approved}, rejected ${s.rejected} · Waiting now: ${s.waiting} · Documents expiring within 30 days: ${s.expiring}`,
+    link: "#/reports",
+  });
+  return s;
+}
 
 /** Post every missing yearly credit up to `today`, capping the balance at 60 days after each. Idempotent. */
 export function runAnniversaries(ctx, today) {
@@ -194,7 +224,7 @@ export function registerJobs(api, ctx) {
   const tick = () => {
     try {
       const today = todayMuscat();
-      if (state.daily !== today) { state.daily = today; const r = runAnniversaries(ctx, today); runExpiryCheck(ctx, today); runBirthdayAlerts(ctx, today); runWeeklyAttendance(ctx, today); if (r.credits) console.log(`Leave credits posted: ${r.credits}, balances over the cap for review: ${r.reviews}`); }
+      if (state.daily !== today) { state.daily = today; const r = runAnniversaries(ctx, today); runExpiryCheck(ctx, today); runBirthdayAlerts(ctx, today); runWeeklyAttendance(ctx, today); runMonthlySummary(ctx, today); if (r.credits) console.log(`Leave credits posted: ${r.credits}, balances over the cap for review: ${r.reviews}`); }
       if (state.backup !== today && muscatTime() >= (env.BACKUP_TIME || "02:00")) { state.backup = today; backup(ctx, today, Number(env.BACKUP_KEEP_DAYS || 14)); }
     } catch (e) { console.error("scheduled job failed:", e); }
   };

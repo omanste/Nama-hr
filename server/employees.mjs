@@ -221,7 +221,7 @@ export function registerEmployees(api, ctx) {
     if (!cur) throw new HttpError(404, "not_found", "Employee not found");
     const values = cleanEmployee(db, await readJson(req), cur);
     if (GONE.includes(values.status) && req.sess.user.role !== "admin"
-      && db.prepare("SELECT 1 FROM users WHERE employee_id=? AND role IN ('admin','ceo')").get(cur.id))
+      && db.prepare("SELECT 1 FROM users WHERE employee_id=? AND role IN ('admin','ceo','chairman')").get(cur.id))
       throw new HttpError(403, "forbidden", "Only Admin can end the service of an Admin or CEO");
     const emp = tx(db, () => {
       const cols = Object.keys(values);
@@ -282,7 +282,7 @@ export function registerEmployees(api, ctx) {
     const cur = getEmployee(db, req.params.id);
     if (!cur) throw new HttpError(404, "not_found", "Employee not found");
     if (cur.id === req.sess.user.employee_id) throw new HttpError(409, "self", "You cannot disable yourself");
-    if (req.sess.user.role !== "admin" && db.prepare("SELECT 1 FROM users WHERE employee_id=? AND role IN ('admin','ceo')").get(cur.id))
+    if (req.sess.user.role !== "admin" && db.prepare("SELECT 1 FROM users WHERE employee_id=? AND role IN ('admin','ceo','chairman')").get(cur.id))
       throw new HttpError(403, "forbidden", "Only Admin can disable an Admin or CEO");
     const e = tx(db, () => {
       db.prepare("UPDATE employees SET status='disabled', updated_at=? WHERE id=?").run(nowIso(), cur.id);
@@ -349,7 +349,7 @@ export function registerEmployees(api, ctx) {
   });
 }
 
-export const ROLES = ["staff", "manager", "hr", "accounts", "ceo", "admin"];
+export const ROLES = ["staff", "manager", "hr", "accounts", "ceo", "chairman", "admin"];
 export function createUser(db, sess, { username, role, employee_id }) {
   username = String(username || "").trim().toLowerCase();
   if (!/^[a-z0-9._-]{2,40}$/.test(username)) throw bad("username", "Username may use letters, digits, dot, dash and underscore");

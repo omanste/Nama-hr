@@ -30,10 +30,17 @@ const D = {
   no_results: ["لا توجد نتائج", "Nothing here yet"], forbidden: ["ليست لديك صلاحية", "You do not have permission"], not_found: ["غير موجود", "Not found"],
   // roles & statuses
   role_staff: ["موظف", "Staff"], role_hr: ["مدير الموارد البشرية", "HR Manager"], role_accounts: ["الحسابات", "Accounts"],
-  role_ceo: ["الرئيس التنفيذي", "CEO"], role_admin: ["مدير النظام", "Admin"], role_manager: ["مدير", "Manager"],
+  role_ceo: ["الرئيس التنفيذي", "CEO"], role_chairman: ["رئيس مجلس الإدارة", "Chairman"],
+  first_approved: ["وافق المدير — القرار النهائي لك", "Manager approved — final decision is yours"],
+  top_mgmt: ["الإدارة العليا", "Top management"],
+  top_mgmt_hint: ["يرى الرئيس التنفيذي ورئيس مجلس الإدارة كل شيء ويمكنهما الموافقة على أي طلب أو رفضه، دون تعديل البيانات. لا يخضعان للائحة البصمة. يُنشأ «مكتب الرئيس التنفيذي» و«مكتب رئيس مجلس الإدارة» لمن يتبعهما مباشرة.", "The CEO and the Chairman see everything and can approve or reject any request, without editing data. They're outside the fingerprint policy. A \"CEO Office\" and a \"Chairman's Office\" department are made for the people who report to them directly."],
+  ceo_hint: ["يوافق على طلبات المديرين والموارد البشرية والحسابات ومكتبه.", "Approves the managers', HR's, Accounts' and his office's requests."],
+  chairman_hint: ["يوافق على طلبات الرئيس التنفيذي ومكتبه. ليس له رصيد إجازات في البوابة.", "Approves the CEO's and his office's requests. Has no leave in the portal."],
+  ceo_final: ["موافقة نهائية من الرئيس التنفيذي", "CEO's final approval"],
+  ceo_final_hint: ["هذه الأنواع تحتاج موافقة الرئيس التنفيذي بعد موافقة المدير.", "These types need the CEO's approval after the manager's."], role_admin: ["مدير النظام", "Admin"], role_manager: ["مدير", "Manager"],
   st_active: ["على رأس العمل", "Active"], st_on_leave: ["في إجازة", "On leave"], st_resigned: ["مستقيل", "Resigned"], st_terminated: ["منتهي الخدمة", "Terminated"],
   rs_pending: ["بانتظار الموافقة", "Pending"], rs_approved: ["موافق عليه", "Approved"], rs_rejected: ["مرفوض", "Rejected"], rs_cancelled: ["ملغى", "Cancelled"],
-  ev_submitted: ["قدّم الطلب", "Submitted"], ev_approved: ["وافق", "Approved"], ev_rejected: ["رفض", "Rejected"], ev_cancelled: ["ألغى", "Cancelled"],
+  ev_submitted: ["قدّم الطلب", "Submitted"], ev_approved_first: ["وافق — أُحيل للرئيس التنفيذي للموافقة النهائية", "Approved — sent to the CEO for final approval"], ev_approved: ["وافق", "Approved"], ev_rejected: ["رفض", "Rejected"], ev_cancelled: ["ألغى", "Cancelled"],
   // leave types
   lt_annual: ["إجازة سنوية", "Annual leave"], lt_early: ["مغادرة مبكرة", "Early leave"], lt_emergency: ["إجازة اضطرارية", "Emergency leave"],
   lt_bereavement: ["إجازة وفاة", "Bereavement leave"], lt_sick: ["إجازة مرضية", "Sick leave"], lt_comp_day: ["عمل في يوم عطلة", "Worked on a holiday"],
@@ -146,7 +153,7 @@ const D = {
   comment_optional: ["ملاحظة (اختياري)", "Comment (optional)"], approved_ok: ["تمت الموافقة", "Approved"], rejected_ok: ["تم الرفض", "Rejected"], cancelled_ok: ["تم الإلغاء", "Cancelled"],
   no_approvals: ["لا توجد طلبات بانتظارك", "Nothing waiting for you"], current_balance: ["الرصيد الحالي", "Current balance"],
   employee: ["الموظف", "Employee"], amount: ["المدة", "Amount"], submitted_at: ["تاريخ التقديم", "Submitted"], status: ["الحالة", "Status"],
-  route_dept: ["مدير القسم", "Department manager"], route_managers: ["اعتماد المديرين", "Managers' approver"], route_admin: ["مدير النظام", "Admin"],
+  route_dept: ["مدير القسم", "Department manager"], route_managers: ["اعتماد المديرين", "Managers' approver"], route_admin: ["مدير النظام", "Admin"], route_chairman: ["رئيس مجلس الإدارة", "Chairman"], route_ceo_final: ["الرئيس التنفيذي — موافقة نهائية", "CEO — final approval"],
   // notifications
   mark_all_read: ["تعليم الكل كمقروء", "Mark all as read"], no_notifications: ["لا توجد إشعارات", "No notifications"],
   // import

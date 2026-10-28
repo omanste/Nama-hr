@@ -2,7 +2,7 @@
  * The approver is fixed when the request is submitted; Admin can always act. */
 import { nowIso, tx, getSetting } from "./db.mjs";
 import { send, readJson, HttpError } from "./http.mjs";
-import { can, canViewEmployee, approvedDepartments } from "./perm.mjs";
+import { can, canViewEmployee, approvedDepartments, TOP } from "./perm.mjs";
 import { audit } from "./audit.mjs";
 import { TYPES, PERMISSION_TYPES, ATTENDANCE_TYPES, PERM_CLASSES, CORRECTION_CLASSES, clockMin, permissionSpan, requestMinutes, eligibleFrom, isIsoDate, fmtDays, DAY, checkLeaveRules, RuleError, sickPayBands, addMonths, daysBetweenInclusive, addDays, daysExcludingHolidays } from "./leave.mjs";
 import { approverFor } from "./routing.mjs";
@@ -65,10 +65,11 @@ export function deputyOf(db, approverUserId, date) {
   return r ? r.id : null;
 }
 
-/** May this session approve/reject this request? Never one's own; the stored approver, their deputy while covering, or Admin. */
+/** May this session approve/reject this request? Never one's own; the stored approver, their deputy while covering, Admin,
+ * or top management (the CEO and the Chairman may decide any request). */
 export function mayDecide(db, sess, r, today) {
   if (sess.employee && sess.employee.id === r.employee_id) return false;
-  if (sess.user.role === "admin" || r.approver_user_id === sess.user.id) return true;
+  if (sess.user.role === "admin" || TOP.includes(sess.user.role) || r.approver_user_id === sess.user.id) return true;
   return deputyOf(db, r.approver_user_id, today) === sess.user.id;
 }
 
@@ -85,6 +86,7 @@ export function routeFor(db, emp, today) {
   const route = approverFor({ employee: emp, role: user.role || "staff" }, {
     departments: db.prepare("SELECT id, approver_employee_id FROM departments WHERE active=1").all(),
     managersApproverEmployeeId: getSetting(db, "managers_approver_employee_id", null),
+    chairmanEmployeeId: getSetting(db, "chairman_employee_id", null),
     userIdByEmployee: (id) => {
       const u = db.prepare("SELECT u.id FROM users u JOIN employees e ON e.id=u.employee_id WHERE u.employee_id=? AND u.active=1 AND e.status IN ('active','on_leave')").get(id);
       return u ? u.id : null;
@@ -239,6 +241,7 @@ export function registerRequests(api, ctx) {
     if (!sess.employee) throw err(400, "no_profile", "Your login is not linked to a staff profile");
     const body = await readJson(req);
     const emp = sess.employee;
+    if (sess.user.role === "chairman" || getSetting(db, "chairman_employee_id", null) === emp.id) throw err(400, "no_leave", "The Chairman has no leave in the portal");
     // Company policy: an approver taking planned leave names a deputy for those dates
     const needsDeputy = ["annual", "emergency"].includes(body.type) && (sess.isApprover || sess.user.role === "ceo"
       || getSetting(db, "managers_approver_employee_id", null) === emp.id);
@@ -334,6 +337,18 @@ export function registerRequests(api, ctx) {
         if (action === "approve") {
           if (TYPES[r.type].proof && !db.prepare("SELECT 1 FROM files WHERE request_id=?").get(r.id))
             throw err(409, "proof_required", "Attach the supporting document (e.g. medical certificate) before approval");
+          // an exception to the normal policy (Settings › Top management): after the manager, it goes to the CEO for the final word
+          const ceoEmp = getSetting(db, "managers_approver_employee_id", null);
+          const ceoUser = ceoEmp && (db.prepare("SELECT id FROM users WHERE employee_id=? AND active=1").get(ceoEmp) || {}).id;
+          if (getSetting(db, "ceo_final_types", ["unpaid"]).includes(r.type) && !r.first_approved_by && ceoUser && ceoUser !== sess.user.id
+            && r.employee_id !== ceoEmp && !["admin", ...TOP].includes(sess.user.role)) {
+            db.prepare("UPDATE leave_requests SET approver_user_id=?, route_reason='ceo_final', first_approved_by=?, first_approved_at=?, decision_comment=coalesce(?,decision_comment) WHERE id=?")
+              .run(ceoUser, sess.user.id, nowIso(), comment || null, r.id);
+            event(db, r.id, "approved_first", sess.user.id, comment);
+            const after = getReq(db, r.id);
+            audit(db, sess.user.id, "request.approve_first", "request", r.id, r, after);
+            return { r: after, emp, escalated: ceoUser };
+          }
           const effect = TYPES[r.type].effect;
           if (effect === "deduct") {
             const available = balanceOf(db, emp.id) - pendingMinutes(db, emp.id, r.id);
@@ -361,6 +376,11 @@ export function registerRequests(api, ctx) {
     });
     const { r, emp } = out;
     const d = describe(r, emp);
+    if (out.escalated) { // approved by the manager, now with the CEO
+      notify(ctx, [out.escalated], { title_ar: "طلب بانتظار موافقتك النهائية", title_en: "A request awaiting your final approval", body_ar: d.ar, body_en: d.en, link: `#/leave/${r.id}` });
+      notify(ctx, [ownerUser(db, r.employee_id)].filter((id) => id && id !== sess.user.id), { title_ar: "وافق المدير على طلبك — بانتظار موافقة الرئيس التنفيذي", title_en: "Your manager approved — now with the CEO", body_ar: d.ar, body_en: d.en, link: `#/leave/${r.id}` });
+      return send(req, res, 200, { request: r });
+    }
     const T = { approved: ["تمت الموافقة على طلبك", "Your request was approved"], rejected: ["تم رفض طلبك", "Your request was rejected"], cancelled: ["تم إلغاء الطلب", "The request was cancelled"] }[r.status];
     const extra = comment ? { ar: ` — ${comment}`, en: ` — ${comment}` } : { ar: "", en: "" };
     // tell the owner and the approver, except whoever just acted
@@ -449,7 +469,7 @@ export function registerRequests(api, ctx) {
       ud.username deputy_username, ed.name_ar deputy_name_ar, ed.name_en deputy_name_en
     FROM approver_cover c JOIN users ua ON ua.id=c.approver_user_id LEFT JOIN employees ea ON ea.id=ua.employee_id
     JOIN users ud ON ud.id=c.deputy_user_id LEFT JOIN employees ed ON ed.id=ud.employee_id`;
-  const isApproverUser = (sess) => sess.user.role === "admin" || sess.user.role === "ceo" || sess.isApprover
+  const isApproverUser = (sess) => sess.user.role === "admin" || sess.user.role === "ceo" || sess.user.role === "chairman" || sess.isApprover
     || (sess.employee && getSetting(db, "managers_approver_employee_id", null) === sess.employee.id);
   api.get("/api/cover", (req, res) => {
     const all = req.sess.user.role === "admin";

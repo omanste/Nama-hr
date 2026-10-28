@@ -196,7 +196,7 @@ export function registerVoice(api, ctx) {
 
   // counts only (no content), for management reports
   api.get("/api/reports/voice", (req, res) => {
-    if (!["admin", "hr", "ceo"].includes(req.sess.user.role)) throw forbidden();
+    if (!["admin", "hr", "ceo", "chairman"].includes(req.sess.user.role)) throw forbidden();
     const from = req.query.get("from") || "0000-01-01", to = req.query.get("to") || "9999-12-31";
     const rows = db.prepare(`SELECT category, status, count(*) n FROM voice_messages WHERE substr(created_at,1,10) BETWEEN ? AND ? GROUP BY category, status`).all(from, to);
     send(req, res, 200, { rows, categories: CATEGORIES, statuses: STATUSES });

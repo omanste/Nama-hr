@@ -3,7 +3,7 @@
 import crypto from "node:crypto";
 import { rerouteFallbacks } from "./requests.mjs";
 import { voiceInboxCount } from "./voice.mjs";
-import { nowIso, tx } from "./db.mjs";
+import { nowIso, tx, getSetting } from "./db.mjs";
 import { send, fail, readJson, HttpError } from "./http.mjs";
 import { audit } from "./audit.mjs";
 import { isApprover } from "./perm.mjs";
@@ -176,7 +176,11 @@ export function registerAuth(api, ctx) {
     // a manager sees their team's attendance: department approver, or someone's direct manager
     const hasTeam = !!s.employee && (s.isApprover || !!db.prepare("SELECT 1 FROM employees WHERE manager_employee_id=? AND status IN ('active','on_leave')").get(s.employee.id));
     const pendingProfileChanges = ["hr", "admin"].includes(s.user.role) ? db.prepare("SELECT count(*) n FROM profile_changes WHERE status='pending' AND employee_id<>?").get(s.employee ? s.employee.id : -1).n : 0;
-    send(req, res, 200, { user: publicUser(s.user), employee: s.employee, isApprover: s.isApprover, pendingApprovals, pendingCapReviews, pendingHr, pendingProfileChanges, hasTeam, voiceInbox: voiceInboxCount(db, s), env: ctx.appEnv });
+    // top management: the Chairman has no leave here; neither he nor the CEO is under the fingerprint policy
+    const top = [getSetting(db, "managers_approver_employee_id", null), getSetting(db, "chairman_employee_id", null)].filter(Boolean).map(Number);
+    const noLeave = s.user.role === "chairman" || (!!s.employee && Number(getSetting(db, "chairman_employee_id", null)) === s.employee.id);
+    const attendanceExempt = !!s.employee && top.includes(s.employee.id);
+    send(req, res, 200, { user: publicUser(s.user), employee: s.employee, isApprover: s.isApprover, pendingApprovals, pendingCapReviews, pendingHr, pendingProfileChanges, hasTeam, voiceInbox: voiceInboxCount(db, s), env: ctx.appEnv, noLeave, attendanceExempt });
   });
 
   api.post("/api/me/password", async (req, res) => {

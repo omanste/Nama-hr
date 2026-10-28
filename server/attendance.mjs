@@ -17,6 +17,8 @@ const forbidden = () => new HttpError(403, "forbidden", "You do not have permiss
 const DUP_GAP = 15; // punches closer than this (minutes) are one punch pressed twice
 const toMin = (at) => +at.slice(11, 13) * 60 + +at.slice(14, 16);
 const MANAGERS = ["hr", "admin"]; // see everyone's attendance with names (policy §7, §18)
+/** The CEO and the Chairman are outside the fingerprint policy: not measured, not in the reports. */
+export const attendanceExempt = (db) => [getSetting(db, "managers_approver_employee_id", null), getSetting(db, "chairman_employee_id", null)].filter(Boolean).map(Number);
 
 /** Merge [a,b] intervals and count how many minutes of [from,to] they don't cover. */
 export function uncovered(from, to, intervals) {
@@ -139,11 +141,12 @@ export function canSeeAttendance(db, sess, emp) {
 /** The people this session may see by name: everyone (HR/Admin), a manager's team, or nobody. */
 function teamOf(db, sess) {
   const base = "SELECT e.*, d.name_ar dept_ar, d.name_en dept_en FROM employees e LEFT JOIN departments d ON d.id=e.department_id WHERE e.status IN ('active','on_leave')";
-  if (MANAGERS.includes(sess.user.role)) return db.prepare(`${base} ORDER BY e.name_ar`).all();
+  const ex = new Set(attendanceExempt(db));
+  if (MANAGERS.includes(sess.user.role)) return db.prepare(`${base} ORDER BY e.name_ar`).all().filter((e) => !ex.has(e.id));
   if (!sess.employee) return [];
   const depts = approvedDepartments(db, sess.employee.id);
   return db.prepare(`${base} AND (e.manager_employee_id=? ${depts.length ? `OR e.department_id IN (${depts.map(() => "?").join(",")})` : ""}) AND e.id<>? ORDER BY e.name_ar`)
-    .all(sess.employee.id, ...depts, sess.employee.id);
+    .all(sess.employee.id, ...depts, sess.employee.id).filter((e) => !ex.has(e.id));
 }
 
 const words = (s) => String(s || "").toLowerCase().replace(/[^a-z؀-ۿ ]/g, " ").split(/\s+/).filter((w) => w.length > 2 && !["al", "bin", "bint", "abdul"].includes(w));
@@ -174,10 +177,11 @@ export function lastWeek(today) {
 
 /** Department totals (no names, §18) and, for HR or a manager, per person. */
 export function attendanceReport(db, sess, from, to, today, deptId = 0) {
+  const ex = new Set(attendanceExempt(db));
   const all = db.prepare("SELECT e.*, d.name_ar dept_ar, d.name_en dept_en FROM employees e LEFT JOIN departments d ON d.id=e.department_id WHERE e.status IN ('active','on_leave') ORDER BY e.name_ar").all()
-    .filter((e) => !deptId || e.department_id === deptId);
+    .filter((e) => (!deptId || e.department_id === deptId) && !ex.has(e.id));
   const named = new Set(teamOf(db, sess).map((e) => e.id));
-  const mineDepts = MANAGERS.includes(sess.user.role) || ["ceo", "accounts"].includes(sess.user.role) ? null : approvedDepartments(db, sess.employee && sess.employee.id);
+  const mineDepts = MANAGERS.includes(sess.user.role) || ["ceo", "chairman", "accounts"].includes(sess.user.role) ? null : approvedDepartments(db, sess.employee && sess.employee.id);
   const depts = new Map();
   const people = [];
   for (const e of all) {
@@ -293,7 +297,7 @@ export function registerAttendance(api, ctx) {
     const linked = db.prepare("SELECT machine_no FROM att_devices WHERE employee_id=? AND ignored=0").all(emp.id).map((r) => r.machine_no);
     send(req, res, 200, { employee: { id: emp.id, emp_no: emp.emp_no, name_ar: emp.name_ar, name_en: emp.name_en, shift: emp.shift, join_date: emp.join_date },
       month, days, summary: summarize(days), review, linked, dataFrom, dataTo, start: getSetting(db, "attendance_start", null),
-      own: !!(req.sess.employee && req.sess.employee.id === emp.id) });
+      own: !!(req.sess.employee && req.sess.employee.id === emp.id), exempt: attendanceExempt(db).includes(emp.id) });
   });
   // the person confirms they reviewed the month, or notes what is wrong (HR is told)
   api.post("/api/attendance/employee/:id/review", async (req, res) => {
@@ -320,7 +324,7 @@ export function registerAttendance(api, ctx) {
   api.get("/api/attendance/report", (req, res) => {
     const sess = req.sess;
     const mine = approvedDepartments(db, sess.employee && sess.employee.id);
-    if (!["hr", "admin", "ceo", "accounts"].includes(sess.user.role) && !mine.length) throw forbidden();
+    if (!["hr", "admin", "ceo", "chairman", "accounts"].includes(sess.user.role) && !mine.length) throw forbidden();
     const today = ctx.today();
     let [from, to] = lastWeek(today);
     if (req.query.get("from")) from = req.query.get("from");
@@ -361,7 +365,7 @@ export function runWeeklyAttendance(ctx, today) {
   if (!db.prepare("SELECT 1 FROM att_uploads LIMIT 1").get()) return 0;
   const [from, to] = lastWeek(today);
   setSetting(db, "attendance_week_sent", today);
-  const to_ = db.prepare("SELECT id FROM users WHERE role IN ('hr','ceo') AND active=1").all().map((u) => u.id);
+  const to_ = db.prepare("SELECT id FROM users WHERE role IN ('hr','ceo','chairman') AND active=1").all().map((u) => u.id);
   const dmy = (iso) => iso.split("-").reverse().join("/");
   notify(ctx, to_, { title_ar: "تقرير الحضور الأسبوعي جاهز", title_en: "The weekly attendance report is ready", body_ar: `${dmy(from)} – ${dmy(to)}`, body_en: `${dmy(from)} – ${dmy(to)}`, link: `#/attendance/report?from=${from}&to=${to}` });
   return to_.length;

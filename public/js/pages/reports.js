@@ -58,7 +58,7 @@ export async function render(el, _p, { me, can, query }) {
       h("label", { class: "row", style: { alignSelf: "end", minHeight: "44px" } }, onlyUsed, t("only_used")))),
     out);
   const voiceOut = h("div");
-  if (["hr", "ceo", "admin"].includes(me.user.role)) el.append(h("section", { class: "card", style: { marginTop: "16px" } }, h("h2", null, t("report_voice")), voiceOut));
+  if (["hr", "ceo", "chairman", "admin"].includes(me.user.role)) el.append(h("section", { class: "card", style: { marginTop: "16px" } }, h("h2", null, t("report_voice")), voiceOut));
   async function loadVoice() {
     if (!el.contains(voiceOut)) return;
     const r = await api.get(`/api/reports/voice?from=${from.value}&to=${to.value}`);
