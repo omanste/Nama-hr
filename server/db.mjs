@@ -139,6 +139,15 @@ const MIGRATIONS = [
   // 26: a "Management" department in the list (top management and the people around them); the CEO approves it
   `INSERT INTO departments(name_ar,name_en,active) SELECT 'الإدارة','Management',1
      WHERE NOT EXISTS (SELECT 1 FROM departments WHERE lower(name_en)='management' OR name_ar IN ('الإدارة','الادارة'));`,
+  // 27: the CEO, the Chairman and the consultant (whoever has those logins or is named in Settings) go into Management
+  (db) => {
+    const dept = db.prepare("SELECT id FROM departments WHERE lower(name_en)='management' OR name_ar='الإدارة' ORDER BY id LIMIT 1").get();
+    if (!dept) return;
+    const setting = (k) => { const r = db.prepare("SELECT value FROM settings WHERE key=?").get(k); try { return r ? JSON.parse(r.value) : null; } catch { return null; } };
+    const ids = [setting("managers_approver_employee_id"), setting("chairman_employee_id"),
+      ...db.prepare("SELECT employee_id FROM users WHERE role IN ('ceo','chairman','consultant') AND employee_id IS NOT NULL").all().map((u) => u.employee_id)].filter(Boolean);
+    for (const id of new Set(ids.map(Number))) db.prepare("UPDATE employees SET department_id=? WHERE id=?").run(dept.id, id);
+  },
 ];
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */

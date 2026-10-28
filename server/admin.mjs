@@ -13,6 +13,20 @@ export const DEFAULT_CONTRACT_TYPES = ["Unlimited", "Limited", "Probation", "Par
 /** Leave that needs the CEO's final approval after the manager's (exceptions to the normal policy). */
 export const DEFAULT_CEO_FINAL = ["unpaid"];
 const FINAL_OK = ["annual", "emergency", "sick", "bereavement", "marriage", "paternity", "maternity", "hajj", "exam", "patient_care", "childcare", "unpaid", "comp_day"];
+/** Top management and the consultant sit in the Management department: the CEO and the Chairman named in Settings, and
+ * anyone with the CEO, Chairman or Consultant login. Returns the people moved (for the audit log). */
+export function placeInManagement(db) {
+  const dept = db.prepare("SELECT id FROM departments WHERE lower(name_en)='management' OR name_ar='الإدارة' ORDER BY id LIMIT 1").get();
+  if (!dept) return [];
+  const ids = new Set([getSetting(db, "managers_approver_employee_id", null), getSetting(db, "chairman_employee_id", null),
+    ...db.prepare("SELECT employee_id FROM users WHERE role IN ('ceo','chairman','consultant') AND employee_id IS NOT NULL").all().map((u) => u.employee_id)].filter(Boolean).map(Number));
+  const moved = [];
+  for (const id of ids) {
+    const e = db.prepare("SELECT id, department_id FROM employees WHERE id=?").get(id);
+    if (e && e.department_id !== dept.id) { db.prepare("UPDATE employees SET department_id=?, updated_at=? WHERE id=?").run(dept.id, new Date().toISOString(), id); moved.push({ id, from: e.department_id, to: dept.id }); }
+  }
+  return moved;
+}
 /** "CEO Office" and "Chairman's Office": departments for the people who report to them directly, approved by them. */
 function ensureOffices(db) {
   // the Management department: approved by the CEO (unless someone else was chosen for it)
@@ -141,6 +155,8 @@ export function registerAdmin(api, ctx) {
     tx(db, () => {
       for (const k of Object.keys(b)) setSetting(db, k, ["managers_approver_employee_id", "chairman_employee_id"].includes(k) && b[k] !== null ? Number(b[k]) : k === "contract_types" ? b[k].map((x) => x.trim()) : b[k]);
       ensureOffices(db);
+      const moved = placeInManagement(db);
+      if (moved.length) audit(db, req.sess.user.id, "employee.to_management", "employee", null, null, moved);
       audit(db, req.sess.user.id, "settings.update", "settings", null, before, readSettings(db));
     });
     rerouteFallbacks(ctx);
@@ -171,6 +187,7 @@ export function registerAdmin(api, ctx) {
     tx(db, () => {
       if ("role" in b) db.prepare("UPDATE users SET role=? WHERE id=?").run(b.role, cur.id);
       if ("active" in b) { db.prepare("UPDATE users SET active=? WHERE id=?").run(b.active ? 1 : 0, cur.id); if (!b.active) db.prepare("DELETE FROM sessions WHERE user_id=?").run(cur.id); }
+      if (["ceo", "chairman", "consultant"].includes(b.role)) { const moved = placeInManagement(db); if (moved.length) audit(db, req.sess.user.id, "employee.to_management", "employee", null, null, moved); }
       audit(db, req.sess.user.id, "user.update", "user", cur.id, cur, db.prepare("SELECT id,username,role,active,employee_id FROM users WHERE id=?").get(cur.id));
     });
     rerouteFallbacks(ctx);

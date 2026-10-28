@@ -129,3 +129,14 @@ test("a Management department is in the list, approved by the CEO", async () => 
   const m = (await admin.get("/api/departments")).data.items.filter((d) => d.name_en === "Management");
   assert.equal(m.length, 1); assert.equal(m[0].name_ar, "الإدارة"); assert.equal(m[0].approver_employee_id, ceo.emp.id);
 });
+
+test("the CEO, the Chairman and the consultant are placed in Management; reporting lines stay the same", async () => {
+  const m = (await admin.get("/api/departments")).data.items.find((d) => d.name_en === "Management");
+  for (const p of [ceo, chair]) assert.equal((await admin.get(`/api/employees/${p.emp.id}`)).data.employee.department_id, m.id);
+  const c2 = await makePerson(t.base, admin, { emp_no: "CON2", name_ar: "مستشار ثان", join_date: "2026-10-01", department_id: dept.id, contract_end: "2099-01-01" }, "staff");
+  await admin.put(`/api/users/${c2.user.id}`, { role: "consultant" });
+  assert.equal((await admin.get(`/api/employees/${c2.emp.id}`)).data.employee.department_id, m.id);
+  // the consultant's leave goes to the CEO (Management's approver); the CEO's still to the Chairman
+  assert.equal((await c2.c.post("/api/requests", { type: "sick", start: "2027-03-01", end: "2027-03-01" })).data.request.approver_user_id, ceo.user.id);
+  assert.equal((await ceo.c.post("/api/requests", { type: "annual", start: "2027-03-07", end: "2027-03-07", deputy_user_id: hr.user.id })).data.request.approver_user_id, chair.user.id);
+});
