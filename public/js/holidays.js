@@ -1,5 +1,5 @@
 // Official holidays editor: add a day or a range (e.g. Eid), see them in a table and on a year calendar.
-import { t, getLang } from "./i18n.js";
+import { t, getLang, tx } from "./i18n.js";
 import { h, field, dmy, todayIso, num } from "./ui.js";
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -36,12 +36,12 @@ export function holidayEditor(initial) {
     const rows = list.filter((x) => x.date.startsWith(String(year)));
     if (!rows.length) return h("div", { class: "empty" }, t("holidays_none_year", { y: year }));
     const today = todayIso();
-    return h("div", { class: "table-wrap" }, h("table", null,
+    return h("div", { class: "table-wrap hol-table" }, h("table", null,
       h("thead", null, h("tr", null, [t("date"), t("weekday"), t("holiday_name"), t("hol_status"), ""].map((x) => h("th", null, x)))),
       h("tbody", null, rows.map((x) => {
         const diff = Math.round((Date.parse(x.date) - Date.parse(today)) / 864e5);
         return h("tr", { class: diff < 0 ? "muted" : null },
-          h("td", { class: "num" }, dmy(x.date)), h("td", null, weekday(x.date)), h("td", { dir: "auto" }, x.name || "—"),
+          h("td", { class: "num" }, dmy(x.date)), h("td", null, weekday(x.date)), h("td", { dir: "auto", class: "hol-name" }, tx(x.name) || "—"),
           h("td", null, diff < 0 ? t("holiday_past") : diff === 0 ? h("span", { class: "badge b-approved" }, t("today")) : h("span", { class: "badge b-pending" }, t("in_days", { n: num(diff) }))),
           h("td", null, h("button", { class: "btn small danger", type: "button", onclick: () => remove(x.date) }, t("delete"))));
       }))));
@@ -59,7 +59,7 @@ export function holidayEditor(initial) {
         h("div", { class: "mgrid" }, wk.map((w) => h("span", { class: "wk" }, w)),
           cells.map((d) => d === null ? h("span") : h("span", {
             class: ["d", names.has(d) ? "hol" : "", isWeekend(d) ? "we" : "", d === today ? "today" : ""].filter(Boolean).join(" "),
-            title: names.has(d) ? `${dmy(d)} · ${names.get(d) || t("holiday")}` : dmy(d),
+            title: names.has(d) ? `${dmy(d)} · ${tx(names.get(d)) || t("holiday")}` : dmy(d),
           }, String(Number(d.slice(8)))))));
     }));
   }
