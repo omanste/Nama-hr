@@ -74,7 +74,7 @@ async function readDialog(e, r, docType, canEditAll) {
   const expCol = { civil_id: "civil_id_expiry", passport: "passport_expiry", visa: "visa_expiry" }[docType] || null;
   const FIELDS = [["civil_id", "f_civil_id", "civil_id"], ["passport_no", "f_passport_no", docType === "passport" ? "passport_no" : null],
     ["expiry", expCol ? "f_" + expCol : "doc_expiry", expCol],
-    ["dob", "f_dob", "dob"], ["gender", "f_gender", "gender"], ["nationality", "f_nationality", "nationality"], ["name_en", "f_name_en", "name_en"]];
+    ["dob", "f_dob", "dob"], ["gender", "f_gender", "gender"], ["nationality", "f_nationality", "nationality"], ["name_en", "f_name_en", "name_en"], ["name_ar", "f_name_ar", "name_ar"]];
   // the server already put what it read (check-digit verified, or into empty fields) on the profile; only a value read from
   // the printed side that differs from what's there is left to confirm
   const ask = FIELDS.filter(([k, , col]) => found[k] !== undefined && col)

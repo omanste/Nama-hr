@@ -9,31 +9,33 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const require = createRequire(import.meta.url);
-let workerP = null;
+const workers = {}; // one per language: "eng" (labels, "<<<" lines) and "ara" (the Arabic name on the front)
 let queue = Promise.resolve();
 
-function worker() {
-  if (!workerP) {
+function worker(lang = "eng") {
+  if (!workers[lang]) {
     const { createWorker } = require("tesseract.js");
-    const langPath = path.join(path.dirname(require.resolve("@tesseract.js-data/eng/package.json")), "4.0.0_best_int");
-    workerP = createWorker("eng", 1, { langPath, cachePath: path.join(process.env.DATA_DIR || os.tmpdir(), ".ocr"), gzip: true, logger: () => {}, errorHandler: (e) => console.error(`ID reader: ${e}`) })
-      .catch((e) => { workerP = null; throw e; });
+    const langPath = path.join(path.dirname(require.resolve(`@tesseract.js-data/${lang}/package.json`)), "4.0.0_best_int");
+    workers[lang] = createWorker(lang, 1, { langPath, cachePath: path.join(process.env.DATA_DIR || os.tmpdir(), ".ocr"), gzip: true, logger: () => {}, errorHandler: (e) => console.error(`ID reader: ${e}`) })
+      .catch((e) => { delete workers[lang]; throw e; });
   }
-  return workerP;
+  return workers[lang];
 }
 
 const MRZ_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<";
 /** OCR text of an image (jpeg/png/webp); mrz=true reads only the "<<<" alphabet. One image at a time, so a busy day can't exhaust the server. */
-export function ocr(buffer, { mrz = false } = {}) {
+export function ocr(buffer, { mrz = false, lang = "eng" } = {}) {
   const job = queue.then(async () => {
-    const w = await worker();
+    const w = await worker(lang);
     await w.setParameters(mrz ? { tessedit_char_whitelist: MRZ_CHARS, tessedit_pageseg_mode: "6", debug_file: "/dev/null" } : { tessedit_char_whitelist: "", tessedit_pageseg_mode: "3", debug_file: "/dev/null" });
     return (await w.recognize(buffer, { rotateAuto: true })).data.text || "";
   });
   queue = job.catch(() => {});
   return job;
 }
-export async function stopOcr() { if (workerP) { const w = await workerP.catch(() => null); workerP = null; if (w) await w.terminate(); } }
+export async function stopOcr() {
+  for (const lang of Object.keys(workers)) { const w = await workers[lang].catch(() => null); delete workers[lang]; if (w) await w.terminate(); }
+}
 
 // ---------- machine-readable zone (ICAO 9303) ----------
 const VAL = (c) => (c === "<" ? 0 : /\d/.test(c) ? Number(c) : c.charCodeAt(0) - 55);
@@ -94,7 +96,11 @@ export function parseMrz(text) {
     out.gender = { M: "male", F: "female" }[l2[7]];
     const exp = fixDigits(l2.slice(8, 14)); if (check(exp) === fixDigits(l2[14])) out.expiry = yymmdd(exp, true);
     out.nationality = COUNTRY3[letters(l2.slice(15, 18))] || undefined;
-    if (l3.replace(/</g, "")) { const [sur, given = ""] = l3.split("<<"); out.name_en = words(`${given}<${sur}`); }
+    // the name: Omani cards write it in its usual order (given names, then the family name); others put the surname first
+    if (l3.replace(/</g, "")) {
+      if (letters(l1.slice(2, 5)) === "OMN") out.name_en = words(l3);
+      else { const [sur, given = ""] = l3.split("<<"); out.name_en = words(`${given}<${sur}`); }
+    }
   }
   return clean(out);
 }
@@ -118,16 +124,35 @@ export function parseFront(text) {
   return clean(out);
 }
 
+// ---------- the Arabic name printed on the front ----------
+const AR_WORD = /^[\u0621-\u064A]{2,}$/;
+const NOT_NAME = /سلطنة|عمان|البطاقة|الشخصية|المدنية|شرطة|السلطانية|المديرية|جواز|السفر|الجنسية|تاريخ|الرقم|رقم|الميلاد|الانتهاء|الإصدار|الجنس|ذكر|أنثى/;
+/** The Arabic name after the "الاسم" label (same line, else the next): 2–7 Arabic words, nothing else — or undefined. */
+export function parseArabicName(text) {
+  const lines = String(text || "").split(/\r?\n/).map((l) => l.replace(/[\u064B-\u0652\u0640]/g, "").trim()); // drop vowel marks and tatweel
+  for (let i = 0; i < lines.length; i++) {
+    const m = /(?:^|\s)ال[اإأ]سم\s*[:：.\-]?\s*(.*)$/.exec(lines[i]);
+    if (!m) continue;
+    for (const cand of [m[1], lines[i + 1] || ""]) {
+      const ws = cand.replace(/[^\u0621-\u064A\s]/g, " ").split(/\s+/).filter(Boolean);
+      if (ws.length >= 2 && ws.length <= 7 && ws.every((w) => AR_WORD.test(w)) && !ws.some((w) => NOT_NAME.test(w))) return ws.join(" ");
+    }
+  }
+  return undefined;
+}
+
 function clean(o) { for (const k of Object.keys(o)) if (o[k] === undefined || o[k] === null || o[k] === "") delete o[k]; return o; }
 const ok = (d) => !d || /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d));
 
-/** Read a photo; returns {found:{…}, text} — found keys: civil_id, dob, gender, nationality, name_en, expiry, passport_no, kind, verified[]. */
-export async function readDocument(buffer) {
+/** Read a photo; returns {found:{…}, text} — found keys: civil_id, dob, gender, nationality, name_en, name_ar, expiry, passport_no, kind, verified[].
+ * arabic=true also reads the Arabic text for the name (an ID card or passport; a second, slower pass). */
+export async function readDocument(buffer, { arabic = false } = {}) {
   const text = await ocr(buffer);
   let mrz = parseMrz(text);
   // no usable "<<<" lines on the first pass: read again with only the letters those lines use
   if (!mrz.dob && !mrz.expiry) { const t2 = await ocr(buffer, { mrz: true }); const m2 = parseMrz(t2); if (Object.keys(m2).length > Object.keys(mrz).length) mrz = m2; }
   const front = parseFront(text);
+  if (arabic) { try { const ar = parseArabicName(await ocr(buffer, { lang: "ara" })); if (ar) front.name_ar = ar; } catch (e) { console.error(`ID reader (Arabic): ${e.message}`); } }
   const found = { ...front, ...mrz }; // MRZ wins: it is check-digit verified
   // which values the card's own check digits confirm (the rest need a closer look)
   found.verified = Object.keys(mrz).filter((k) => k !== "kind");
@@ -138,7 +163,7 @@ export async function readDocument(buffer) {
 const run = promisify(execFile);
 /** Read a PDF scan (poppler's pdftotext / pdftoppm, when installed): first its text layer — phone scans usually carry one,
  * with the "<<<" lines — then, if that gave no dates, its first pages as pictures. Returns like readDocument, or null. */
-export async function readPdf(buffer, readImage = readDocument) {
+export async function readPdf(buffer, readImage = readDocument, opts = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nama-pdf-"));
   try {
     const file = path.join(dir, "doc.pdf");
@@ -147,6 +172,7 @@ export async function readPdf(buffer, readImage = readDocument) {
     try { text = (await run("pdftotext", ["-f", "1", "-l", "3", file, "-"], { timeout: 20000, maxBuffer: 4 << 20 })).stdout; }
     catch (e) { if (e.code === "ENOENT") return null; } // no poppler on this server: nothing to read with
     const mrz = parseMrz(text), front = parseFront(text);
+    const ar = parseArabicName(text); if (ar) front.name_ar = ar;
     if (mrz.expiry || mrz.dob || front.expiry) {
       const found = { ...front, ...mrz };
       found.verified = Object.keys(mrz).filter((k) => k !== "kind");
@@ -154,12 +180,14 @@ export async function readPdf(buffer, readImage = readDocument) {
     }
     // a scan without a text layer: read its pages as pictures
     try { await run("pdftoppm", ["-png", "-r", "200", "-f", "1", "-l", "2", file, path.join(dir, "p")], { timeout: 60000 }); } catch { return { found: {}, text }; }
-    let best = { found: {}, text };
+    let best = { found: {}, text }, nameAr;
     for (const img of fs.readdirSync(dir).filter((f) => f.endsWith(".png")).sort()) {
-      const r = await readImage(fs.readFileSync(path.join(dir, img)));
+      const r = await readImage(fs.readFileSync(path.join(dir, img)), opts);
+      nameAr ||= r.found.name_ar; // the front (Arabic name) and the back ("<<<" lines) may be different pages
       if (Object.keys(r.found).length > Object.keys(best.found).length) best = r;
-      if (r.found.expiry) break;
+      if (r.found.expiry && (nameAr || !opts.arabic)) break;
     }
+    if (nameAr && !best.found.name_ar) best = { ...best, found: { ...best.found, name_ar: nameAr } };
     return best;
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }

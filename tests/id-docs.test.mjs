@@ -1,14 +1,17 @@
-// ID photo reading and document expiry alerts. tests/fixtures/fake-id-back.jpg is a made-up card (no real person).
+// ID photo reading and document expiry alerts. tests/fixtures/fake-id.jpg is a made-up card (no real person) — make-id-card.mjs builds it.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { boot, adminClient, makePerson } from "./helpers.mjs";
-import { parseMrz, parseFront } from "../server/idread.mjs";
+import { parseMrz, parseFront, parseArabicName } from "../server/idread.mjs";
 import { runExpiryCheck } from "../server/jobs.mjs";
 
 test("reader: check-digit verified ID lines and printed front labels", () => {
-  const m = parseMrz("IDOMNA12345678498765432<<<<<<<\n9004034M2805128OMN<<<<<<<<<<<4\nALTEST<<SAMPLE<PERSON<<<<<<<<<");
+  // Omani cards write the name in its usual order: given names, then the family name
+  const m = parseMrz("IDOMNA12345678498765432<<<<<<<\n9004034M2805128OMN<<<<<<<<<<<4\nSAMPLE<PERSON<<ALTEST<<<<<<<<<");
   assert.deepEqual({ ...m }, { kind: "id", card_no: "A12345678", civil_id: "98765432", dob: "1990-04-03", gender: "male", expiry: "2028-05-12", nationality: "OM", name_en: "Sample Person Altest" });
+  // other countries' cards put the surname first (ICAO): turned round to given names first
+  assert.equal(parseMrz("IDARE123456789<<<<<<<<<<<<<<<<\n9004034M2805128ARE<<<<<<<<<<<4\nALTEST<<SAMPLE<PERSON<<<<<<<<<").name_en, "Sample Person Altest");
   // a wrong check digit drops that value instead of guessing
   assert.equal(parseMrz("IDOMNA12345678498765432<<<<<<<\n9004035M2805128OMN<<<<<<<<<<<4\nX<<Y<<<<").dob, undefined);
   const f = parseFront("SULTANATE OF OMAN\nCivil Number: 98765432\nDate of Birth: 03/04/1990\nExpiry Date: 12/05/2028\nSex: F");
@@ -16,9 +19,18 @@ test("reader: check-digit verified ID lines and printed front labels", () => {
 });
 
 test("reader: an Omani ID whose civil number is the document number (optional field empty)", () => {
-  const m = parseMrz("IDOMN12345678<8<<<<<<<<<<<<<<<\n9004034M2805128OMN<<<<<<<<<<<4\nALTEST<<SAMPLE<PERSON<<<<<<<<<");
+  const m = parseMrz("IDOMN12345678<8<<<<<<<<<<<<<<<\n9004034M2805128OMN<<<<<<<<<<<4\nSAMPLE<PERSON<<ALTEST<<<<<<<<<");
   assert.equal(m.civil_id, "12345678"); assert.equal(m.expiry, "2028-05-12");
   assert.equal(parseMrz("IDOMN12345678<5<<<<<<<<<<<<<<<\n9004034M2805128OMN<<<<<<<<<<<4\nX<<Y").civil_id, undefined, "wrong check digit");
+});
+
+test("reader: the Arabic name after \"الاسم\" — a clean 2–7-word name, or nothing", () => {
+  assert.equal(parseArabicName("سلطنة عمان\nالبطاقة الشخصية\nالاسم: عينة شخص الاختبار\nName: SAMPLE"), "عينة شخص الاختبار");
+  assert.equal(parseArabicName("الاسم\nعينة شخص الاختبار"), "عينة شخص الاختبار", "on the next line");
+  assert.equal(parseArabicName("الاسم: عَينة شخص الاختبار"), "عينة شخص الاختبار", "vowel marks dropped");
+  assert.equal(parseArabicName("الاسم: عينة"), undefined, "one word isn't a full name");
+  assert.equal(parseArabicName("الاسم: تاريخ الميلاد"), undefined, "a label, not a name");
+  assert.equal(parseArabicName("عينة شخص الاختبار"), undefined, "no label: not guessed");
 });
 
 test("reader: an Omani passport's personal-number field gives the civil ID (check digit verified)", () => {
@@ -45,17 +57,18 @@ after(async () => { await t.close(); });
 
 test("uploading an ID fills the personal details at once — replacing what was typed, the English name too; HR sees it to verify", async () => {
   // details typed by hand before the card was uploaded
-  await admin.put(`/api/employees/${staff.emp.id}`, { name_en: "Typed Name", dob: "1985-01-01", gender: "female" });
-  const jpg = fs.readFileSync(new URL("./fixtures/fake-id-back.jpg", import.meta.url));
+  await admin.put(`/api/employees/${staff.emp.id}`, { name_en: "Typed Name", name_ar: "اسم مكتوب", dob: "1985-01-01", gender: "female" });
+  const jpg = fs.readFileSync(new URL("./fixtures/fake-id.jpg", import.meta.url));
   const up = await staff.c.upload(`/api/employees/${staff.emp.id}/files?kind=doc&doc_type=civil_id&name=id-back.jpg`, jpg, "image/jpeg");
   assert.equal(up.status, 201);
   assert.equal(up.data.read.civil_id, "98765432");
   assert.ok(up.data.read.verified.includes("dob"));
   assert.equal(up.data.file.expiry, "2028-05-12"); // the copy keeps its expiry for alerts
-  assert.deepEqual([...up.data.applied].sort(), ["civil_id", "civil_id_expiry", "dob", "gender", "name_en", "nationality"]);
+  assert.deepEqual([...up.data.applied].sort(), ["civil_id", "civil_id_expiry", "dob", "gender", "name_ar", "name_en", "nationality"]);
   const e = (await staff.c.get(`/api/employees/${staff.emp.id}`)).data.employee;
   assert.equal(e.civil_id, "98765432"); assert.equal(e.civil_id_expiry, "2028-05-12"); assert.equal(e.dob, "1990-04-03");
   assert.equal(e.gender, "male"); assert.equal(e.nationality, "OM"); assert.equal(e.name_en, "Sample Person Altest");
+  assert.equal(e.name_ar, "عينة شخص الاختبار", "the Arabic name from the front of the card");
   // the name at the top and on the sign-in list follow the profile
   assert.equal((await staff.c.get("/api/me")).data.employee.name_en, "Sample Person Altest");
   // HR is shown what changed (old → new) and can undo it

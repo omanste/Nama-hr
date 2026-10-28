@@ -23,7 +23,7 @@ export const DOC_TYPES = ["civil_id", "passport", "visa", "resume", "certificate
 // what staff may upload to their own profile (a copy of their contract too); payout consents stay with HR. Only HR deletes.
 const READABLE = ["civil_id", "passport", "visa"];
 const pick = (e) => ({ civil_id: e.civil_id, civil_id_expiry: e.civil_id_expiry, passport_no: e.passport_no, passport_expiry: e.passport_expiry, visa_expiry: e.visa_expiry,
-  dob: e.dob, gender: e.gender, nationality: e.nationality, name_en: e.name_en });
+  dob: e.dob, gender: e.gender, nationality: e.nationality, name_en: e.name_en, name_ar: e.name_ar });
 export const SELF_DOC_TYPES = ["civil_id", "passport", "visa", "resume", "certificate", "course", "contract", "medical", "other"];
 
 /** Store an uploaded body; returns the files row. Caller checks permissions. */
@@ -69,7 +69,7 @@ export function registerFiles(api, ctx) {
   const { db } = ctx;
   const forbidden = () => new HttpError(403, "forbidden", "You do not have permission for this");
   // read value → profile column; the expiry goes to the matching date (civil ID, passport or visa)
-  const readMap = (docType) => ({ civil_id: "civil_id", passport_no: docType === "passport" ? "passport_no" : null, dob: "dob", gender: "gender", nationality: "nationality", name_en: "name_en",
+  const readMap = (docType) => ({ civil_id: "civil_id", passport_no: docType === "passport" ? "passport_no" : null, dob: "dob", gender: "gender", nationality: "nationality", name_en: "name_en", name_ar: "name_ar",
     expiry: { civil_id: "civil_id_expiry", passport: "passport_expiry", visa: "visa_expiry" }[docType] || null });
   /** Put values read from a document on the profile (a person's own changes are listed for HR to verify). Returns the columns changed. */
   function applyRead(sess, emp, f, found, keys) {
@@ -116,7 +116,8 @@ export function registerFiles(api, ctx) {
     if (kind === "doc" && READABLE.includes(file.doc_type) && (file.mime.startsWith("image/") || pdf) && ctx.env.OCR !== "off") {
       try {
         const body = fs.readFileSync(path.join(ctx.dataDir, "uploads", String(file.id)));
-        const r = pdf ? await readPdf(body, ctx.readDocument || readDocument) : await (ctx.readDocument || readDocument)(body);
+        const opts = { arabic: ["civil_id", "passport"].includes(file.doc_type) }; // the Arabic name is printed on IDs and passports
+        const r = pdf ? await readPdf(body, ctx.readDocument || readDocument, opts) : await (ctx.readDocument || readDocument)(body, opts);
         read = r && Object.keys(r.found).some((k) => k !== "verified" && k !== "kind") ? r.found : null;
         if (read) {
           db.prepare("UPDATE files SET extracted=? WHERE id=?").run(JSON.stringify(read), file.id);
@@ -126,7 +127,8 @@ export function registerFiles(api, ctx) {
     }
     if (read) {
       const verified = new Set(read.verified || []), map = readMap(file.doc_type);
-      const keys = Object.keys(map).filter((k) => read[k] !== undefined && (verified.has(k) || [null, undefined, ""].includes(emp[map[k]])));
+      // the Arabic name has no check digits, but the reader only returns a clean 2–7-word name, so it replaces the old one too
+      const keys = Object.keys(map).filter((k) => read[k] !== undefined && (verified.has(k) || k === "name_ar" || [null, undefined, ""].includes(emp[map[k]])));
       try { applied = applyRead(req.sess, emp, file, read, keys); } catch (e) { console.error(`applying document ${file.id} failed: ${e.message}`); }
     }
     try { runExpiryCheck(ctx, ctx.today()); } catch (e) { console.error(e); }
