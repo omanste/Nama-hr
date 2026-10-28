@@ -73,6 +73,11 @@ export function parseMrz(text) {
     const dob = fixDigits(l2.slice(13, 19)); if (check(dob) === fixDigits(l2[19])) out.dob = yymmdd(dob, false);
     out.gender = { M: "male", F: "female" }[l2[20]];
     const exp = fixDigits(l2.slice(21, 27)); if (check(exp) === fixDigits(l2[27])) out.expiry = yymmdd(exp, true);
+    // Omani passports carry the civil number in the personal-number field (with its own check digit)
+    if (out.kind === "passport") {
+      const pn = fixDigits(l2.slice(28, 42));
+      if (/^\d{7,9}<*$/.test(pn) && check(pn) === fixDigits(l2[42])) out.civil_id = pn.replace(/</g, "");
+    }
     if (out.kind === "visa") { if (out.passport_no) out.visa_no = out.passport_no; delete out.passport_no; } // a visa's number isn't the passport's
     return clean(out);
   }

@@ -15,6 +15,12 @@ test("reader: check-digit verified ID lines and printed front labels", () => {
   assert.equal(f.civil_id, "98765432"); assert.equal(f.dob, "1990-04-03"); assert.equal(f.expiry, "2028-05-12"); assert.equal(f.gender, "female");
 });
 
+test("reader: an Omani passport's personal-number field gives the civil ID (check digit verified)", () => {
+  const p = parseMrz("P<OMNTEST<<SAMPLE<PERSON<<<<<<<<<<<<<<<<<<<<\nT1234567<9OMN9004034F310130098765432<<<<<<20");
+  assert.equal(p.kind, "passport"); assert.equal(p.passport_no, "T1234567"); assert.equal(p.civil_id, "98765432"); assert.equal(p.expiry, "2031-01-30");
+  assert.equal(parseMrz("P<OMNTEST<<SAMPLE<PERSON<<<<<<<<<<<<<<<<<<<<\nT1234567<9OMN9004034F310130098765433<<<<<<20").civil_id, undefined, "wrong check digit");
+});
+
 test("reader: a visa's machine-readable lines (expiry, check digits) and printed \"valid until\"", () => {
   const v = parseMrz("VOOMNTEST<<SAMPLE<PERSON<<<<<<<<<<<<<<<<<<<<\nV123456781IND9004034M2709156<<<<<<<<<<<<<<<<");
   assert.equal(v.kind, "visa"); assert.equal(v.expiry, "2027-09-15"); assert.equal(v.visa_no, "V12345678"); assert.equal(v.passport_no, undefined);
@@ -97,6 +103,7 @@ test("a passport PDF (phone scan with a text layer) is read: number and expiry g
   assert.equal(up.status, 201);
   if (!up.data.read) return; // this machine has no pdftotext (the server image installs it)
   assert.equal(up.data.read.passport_no, "T1234567"); assert.equal(up.data.read.expiry, "2031-01-30");
+  assert.equal(up.data.read.civil_id, "98765432", "the civil number from the passport");
   assert.equal(up.data.file.expiry, "2031-01-30");
   assert.equal((await staff.c.post(`/api/files/${up.data.file.id}/apply`, { fields: ["passport_no", "expiry"] })).status, 200);
   const e = (await staff.c.get(`/api/employees/${staff.emp.id}`)).data.employee;

@@ -48,8 +48,9 @@ function expiryDialog(f, missing = false) {
   });
 }
 
-/** What the reader found on the card, next to what the profile has now; the person ticks what to update. */
-function readDialog(e, r, docType, canEditAll) {
+/** What the reader found on the new document. Empty profile fields are filled at once with values the document's own check
+ * digits confirm; a value that would replace something different (or wasn't confirmed) is asked about — old → new, ticked. */
+async function readDialog(e, r, docType, canEditAll) {
   const found = r.read || {}, cur = r.current || {}, verified = new Set(found.verified || []);
   const show = (k, v) => (v === null || v === undefined || v === "" ? "—" : k === "dob" || k === "expiry" ? dmy(v) : k === "gender" ? t("g_" + v) : k === "nationality" ? countryName(v, getLang()) : String(v));
   // the expiry goes to the matching profile date (civil ID, passport or visa)
@@ -57,17 +58,23 @@ function readDialog(e, r, docType, canEditAll) {
   const FIELDS = [["civil_id", "f_civil_id", "civil_id"], ["passport_no", "f_passport_no", docType === "passport" ? "passport_no" : null],
     ["expiry", expCol ? "f_" + expCol : "doc_expiry", expCol],
     ["dob", "f_dob", "dob"], ["gender", "f_gender", "gender"], ["nationality", "f_nationality", "nationality"], ["name_en", "f_name_en", "name_en"]];
-  const rows = FIELDS.filter(([k]) => found[k] !== undefined).map(([k, label, col]) => {
-    const now = col ? cur[col] : found[k];
-    const same = col && String(now ?? "") === String(found[k]);
-    const locked = !col || (k === "name_en" && !canEditAll && cur.name_en); // passport expiry is saved on the copy itself
-    const box = h("input", { type: "checkbox", name: k, checked: !same && !locked, disabled: same || locked });
-    return { k, box, row: h("label", { class: "read-row" }, box,
-      h("div", { class: "grow" }, h("div", { class: "sub" }, t(label)),
-        h("div", null, h("b", { dir: "auto" }, show(k, found[k])), verified.has(k) ? h("span", { class: "badge b-approved", style: { marginInlineStart: "8px" } }, "✓ ", t("read_verified")) : h("span", { class: "badge b-pending", style: { marginInlineStart: "8px" } }, t("read_check"))),
-        col ? h("div", { class: "sub" }, t("read_now"), ": ", show(k, now), same ? ` · ${t("read_same")}` : "") : h("div", { class: "sub" }, t("read_saved_on_copy")))) };
+  const usable = FIELDS.filter(([k, , col]) => found[k] !== undefined && col && !(k === "name_en" && !canEditAll && cur.name_en)) // staff don't rename themselves
+    .map(([k, label, col]) => ({ k, label, col, now: cur[col], same: String(cur[col] ?? "") === String(found[k]) }))
+    .filter((x) => !x.same);
+  const fill = usable.filter((x) => (x.now === null || x.now === undefined || x.now === "") && verified.has(x.k));
+  const ask = usable.filter((x) => !fill.includes(x));
+  const filled = [];
+  if (fill.length) {
+    try { await api.post(`/api/files/${r.file.id}/apply`, { fields: fill.map((x) => x.k) }); filled.push(...fill); } catch (er) { toast(errText(er), "bad"); }
+  }
+  if (!ask.length) { toast(filled.length ? t("read_filled", { n: filled.length }) : t("read_nothing_new")); return; }
+  const rows = ask.map((x) => {
+    const box = h("input", { type: "checkbox", name: x.k, checked: true });
+    return { k: x.k, box, row: h("label", { class: "read-row" }, box,
+      h("div", { class: "grow" }, h("div", { class: "sub" }, t(x.label)),
+        h("div", null, x.now ? h("span", { class: "pc-old-inline" }, show(x.k, x.now)) : null, x.now ? (getLang() === "ar" ? " ← " : " → ") : null, h("b", { dir: "auto" }, show(x.k, found[x.k])),
+          verified.has(x.k) ? h("span", { class: "badge b-approved", style: { marginInlineStart: "8px" } }, "✓ ", t("read_verified")) : h("span", { class: "badge b-pending", style: { marginInlineStart: "8px" } }, t("read_check"))))) };
   });
-  if (!rows.length) { toast(t("read_nothing")); return Promise.resolve(); }
   return new Promise((resolve) => {
     const err = h("div", { class: "form-error" });
     const dlg = h("dialog", { class: "dialog" }, h("form", { class: "form", onsubmit: async (ev) => {
@@ -76,9 +83,11 @@ function readDialog(e, r, docType, canEditAll) {
       if (!fields.length) { dlg.close(); return; }
       try { await api.post(`/api/files/${r.file.id}/apply`, { fields }); toast(t("saved")); dlg.close(); } catch (er) { err.textContent = errText(er); }
     } },
-      h("h2", null, t("read_title")), h("p", { class: "sub" }, t("read_intro")),
+      h("h2", null, t("read_update_title")),
+      filled.length ? h("div", { class: "note" }, t("read_filled", { n: filled.length })) : null,
+      h("p", { class: "sub" }, t("read_update_intro")),
       h("div", { class: "list" }, rows.map((x) => x.row)), err,
-      h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("read_skip")), h("button", { class: "btn primary", type: "submit" }, t("read_apply")))));
+      h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("read_keep")), h("button", { class: "btn primary", type: "submit" }, t("read_apply")))));
     dlg.addEventListener("close", () => { dlg.remove(); resolve(); });
     document.body.append(dlg); dlg.showModal();
   });

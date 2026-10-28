@@ -388,3 +388,4 @@ dialog.dialog.viewer[open]{display:grid}
 .viewer-body iframe{width:100%;height:calc(100dvh - 230px);border:0;background:#fff}
 .viewer-pager{justify-content:center;gap:10px}
 .viewer-pager:empty{display:none}
+.pc-old-inline{color:var(--muted);text-decoration:line-through}
