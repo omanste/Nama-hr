@@ -16,7 +16,7 @@ async function uploadDoc(e, f, docType, expiry, canEditAll) {
   if (!f) return;
   const qs = new URLSearchParams({ kind: "doc", doc_type: docType, name: f.name || `${docType}.jpg` });
   if (expiry) qs.set("expiry", expiry);
-  const reading = EXPIRING.includes(docType) && /^image\//.test(f.type);
+  const reading = EXPIRING.includes(docType) && (/^image\//.test(f.type) || f.type === "application/pdf");
   if (reading) toast(t("reading_card"));
   try {
     const r = await api.upload(`/api/employees/${e.id}/files?${qs}`, f);
@@ -52,7 +52,10 @@ function expiryDialog(f, missing = false) {
 function readDialog(e, r, docType, canEditAll) {
   const found = r.read || {}, cur = r.current || {}, verified = new Set(found.verified || []);
   const show = (k, v) => (v === null || v === undefined || v === "" ? "—" : k === "dob" || k === "expiry" ? dmy(v) : k === "gender" ? t("g_" + v) : k === "nationality" ? countryName(v, getLang()) : String(v));
-  const FIELDS = [["civil_id", "f_civil_id", "civil_id"], ["expiry", docType === "civil_id" ? "f_civil_id_expiry" : "doc_expiry", docType === "civil_id" ? "civil_id_expiry" : null],
+  // the expiry goes to the matching profile date (civil ID, passport or visa)
+  const expCol = { civil_id: "civil_id_expiry", passport: "passport_expiry", visa: "visa_expiry" }[docType] || null;
+  const FIELDS = [["civil_id", "f_civil_id", "civil_id"], ["passport_no", "f_passport_no", docType === "passport" ? "passport_no" : null],
+    ["expiry", expCol ? "f_" + expCol : "doc_expiry", expCol],
     ["dob", "f_dob", "dob"], ["gender", "f_gender", "gender"], ["nationality", "f_nationality", "nationality"], ["name_en", "f_name_en", "name_en"]];
   const rows = FIELDS.filter(([k]) => found[k] !== undefined).map(([k, label, col]) => {
     const now = col ? cur[col] : found[k];
@@ -148,7 +151,9 @@ export async function render(el, params, { me, can, opts }) {
     h("div", { class: "grid cols2" },
       h("section", { class: "card" }, h("h2", null, t("sec_personal")), facts([
         ["f_name_ar", e.name_ar], ["f_name_en", e.name_en], ["f_emp_no", e.emp_no], ["f_gender", e.gender ? t("g_" + e.gender) : ""], ["f_nationality", countryName(e.nationality, getLang())], ["f_dob", dmy(e.dob)],
-        ["f_civil_id", e.civil_id], ["f_civil_id_expiry", e.civil_id_expiry ? h("span", null, dmy(e.civil_id_expiry), " ", expiryBadge(e.civil_id_expiry)) : null]]), civilIdCard(p, e, mayUpload, can)),
+        ["f_civil_id", e.civil_id], ["f_civil_id_expiry", e.civil_id_expiry ? h("span", null, dmy(e.civil_id_expiry), " ", expiryBadge(e.civil_id_expiry)) : null],
+        ["f_passport_no", e.passport_no && h("span", { dir: "ltr" }, e.passport_no)], ["f_passport_expiry", e.passport_expiry ? h("span", null, dmy(e.passport_expiry), " ", expiryBadge(e.passport_expiry)) : null],
+        ["f_visa_expiry", e.visa_expiry ? h("span", null, dmy(e.visa_expiry), " ", expiryBadge(e.visa_expiry)) : null]]), civilIdCard(p, e, mayUpload, can)),
       h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_contact")), badgeIfPending(p, "contact"),
           mayUpload ? h("button", { class: "btn small", type: "button", onclick: () => contactDialog(e) }, t("edit")) : null),
         facts([

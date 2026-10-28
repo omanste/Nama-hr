@@ -120,13 +120,15 @@ export function expiringItems(db, today, days = 30) {
   const byId = new Map(emps.map((e) => [e.id, e]));
   for (const e of emps) {
     if (e.civil_id_expiry && e.civil_id_expiry <= limit) out.push({ key: `civil:${e.id}`, employee: e, what: "civil_id", expiry: e.civil_id_expiry });
+    if (e.passport_expiry && e.passport_expiry <= limit) out.push({ key: `passport:${e.id}`, employee: e, what: "passport", expiry: e.passport_expiry });
+    if (e.visa_expiry && e.visa_expiry <= limit) out.push({ key: `visa:${e.id}`, employee: e, what: "visa", expiry: e.visa_expiry });
     if (e.contract_end && e.contract_end <= limit) out.push({ key: `contract_end:${e.id}`, employee: e, what: "contract", expiry: e.contract_end });
   }
   for (const f of db.prepare("SELECT * FROM files WHERE kind='doc' AND request_id IS NULL AND expiry IS NOT NULL AND expiry<=?").all(limit)) {
     const e = byId.get(f.employee_id);
     if (!e) continue;
     // the civil ID copy carries the same date as the profile field: one alert is enough
-    if (f.doc_type === "civil_id" && e.civil_id_expiry === f.expiry) continue;
+    if ((f.doc_type === "civil_id" && e.civil_id_expiry === f.expiry) || (f.doc_type === "passport" && e.passport_expiry === f.expiry) || (f.doc_type === "visa" && e.visa_expiry === f.expiry)) continue;
     // only the newest copy of each kind counts (an older passport stays on file after a renewal)
     const newer = db.prepare("SELECT 1 FROM files WHERE employee_id=? AND kind='doc' AND doc_type=? AND request_id IS NULL AND expiry>? LIMIT 1").get(e.id, f.doc_type, f.expiry);
     if (newer) continue;

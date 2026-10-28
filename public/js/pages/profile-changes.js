@@ -8,7 +8,7 @@ import { bankName, ibanText } from "../banks.js";
 import { wilayatName, areaName } from "../places.js";
 
 const SOURCE_KEYS = { contact: "sec_contact", qualifications: "sec_qualifications", bank: "sec_bank", id: "pc_src_id", photo: "pc_src_photo" };
-const DATES = ["dob", "civil_id_expiry"];
+const DATES = ["dob", "civil_id_expiry", "passport_expiry", "visa_expiry"];
 function show(k, v) {
   if (v === null || v === undefined || v === "") return h("span", { class: "muted" }, "—");
   if (k === "photo_file_id") return h("img", { src: `/api/files/${v}`, alt: "", class: "pc-photo" });

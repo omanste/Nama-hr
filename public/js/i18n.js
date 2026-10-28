@@ -330,6 +330,7 @@ const D = {
   expiry_missing: ["لم نتمكن من قراءة تاريخ الانتهاء. أدخله لتصلك تذكرة قبل انتهائه بـ30 يوماً.", "We couldn't read the expiry date. Enter it so you get a reminder 30 days before it expires."],
   expiry_hint: ["نذكّرك أنت والموارد البشرية قبل الانتهاء بـ30 يوماً و7 أيام.", "You and HR are reminded 30 days and 7 days before it expires."],
   expiry_add: ["إضافة تاريخ الانتهاء", "Add expiry date"], expiry_change: ["تعديل تاريخ الانتهاء", "Change expiry date"], later: ["لاحقاً", "Later"],
+  f_passport_no: ["رقم جواز السفر", "Passport number"], f_passport_expiry: ["انتهاء جواز السفر", "Passport expiry"], f_visa_expiry: ["انتهاء التأشيرة", "Visa expiry"],
   sec_address: ["العنوان", "Address"], emergency_person: ["الاسم", "Name"], sec_emergency: ["جهة الاتصال للطوارئ", "Emergency contact"],
   place_other: ["أخرى…", "Other…"], place_other_hint: ["اكتب المكان", "Type the place"],
   address_hint: ["مثال: سكة 1234، مبنى 56، شقة 7", "e.g. Way 1234, Building 56, Flat 7"],

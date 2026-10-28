@@ -8,7 +8,7 @@ import { audit } from "./audit.mjs";
 import { isIsoDate } from "./leave.mjs";
 import { getEmployee } from "./employees.mjs";
 import { deputyOf } from "./requests.mjs";
-import { readDocument } from "./idread.mjs";
+import { readDocument, readPdf } from "./idread.mjs";
 import { canReadVoice } from "./voice.mjs";
 import { runExpiryCheck } from "./jobs.mjs";
 import { recordSelfChange } from "./profile-changes.mjs";
@@ -20,7 +20,8 @@ const DOCS = [...IMAGES, "application/pdf"];
 export const DOC_TYPES = ["civil_id", "passport", "contract", "visa", "certificate", "medical", "consent", "other"];
 // what staff may upload to their own profile; contracts and payout consents stay with HR
 const READABLE = ["civil_id", "passport", "visa"];
-const pick = (e) => ({ civil_id: e.civil_id, civil_id_expiry: e.civil_id_expiry, dob: e.dob, gender: e.gender, nationality: e.nationality, name_en: e.name_en });
+const pick = (e) => ({ civil_id: e.civil_id, civil_id_expiry: e.civil_id_expiry, passport_no: e.passport_no, passport_expiry: e.passport_expiry, visa_expiry: e.visa_expiry,
+  dob: e.dob, gender: e.gender, nationality: e.nationality, name_en: e.name_en });
 export const SELF_DOC_TYPES = ["civil_id", "passport", "visa", "certificate", "medical", "other"];
 
 /** Store an uploaded body; returns the files row. Caller checks permissions. */
@@ -65,12 +66,16 @@ export function registerFiles(api, ctx) {
     });
     // ID card or passport photo: read it on our own server and offer the values (never applied without a person confirming)
     let read = null;
-    if (kind === "doc" && READABLE.includes(file.doc_type) && file.mime.startsWith("image/") && ctx.env.OCR !== "off") {
+    const pdf = file.mime === "application/pdf";
+    if (kind === "doc" && READABLE.includes(file.doc_type) && (file.mime.startsWith("image/") || pdf) && ctx.env.OCR !== "off") {
       try {
         const body = fs.readFileSync(path.join(ctx.dataDir, "uploads", String(file.id)));
-        read = (await (ctx.readDocument || readDocument)(body)).found;
-        db.prepare("UPDATE files SET extracted=? WHERE id=?").run(JSON.stringify(read), file.id);
-        if (read.expiry && !file.expiry) { db.prepare("UPDATE files SET expiry=? WHERE id=?").run(read.expiry, file.id); file.expiry = read.expiry; }
+        const r = pdf ? await readPdf(body, ctx.readDocument || readDocument) : await (ctx.readDocument || readDocument)(body);
+        read = r && Object.keys(r.found).some((k) => k !== "verified" && k !== "kind") ? r.found : null;
+        if (read) {
+          db.prepare("UPDATE files SET extracted=? WHERE id=?").run(JSON.stringify(read), file.id);
+          if (read.expiry && !file.expiry) { db.prepare("UPDATE files SET expiry=? WHERE id=?").run(read.expiry, file.id); file.expiry = read.expiry; }
+        }
       } catch (e) { console.error(`reading document ${file.id} failed: ${e.message}`); read = null; }
     }
     try { runExpiryCheck(ctx, ctx.today()); } catch (e) { console.error(e); }
@@ -86,7 +91,9 @@ export function registerFiles(api, ctx) {
     if (!emp || (!hr && emp.id !== req.sess.user.employee_id)) throw forbidden();
     const b = await readJson(req);
     const found = JSON.parse(f.extracted);
-    const map = { civil_id: "civil_id", dob: "dob", gender: "gender", nationality: "nationality", name_en: "name_en", expiry: f.doc_type === "civil_id" ? "civil_id_expiry" : null };
+    // the expiry goes to the matching profile date: civil ID, passport or visa
+    const map = { civil_id: "civil_id", passport_no: f.doc_type === "passport" ? "passport_no" : null, dob: "dob", gender: "gender", nationality: "nationality", name_en: "name_en",
+      expiry: { civil_id: "civil_id_expiry", passport: "passport_expiry", visa: "visa_expiry" }[f.doc_type] || null };
     const change = {};
     for (const k of Array.isArray(b.fields) ? b.fields : []) {
       const col = map[k];

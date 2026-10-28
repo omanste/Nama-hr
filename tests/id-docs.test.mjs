@@ -90,3 +90,15 @@ test("a document's expiry date can be set or corrected (own papers or HR), and t
   assert.ok((await staff.c.get("/api/notifications")).data.items.some((n) => /Visa|التأشيرة/.test(n.body_en + n.body_ar + n.title_en + n.title_ar)));
   assert.equal((await hr.c.put(`/api/files/${id}`, { expiry: "2028-01-01" })).status, 200);
 });
+
+test("a passport PDF (phone scan with a text layer) is read: number and expiry go to the profile after confirming", async () => {
+  const pdf = fs.readFileSync(new URL("./fixtures/fake-passport.pdf", import.meta.url)); // made up, no real person
+  const up = await staff.c.upload(`/api/employees/${staff.emp.id}/files?kind=doc&doc_type=passport&name=passport.pdf`, pdf, "application/pdf");
+  assert.equal(up.status, 201);
+  if (!up.data.read) return; // this machine has no pdftotext (the server image installs it)
+  assert.equal(up.data.read.passport_no, "T1234567"); assert.equal(up.data.read.expiry, "2031-01-30");
+  assert.equal(up.data.file.expiry, "2031-01-30");
+  assert.equal((await staff.c.post(`/api/files/${up.data.file.id}/apply`, { fields: ["passport_no", "expiry"] })).status, 200);
+  const e = (await staff.c.get(`/api/employees/${staff.emp.id}`)).data.employee;
+  assert.equal(e.passport_no, "T1234567"); assert.equal(e.passport_expiry, "2031-01-30");
+});

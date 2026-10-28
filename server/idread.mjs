@@ -3,7 +3,10 @@
  * and the printed English labels on the front of the Omani civil ID. Results are suggestions: a person confirms them. */
 import os from "node:os";
 import path from "node:path";
+import fs from "node:fs";
 import { createRequire } from "node:module";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 const require = createRequire(import.meta.url);
 let workerP = null;
@@ -123,4 +126,33 @@ export async function readDocument(buffer) {
   found.verified = Object.keys(mrz).filter((k) => k !== "kind");
   for (const k of ["dob", "expiry"]) if (!ok(found[k])) delete found[k];
   return { found, text };
+}
+
+const run = promisify(execFile);
+/** Read a PDF scan (poppler's pdftotext / pdftoppm, when installed): first its text layer — phone scans usually carry one,
+ * with the "<<<" lines — then, if that gave no dates, its first pages as pictures. Returns like readDocument, or null. */
+export async function readPdf(buffer, readImage = readDocument) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nama-pdf-"));
+  try {
+    const file = path.join(dir, "doc.pdf");
+    fs.writeFileSync(file, buffer);
+    let text = "";
+    try { text = (await run("pdftotext", ["-f", "1", "-l", "3", file, "-"], { timeout: 20000, maxBuffer: 4 << 20 })).stdout; }
+    catch (e) { if (e.code === "ENOENT") return null; } // no poppler on this server: nothing to read with
+    const mrz = parseMrz(text), front = parseFront(text);
+    if (mrz.expiry || mrz.dob || front.expiry) {
+      const found = { ...front, ...mrz };
+      found.verified = Object.keys(mrz).filter((k) => k !== "kind");
+      return { found, text };
+    }
+    // a scan without a text layer: read its pages as pictures
+    try { await run("pdftoppm", ["-png", "-r", "200", "-f", "1", "-l", "2", file, path.join(dir, "p")], { timeout: 60000 }); } catch { return { found: {}, text }; }
+    let best = { found: {}, text };
+    for (const img of fs.readdirSync(dir).filter((f) => f.endsWith(".png")).sort()) {
+      const r = await readImage(fs.readFileSync(path.join(dir, img)));
+      if (Object.keys(r.found).length > Object.keys(best.found).length) best = r;
+      if (r.found.expiry) break;
+    }
+    return best;
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }

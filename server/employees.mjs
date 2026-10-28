@@ -27,8 +27,8 @@ export function validIban(s) {
 }
 export const STATUSES = ["active", "on_leave", "resigned", "terminated", "disabled"];
 const GONE = ["resigned", "terminated", "disabled"]; // no access to the portal
-const TEXT = ["name_ar", "name_en", "civil_id", "nationality", "mobile", "address", "emergency_name", "emergency_relation", "emergency_phone", "job_title", "contract_type"];
-const DATES = ["civil_id_expiry", "dob", "join_date", "contract_end"];
+const TEXT = ["name_ar", "name_en", "civil_id", "passport_no", "nationality", "mobile", "address", "emergency_name", "emergency_relation", "emergency_phone", "job_title", "contract_type"];
+const DATES = ["civil_id_expiry", "passport_expiry", "visa_expiry", "dob", "join_date", "contract_end"];
 export const LONG = ["education", "specialization", "experience", "languages", "skills", "certifications", "main_tasks"];
 export const FIELDS = ["emp_no", ...TEXT, ...LONG, "email", ...DATES, "department_id", "manager_employee_id", "status", "gender", "shift", "shift_locked", "personal_email", "personal_phone", "perm_wilayat", "current_area", ...BANK];
 export const GENDERS = ["male", "female"];

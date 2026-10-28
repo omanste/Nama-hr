@@ -119,6 +119,8 @@ const MIGRATIONS = [
    CREATE INDEX pc_status ON profile_changes(status, employee_id);`,
   // 18: addresses — permanent (a wilayat of Oman) and current (an area of Muscat); "address" keeps the street details
   `ALTER TABLE employees ADD COLUMN perm_wilayat TEXT; ALTER TABLE employees ADD COLUMN current_area TEXT;`,
+  // 19: passport number and expiry, visa expiry on the profile (filled from the uploaded documents)
+  `ALTER TABLE employees ADD COLUMN passport_no TEXT; ALTER TABLE employees ADD COLUMN passport_expiry TEXT; ALTER TABLE employees ADD COLUMN visa_expiry TEXT;`,
 ];
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */
