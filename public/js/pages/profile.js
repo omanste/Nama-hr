@@ -191,7 +191,6 @@ function documents(p, e, can, mayUpload, setPhoto) {
     upload,
     mayUpload ? h("div", { style: { marginTop: "14px" } }, h("h3", null, t("photo_personal")),
       h("div", { class: "row" },
-        h("label", { class: "btn" }, "📷 ", t("photo_camera"), h("input", { type: "file", hidden: true, accept: "image/*", capture: "user", onchange: (ev) => { const f = ev.target.files[0]; ev.target.value = ""; setPhoto(f); } })),
         h("label", { class: "btn" }, "🖼️ ", t("photo_upload"), h("input", { type: "file", hidden: true, accept: "image/png,image/jpeg,image/webp", onchange: (ev) => { const f = ev.target.files[0]; ev.target.value = ""; setPhoto(f); } })))) : null);
 }
 
