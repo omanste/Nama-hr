@@ -11,7 +11,7 @@ const same = (a, b) => String(a ?? "") === String(b ?? "");
 const reviewers = (db, notUserId) => db.prepare("SELECT id FROM users WHERE role IN ('hr','admin') AND active=1 AND id<>?").all(notUserId || 0).map((u) => u.id);
 const ownerUser = (db, empId) => (db.prepare("SELECT id FROM users WHERE employee_id=? AND active=1").get(empId) || {}).id;
 const SOURCES = { contact: ["بيانات الاتصال", "contact details"], qualifications: ["المؤهلات", "qualifications"], bank: ["البيانات البنكية", "bank details"],
-  id: ["بيانات من البطاقة", "details from an ID"], photo: ["الصورة الشخصية", "profile photo"] };
+  id: ["بيانات من البطاقة", "details from an ID"], identity: ["بيانات الهوية والجواز", "ID and passport details"], photo: ["الصورة الشخصية", "profile photo"] };
 
 /** After a person saved their own profile: keep what changed for HR/Admin to verify. Changes HR or Admin make to others need no review. */
 export function recordSelfChange(ctx, sess, emp, before, after, source) {

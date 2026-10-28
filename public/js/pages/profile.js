@@ -22,10 +22,27 @@ async function uploadDoc(e, f, docType, expiry, canEditAll) {
     const r = await api.upload(`/api/employees/${e.id}/files?${qs}`, f);
     toast(r.read && r.read.expiry && !expiry ? t("expiry_read", { d: dmy(r.file.expiry) }) : t("saved"));
     if (r.read) await readDialog(e, r, docType, canEditAll);
+    // an ID whose number couldn't be read: ask for it (HR verifies); the expiry typed there also goes on the document
+    let typed = null;
+    if (docType === "civil_id" && !(r.read && r.read.civil_id)) typed = await identityDialog(e, "id_not_read");
+    if (typed && typed.civil_id_expiry && !r.file.expiry) { await api.put(`/api/files/${r.file.id}`, { expiry: typed.civil_id_expiry }).catch(() => {}); r.file.expiry = typed.civil_id_expiry; }
     // no expiry typed or read: ask for it, or there's nothing to remind about
     if (EXPIRING.includes(docType) && !r.file.expiry) await expiryDialog(r.file, true);
     rerender();
   } catch (er) { toast(errText(er), "bad"); }
+}
+/** Civil ID, passport and visa numbers and dates typed by hand (saved at once; HR verifies a person's own changes). */
+async function identityDialog(e, why = null) {
+  const cur = (await api.get(`/api/employees/${e.id}`)).employee; // the latest, after any update from a document
+  const F = [["civil_id", { dir: "ltr", inputmode: "numeric", maxlength: 12 }], ["civil_id_expiry", { type: "date" }], ["passport_no", { dir: "ltr", maxlength: 20 }],
+    ["passport_expiry", { type: "date" }], ["visa_expiry", { type: "date" }]];
+  const inputs = Object.fromEntries(F.map(([k, a]) => [k, h("input", { name: k, value: cur[k] || "", ...a })]));
+  let saved = null; // resolves with what was saved (null if cancelled)
+  return new Promise((resolve) => {
+    simpleDialog(t("sec_identity"), [why ? h("div", { class: "note", style: { gridColumn: "1/-1" } }, t(why)) : null, ...F.map(([k]) => field(t("f_" + k), inputs[k]))].filter(Boolean),
+      async () => { const body = Object.fromEntries(F.map(([k]) => [k, inputs[k].value.trim() || null])); await api.put(`/api/employees/${e.id}/identity`, body); saved = body; },
+      t("verify_note"), false, () => resolve(saved));
+  });
 }
 /** Documents that expire and get reminders 30 days before. */
 const EXPIRING = ["civil_id", "passport", "visa"];
@@ -158,7 +175,8 @@ export async function render(el, params, { me, can, opts }) {
           h("td", { class: "muted" }, l.request_id ? h("a", { href: `#/leave/${l.request_id}` }, `#${l.request_id}`) : null, " ", l.kind === "adjustment" ? l.note : ""))))))) : null,
 
     h("div", { class: "grid cols2" },
-      h("section", { class: "card" }, h("h2", null, t("sec_personal")), facts([
+      h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_personal")), badgeIfPending(p, "identity"),
+          mayUpload ? h("button", { class: "btn small", type: "button", onclick: () => identityDialog(e) }, t("edit_id_details")) : null), facts([
         ["f_name_ar", e.name_ar], ["f_name_en", e.name_en], ["f_emp_no", e.emp_no], ["f_gender", e.gender ? t("g_" + e.gender) : ""], ["f_nationality", countryName(e.nationality, getLang())], ["f_dob", dmy(e.dob)],
         ["f_civil_id", e.civil_id], ["f_civil_id_expiry", e.civil_id_expiry ? h("span", null, dmy(e.civil_id_expiry), " ", expiryBadge(e.civil_id_expiry)) : null],
         ["f_passport_no", e.passport_no && h("span", { dir: "ltr" }, e.passport_no)], ["f_passport_expiry", e.passport_expiry ? h("span", null, dmy(e.passport_expiry), " ", expiryBadge(e.passport_expiry)) : null],
@@ -225,7 +243,7 @@ function documents(p, e, can, mayUpload, setPhoto) {
         h("label", { class: "btn" }, "🖼️ ", t("photo_upload"), h("input", { type: "file", hidden: true, accept: "image/png,image/jpeg,image/webp", onchange: (ev) => { const f = ev.target.files[0]; ev.target.value = ""; setPhoto(f); } })))) : null);
 }
 
-const SOURCE_KEYS = { contact: "sec_contact", qualifications: "sec_qualifications", bank: "sec_bank", id: "pc_src_id", photo: "pc_src_photo" };
+const SOURCE_KEYS = { identity: "sec_identity", contact: "sec_contact", qualifications: "sec_qualifications", bank: "sec_bank", id: "pc_src_id", photo: "pc_src_photo" };
 const pendingOf = (p, source) => (p.pendingChanges || []).filter((c) => c.source === source);
 const badgeIfPending = (p, source) => (pendingOf(p, source).length ? h("span", { class: "badge b-pending" }, t("not_verified_yet")) : null);
 /** What changed and still waits for HR — the person sees it; HR gets a link to review. */
@@ -277,7 +295,7 @@ function qualDialog(e) {
     () => api.put(`/api/employees/${e.id}/qualifications`, Object.fromEntries(boxes.map(({ k, ar, en }) => [k, joinLangs(ar.value, en.value)]))), t("verify_note"), true);
 }
 /** A dialog with fields and Save/Cancel; save() returns a promise. */
-function simpleDialog(title, fields, save, note, wide = false) {
+function simpleDialog(title, fields, save, note, wide = false, onClose = null) {
   const err = h("div", { class: "form-error" });
   const dlg = h("dialog", { class: wide ? "dialog wide" : "dialog" }, h("form", { class: "form", novalidate: true, onsubmit: async (ev) => {
     ev.preventDefault();
@@ -285,7 +303,7 @@ function simpleDialog(title, fields, save, note, wide = false) {
   } },
     h("h2", null, title), h("div", { class: "fields" }, fields), note ? h("p", { class: "sub" }, note) : null, err,
     h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), h("button", { class: "btn primary", type: "submit" }, t("save")))));
-  dlg.addEventListener("close", () => dlg.remove());
+  dlg.addEventListener("close", () => { dlg.remove(); if (onClose) onClose(); });
   document.body.append(dlg); dlg.showModal();
 }
 

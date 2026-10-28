@@ -15,6 +15,12 @@ test("reader: check-digit verified ID lines and printed front labels", () => {
   assert.equal(f.civil_id, "98765432"); assert.equal(f.dob, "1990-04-03"); assert.equal(f.expiry, "2028-05-12"); assert.equal(f.gender, "female");
 });
 
+test("reader: an Omani ID whose civil number is the document number (optional field empty)", () => {
+  const m = parseMrz("IDOMN12345678<8<<<<<<<<<<<<<<<\n9004034M2805128OMN<<<<<<<<<<<4\nALTEST<<SAMPLE<PERSON<<<<<<<<<");
+  assert.equal(m.civil_id, "12345678"); assert.equal(m.expiry, "2028-05-12");
+  assert.equal(parseMrz("IDOMN12345678<5<<<<<<<<<<<<<<<\n9004034M2805128OMN<<<<<<<<<<<4\nX<<Y").civil_id, undefined, "wrong check digit");
+});
+
 test("reader: an Omani passport's personal-number field gives the civil ID (check digit verified)", () => {
   const p = parseMrz("P<OMNTEST<<SAMPLE<PERSON<<<<<<<<<<<<<<<<<<<<\nT1234567<9OMN9004034F310130098765432<<<<<<20");
   assert.equal(p.kind, "passport"); assert.equal(p.passport_no, "T1234567"); assert.equal(p.civil_id, "98765432"); assert.equal(p.expiry, "2031-01-30");

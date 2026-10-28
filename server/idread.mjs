@@ -88,6 +88,8 @@ export function parseMrz(text) {
     const doc = l1.slice(5, 14);
     if (check(doc) === fixDigits(l1[14])) out.card_no = doc.replace(/</g, "");
     const opt = l1.slice(15).replace(/</g, ""); if (/^\d{7,9}$/.test(fixDigits(opt))) out.civil_id = fixDigits(opt);
+    // Omani cards: the civil number IS the document number (all digits, check-digit verified) when the optional field is empty
+    else if (letters(l1.slice(2, 5)) === "OMN" && out.card_no && /^\d{7,9}$/.test(out.card_no)) out.civil_id = out.card_no;
     const dob = fixDigits(l2.slice(0, 6)); if (check(dob) === fixDigits(l2[6])) out.dob = yymmdd(dob, false);
     out.gender = { M: "male", F: "female" }[l2[7]];
     const exp = fixDigits(l2.slice(8, 14)); if (check(exp) === fixDigits(l2[14])) out.expiry = yymmdd(exp, true);

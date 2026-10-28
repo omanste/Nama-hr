@@ -90,3 +90,12 @@ test("addresses: permanent wilayat and current area in Muscat are part of contac
   const c = (await hr.c.get("/api/profile-changes")).data.items.find((x) => x.employee_id === s.emp.id && x.changes.perm_wilayat);
   assert.deepEqual(c.changes.perm_wilayat, [null, "Nizwa"]);
 });
+
+test("ID details typed by hand (when a document couldn't be read) are saved and go to HR to verify", async () => {
+  const r = await s.c.put(`/api/employees/${s.emp.id}/identity`, { civil_id: "12345678", civil_id_expiry: "2029-02-01", passport_no: "A1234567", passport_expiry: "2030-03-01" });
+  assert.equal(r.status, 200); assert.equal(r.data.employee.civil_id, "12345678"); assert.equal(r.data.employee.passport_expiry, "2030-03-01");
+  assert.equal((await s.c.put(`/api/employees/${s.emp.id}/identity`, { visa_expiry: "01/02/2029" })).status, 400);
+  assert.equal((await other.c.put(`/api/employees/${s.emp.id}/identity`, { civil_id: "1" })).status, 403);
+  const c = (await hr.c.get("/api/profile-changes")).data.items.find((x) => x.employee_id === s.emp.id && x.source === "identity");
+  assert.deepEqual(c.changes.civil_id, [null, "12345678"]);
+});

@@ -338,6 +338,8 @@ const D = {
   read_update_title: ["تحديث بياناتك من المستند الجديد؟", "Update your details from the new document?"],
   read_update_intro: ["هذه القيم تختلف عمّا في ملفك. المحدد سيُستبدل بقيمة المستند الجديد.", "These differ from your profile. Ticked ones will be replaced with the new document's value."],
   read_keep: ["الإبقاء على الحالية", "Keep current"],
+  sec_identity: ["بيانات الهوية والجواز", "ID and passport details"], edit_id_details: ["تعديل بيانات الهوية", "Edit ID details"],
+  id_not_read: ["لم نتمكن من قراءة الرقم المدني من الصورة. اكتبه هنا (أو صوّر ظهر البطاقة حيث الأسطر <<< ). ستتحقق منه الموارد البشرية.", "We couldn't read the civil number from the photo. Type it here (or scan the back of the card, with the <<< lines). HR will check it."],
   sec_address: ["العنوان", "Address"], emergency_person: ["الاسم", "Name"], sec_emergency: ["جهة الاتصال للطوارئ", "Emergency contact"],
   place_other: ["أخرى…", "Other…"], place_other_hint: ["اكتب المكان", "Type the place"],
   address_hint: ["مثال: سكة 1234، مبنى 56، شقة 7", "e.g. Way 1234, Building 56, Flat 7"],

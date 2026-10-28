@@ -195,6 +195,8 @@ export function registerEmployees(api, ctx) {
   selfSection("contact", CONTACT);
   selfSection("qualifications", LONG);
   selfSection("bank", BANK);
+  // ID numbers and dates typed by hand (when a document couldn't be read) — HR verifies them like the rest
+  selfSection("identity", ["civil_id", "civil_id_expiry", "passport_no", "passport_expiry", "visa_expiry"]);
 
   // staff choose their own shift while the company allows it and HR hasn't fixed theirs (policy §3: HR assigns it in writing)
   api.put("/api/employees/:id/shift", async (req, res) => {
