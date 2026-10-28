@@ -3,8 +3,9 @@ import { t } from "../i18n.js";
 import { h, toast, errText } from "../ui.js";
 import { loadMe, state } from "../app.js";
 
-export async function render(el) {
+export async function render(el, _p, { query }) {
   const forced = state.me && state.me.user.mustChange;
+  const back = query && query.get("back") === "me" ? "#/me" : "#/"; // opened from my profile → return there
   const err = h("div", { class: "form-error", role: "alert" });
   const cur = h("input", { id: "pc", type: "password", autocomplete: "current-password", required: true, dir: "ltr" });
   const nw = h("input", { id: "pn", type: "password", autocomplete: "new-password", required: true, minlength: 8, dir: "ltr" });
@@ -19,14 +20,14 @@ export async function render(el) {
       await api.post("/api/me/password", { current: cur.value, next: nw.value });
       await loadMe();
       toast(t("password_saved"));
-      location.hash = "#/";
+      location.hash = back;
     } catch (e2) { err.textContent = errText(e2); btn.disabled = false; }
   } },
     h("div", { class: "field" }, h("label", { for: "pc" }, t("current_password")), cur),
     h("div", { class: "field" }, h("label", { for: "pn" }, t("new_password")), nw),
     h("div", { class: "field" }, h("label", { for: "pf" }, t("confirm_password")), cf),
     err, btn,
-    forced ? null : h("a", { class: "btn block", href: "#/" }, t("cancel")));
+    forced ? null : h("a", { class: "btn block", href: back }, t("cancel")));
   el.append(h("div", { class: "login-wrap" }, h("div", { class: "login-card" },
     h("div", { class: "brand" }, h("img", { src: "/logo-wordmark.png", alt: t("company") })),
     h("div", { class: "card" }, h("h1", null, t("choose_password")), h("p", { class: "sub" }, t("choose_password_sub")), form))));

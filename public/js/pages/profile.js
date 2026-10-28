@@ -104,7 +104,9 @@ export async function render(el, params, { me, can, opts }) {
         can.edit() && !own && (can.admin() || !p.login || ["staff", "manager", "accounts"].includes(p.login.role))
           ? h("button", { class: "btn", type: "button", onclick: () => (p.login ? resetPassword(e, p.login) : createLogin(e)) }, "🔑 ", t("reset_password")) : null,
         can.edit() && !own ? h("button", { class: e.status === "disabled" ? "btn" : "btn danger", type: "button", onclick: () => setDisabled(e, e.status !== "disabled") }, t(e.status === "disabled" ? "staff_enable" : "staff_disable")) : null,
-        can.admin() && !own ? h("button", { class: "btn danger", type: "button", onclick: () => deleteStaff(e) }, t("staff_delete")) : null)),
+        can.admin() && !own ? h("button", { class: "btn danger", type: "button", onclick: () => deleteStaff(e) }, t("staff_delete")) : null,
+        // my own profile: change my password (current password needed)
+        own ? h("a", { class: "btn", href: "#/password?back=me" }, "🔑 ", t("change_password")) : null)),
     e.status === "disabled" ? h("div", { class: "note bad" }, t("disabled_note")) : null,
     attendanceCard(e),
 
