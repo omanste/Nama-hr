@@ -20,5 +20,5 @@ export const api = {
   post: (p, b = {}) => call("POST", p, b),
   put: (p, b = {}) => call("PUT", p, b),
   del: (p) => call("DELETE", p),
-  upload: (p, file) => call("POST", p, file, { "content-type": file.type || "application/octet-stream" }),
+  upload: (p, file, headers = {}) => call("POST", p, file, { "content-type": file.type || "application/octet-stream", ...headers }),
 };

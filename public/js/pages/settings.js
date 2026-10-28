@@ -63,5 +63,29 @@ export async function render(el, _p, { can }) {
       })) }, t("save")))),
     h("section", { class: "card" }, h("h2", null, t("contract_types")),
       field(t("contract_types"), types, { hint: t("contract_types_hint") }),
-      h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", { contract_types: types.value.split("\n").map((x) => x.trim()).filter(Boolean) })) }, t("save")))));
+      h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", { contract_types: types.value.split("\n").map((x) => x.trim()).filter(Boolean) })) }, t("save")))),
+    restoreCard());
+}
+
+/** Load a full backup (e.g. from the test portal into production). Replaces everything; typed confirmation required. */
+function restoreCard() {
+  const file = h("input", { type: "file", accept: ".db" });
+  const word = h("input", { dir: "ltr", autocomplete: "off", placeholder: "RESTORE" });
+  const out = h("div", { "aria-live": "polite" });
+  const btn = h("button", { class: "btn danger", type: "button", onclick: async () => {
+    const f = file.files[0];
+    if (!f) { toast(t("restore_pick"), "bad"); return; }
+    if (word.value.trim() !== "RESTORE") { toast(t("restore_type"), "bad"); word.focus(); return; }
+    btn.disabled = true; out.replaceChildren(h("p", { class: "sub" }, t("loading")));
+    try {
+      const r = await api.upload("/api/admin/restore", f, { "x-confirm": "RESTORE" });
+      out.replaceChildren(h("div", { class: "note" }, t("restore_done", { staff: r.counts.employees || 0, files: r.counts.uploads || 0 })));
+      setTimeout(() => { location.hash = "#/login"; location.reload(); }, 2500);
+    } catch (e) { btn.disabled = false; out.replaceChildren(h("div", { class: "note bad" }, errText(e))); }
+  } }, t("restore_btn"));
+  return h("section", { class: "card" }, h("h2", null, t("restore_title")),
+    h("p", { class: "sub" }, t("backup_hint")),
+    h("div", { class: "note bad" }, t("restore_warn")),
+    h("div", { class: "fields", style: { marginTop: "12px" } }, field(t("restore_file"), file), field(t("restore_type"), word)),
+    h("div", { class: "row end", style: { marginTop: "12px" } }, btn), out);
 }

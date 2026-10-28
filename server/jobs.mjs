@@ -187,11 +187,6 @@ const muscatTime = () => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Musc
 
 export function registerJobs(api, ctx) {
   const { env } = ctx;
-  api.get("/api/admin/backup", (req, res) => {
-    if (!can(req.sess, "settings.edit")) throw new HttpError(403, "forbidden", "You do not have permission for this");
-    const file = backup(ctx, ctx.today(), Number(env.BACKUP_KEEP_DAYS || 14));
-    sendRaw(req, res, 200, fs.readFileSync(file), "application/octet-stream", { "Content-Disposition": `attachment; filename="nama-hr-${ctx.today()}.db"` });
-  });
   if (env.NO_JOBS === "1") return;
   const state = { daily: null, backup: null };
   const tick = () => {

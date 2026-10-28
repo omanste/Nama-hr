@@ -66,5 +66,6 @@ Everything runs on Nama's own server (Dokploy); no outside services — ID cards
 * **Add new staff** (with opening balances and optional logins) or **update existing staff** (by employee ID; only filled cells change).
 
 ## Data safety
-* Nightly database backup on the server (`/data/backups`, kept 14 days); Admin can download a copy any time (Settings → Download backup).
+* Nightly database backup on the server (`/data/backups`, kept 14 days); Admin can download a **full backup** any time (Settings → Download full backup): one .db file with all data, settings, attendance and logins plus photos and documents.
+* **Restore from a backup** (Settings, Admin, type RESTORE): replaces everything in that portal with the backup's — used to move dev → production. The current data is saved on the server first; everyone signs in again.
 * Audit log of every change (message text never logged). Staff data files are never stored in this repository.
