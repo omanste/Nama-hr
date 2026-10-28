@@ -1,7 +1,7 @@
 // Monthly attendance sheet (policy §15): each day against the person's shift, the month's totals, and the person's review.
 // Staff see their own; a manager their team; HR everyone (the picker lists who this login may open).
 import { api } from "../api.js";
-import { t, nm, getLang } from "../i18n.js";
+import { t, nm, getLang, tx } from "../i18n.js";
 import { h, select, pageHead, empty, num, dmy, todayIso, toast, errText, confirm, clockText, durText, dateTime } from "../ui.js";
 import { render as rerender } from "../app.js";
 
@@ -58,7 +58,7 @@ export async function render(el, _p, { me, query, can }) {
       ? h("a", { class: "btn small", href: `#/attendance/correction?date=${x.date}` }, t("att_ask_correction")) : null;
     const status = x.status === "leave" ? t("lt_" + x.leave) : x.status === "missing" ? t(x.missing === "in" ? "as_missing_in" : "as_missing_out") : t("as_" + x.status);
     return h("tr", { class: ["rest", "holiday", "no_data"].includes(x.status) ? "muted-row" : null },
-      h("td", null, h("b", null, dmy(x.date).slice(0, 5)), " ", h("span", { class: "muted" }, weekday(x.date)), x.holiday ? h("div", { class: "muted" }, x.holiday) : null),
+      h("td", null, h("b", null, dmy(x.date).slice(0, 5)), " ", h("span", { class: "muted" }, weekday(x.date)), x.holiday ? h("div", { class: "muted" }, tx(x.holiday)) : null),
       h("td", { class: "num" }, clockText(x.in)), h("td", { class: "num" }, clockText(x.out)), h("td", { class: "num" }, durText(x.onSite)),
       h("td", { class: "num" }, x.late ? h("span", { class: "bad-text" }, durText(x.late)) : "—"),
       h("td", { class: "num" }, x.early ? h("span", { class: "bad-text" }, durText(x.early)) : "—"),

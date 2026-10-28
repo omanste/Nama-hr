@@ -102,3 +102,18 @@ test("staff add their own events: personal (only they see it) or shared with eve
   assert.equal((await hr.c.del(`/api/calendar/entries/${sh.data.entry.id}`)).status, 200);
   assert.equal((await s.c.get("/api/calendar?month=2027-01")).data.events.filter((e) => e.kind === "event").length, 0);
 });
+
+test("the expected official holidays for a year are added only when asked, and dates already set are kept", async () => {
+  const { omanHolidays } = await import("../server/oman-occasions.mjs");
+  const y27 = omanHolidays(2027);
+  assert.ok(y27.some((x) => x.date === "2027-01-11") && y27.some((x) => x.date === "2027-11-18"));
+  assert.equal(y27.filter((x) => /Eid al-Adha/.test(x.name)).length, 5);
+  assert.equal((await admin.post("/api/calendar/import-oman", { year: 2027 })).data.holidays, 0);
+  assert.equal((await admin.get("/api/calendar?month=2027-03")).data.holidays.length, 0);
+  await admin.post("/api/calendar/entries", { kind: "holiday", start: "2027-01-11", name: "Set by HR" });
+  const r = await admin.post("/api/calendar/import-oman", { year: 2027, holidays: true });
+  assert.equal(r.data.holidays, y27.length - 1);
+  assert.equal((await s.c.get("/api/calendar?month=2027-01")).data.holidays.find((x) => x.date === "2027-01-11").name, "Set by HR");
+  assert.ok((await s.c.get("/api/calendar?month=2027-03")).data.holidays.length >= 3);
+  assert.equal((await admin.post("/api/calendar/import-oman", { year: 2027, holidays: true })).data.holidays, 0, "not twice");
+});

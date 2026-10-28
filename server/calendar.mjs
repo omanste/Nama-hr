@@ -7,7 +7,7 @@ import { can, approvedDepartments } from "./perm.mjs";
 import { audit } from "./audit.mjs";
 import { notify } from "./notify.mjs";
 import { isIsoDate, addDays, addMonths, PERMISSION_TYPES } from "./leave.mjs";
-import { omanOccasions, NATIONAL } from "./oman-occasions.mjs";
+import { omanOccasions, omanHolidays, NATIONAL } from "./oman-occasions.mjs";
 
 export const BLOCKABLE = ["annual", "unpaid", ...PERMISSION_TYPES];
 const editors = ["admin", "hr"];
@@ -134,17 +134,24 @@ export function registerCalendar(api, ctx) {
   // add Oman's religious occasions for a year (skips ones already there); national days are built in
   api.post("/api/calendar/import-oman", async (req, res) => {
     needEditor(req.sess);
-    const year = Number((await readJson(req)).year);
+    const b = await readJson(req), year = Number(b.year);
     if (!Number.isInteger(year) || year < 2020 || year > 2100) throw bad("year", "Choose a year");
     const have = db.prepare("SELECT 1 FROM calendar_events WHERE kind=? AND start_date=? AND name=?");
     const ins = db.prepare("INSERT INTO calendar_events(kind,start_date,end_date,name,created_by,created_at) VALUES(?,?,?,?,?,?)");
-    let added = 0;
+    let added = 0, holidays = 0;
     const list = omanOccasions(year).filter((o) => o.kind === "religious");
     tx(db, () => {
       for (const o of list) if (!have.get(o.kind, o.date, o.name)) { ins.run(o.kind, o.date, o.date, o.name, req.sess.user.id, nowIso()); added++; }
-      audit(db, req.sess.user.id, "calendar.import_oman", "calendar", year, null, { year, added });
+      // the expected official holidays (days off) — only when asked; a date already set is kept as it is
+      if (b.holidays) {
+        const cur = getSetting(db, "official_holidays", []), have = new Set(cur.map((x) => x.date));
+        for (const x of omanHolidays(year)) if (!have.has(x.date)) { cur.push(x); holidays++; }
+        cur.sort((x, y) => (x.date < y.date ? -1 : 1));
+        setSetting(db, "official_holidays", cur);
+      }
+      audit(db, req.sess.user.id, "calendar.import_oman", "calendar", year, null, { year, added, holidays });
     });
-    send(req, res, 200, { year, added, total: list.length });
+    send(req, res, 200, { year, added, holidays, total: list.length });
   });
 
   api.delete("/api/calendar/entries/:id", (req, res) => {

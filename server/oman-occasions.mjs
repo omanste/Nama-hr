@@ -30,3 +30,28 @@ export function omanOccasions(year) {
   }
   return out.sort((a, b) => (a.date < b.date ? -1 : 1));
 }
+
+// Official public holidays (days off), following Royal Decree 88/2022: [Hijri month, first day, last day, name].
+// Eid al-Fitr runs 29 Ramadan – 3 Shawwal and Eid al-Adha 9–13 Dhu al-Hijjah; the government confirms the exact days each year.
+const RELIGIOUS_HOLIDAYS = [
+  [1, 1, 1, "Hijri New Year holiday (expected) | عطلة رأس السنة الهجرية (متوقعة)"],
+  [3, 12, 12, "Prophet's Birthday holiday (expected) | عطلة المولد النبوي الشريف (متوقعة)"],
+  [7, 27, 27, "Isra and Mi'raj holiday (expected) | عطلة الإسراء والمعراج (متوقعة)"],
+  [9, 29, 30, "Eid al-Fitr holiday (expected) | عطلة عيد الفطر (متوقعة)"],
+  [10, 1, 3, "Eid al-Fitr holiday (expected) | عطلة عيد الفطر (متوقعة)"],
+  [12, 9, 13, "Eid al-Adha holiday (expected) | عطلة عيد الأضحى (متوقعة)"],
+];
+const FIXED_HOLIDAYS = [
+  ["01-11", "Accession Day holiday | عطلة ذكرى تولي جلالة السلطان مقاليد الحكم"],
+  ["11-18", "National Day holiday (expected) | عطلة العيد الوطني (متوقعة)"],
+  ["11-19", "National Day holiday (expected) | عطلة العيد الوطني (متوقعة)"],
+];
+/** The expected official holidays in a Gregorian year: [{date, name}], by date. */
+export function omanHolidays(year) {
+  const out = FIXED_HOLIDAYS.map(([md, name]) => ({ date: `${year}-${md}`, name }));
+  for (let d = new Date(Date.UTC(year, 0, 1)); d.getUTCFullYear() === year; d.setUTCDate(d.getUTCDate() + 1)) {
+    const p = Object.fromEntries(hijri.formatToParts(d).map((x) => [x.type, x.value]));
+    for (const [m, a, b, name] of RELIGIOUS_HOLIDAYS) if (Number(p.month) === m && Number(p.day) >= a && Number(p.day) <= b) out.push({ date: d.toISOString().slice(0, 10), name });
+  }
+  return out.sort((a, b) => (a.date < b.date ? -1 : 1));
+}

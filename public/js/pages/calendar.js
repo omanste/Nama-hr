@@ -51,7 +51,7 @@ export async function render(el, _p, { query }) {
         "aria-pressed": String(iso === selected), "aria-label": dmy(iso), onclick: () => { selected = iso; drawGrid(); drawDetail(); },
       },
         h("span", { class: "dnum" }, String(d)),
-        x.holiday ? h("span", { class: "tag hol" }, x.holiday) : null,
+        x.holiday ? h("span", { class: "tag hol" }, tx(x.holiday)) : null,
         x.blocked.map((e) => h("span", { class: "tag blk" }, "⛔ ", tx(e.name))),
         x.national.map((e) => h("span", { class: "tag nat" }, tx(e.name))),
         x.religious.map((e) => h("span", { class: "tag rel" }, tx(e.name))),
@@ -72,7 +72,7 @@ export async function render(el, _p, { query }) {
     const x = onDay(selected);
     const del = (fn) => data.canEdit ? h("button", { class: "btn small danger", type: "button", onclick: fn }, t("delete")) : null;
     const rows = [
-      x.holiday ? h("div", { class: "item" }, h("span", { class: "badge b-on_leave" }, t("holiday")), h("div", { class: "grow" }, x.holiday),
+      x.holiday ? h("div", { class: "item" }, h("span", { class: "badge b-on_leave" }, t("holiday")), h("div", { class: "grow" }, tx(x.holiday)),
         del(async () => { if (await confirm(t("delete_q"), { danger: true })) { try { await api.del(`/api/calendar/holidays/${selected}`); toast(t("saved")); rerender(); } catch (e) { toast(errText(e), "bad"); } } })) : null,
       ...[...x.national, ...x.religious].map((e) => h("div", { class: "item" }, h("span", { class: `badge ${e.kind === "national" ? "b-approved" : "b-on_leave"}` }, t("cal_" + e.kind)), h("div", { class: "grow" }, tx(e.name)),
         e.fixed ? null : del(async () => { if (await confirm(t("delete_q"), { danger: true })) { try { await api.del(`/api/calendar/entries/${e.id}`); toast(t("saved")); rerender(); } catch (er) { toast(errText(er), "bad"); } } }))),
@@ -131,17 +131,20 @@ function addDialog(day, editor) {
   document.body.append(dlg); dlg.showModal(); name.focus();
 }
 
-/** Add the expected religious occasions (Hijri calendar) for a year; national days are always shown. */
+/** Add the expected religious occasions (Hijri calendar) for a year — and, if ticked, the expected official holidays (days off). */
 function importDialog(year) {
   const sel = select("year", [year - 1, year, year + 1].map((k) => [k, String(k)]), year);
+  const hol = h("input", { type: "checkbox", name: "holidays" });
   const err = h("div", { class: "form-error" });
   const dlg = h("dialog", { class: "dialog" }, h("form", { class: "form", onsubmit: async (ev) => {
     ev.preventDefault();
-    try { const r = await api.post("/api/calendar/import-oman", { year: Number(sel.value) }); dlg.close(); toast(t("cal_imported", { n: r.added, y: r.year })); rerender(); }
+    try { const r = await api.post("/api/calendar/import-oman", { year: Number(sel.value), holidays: hol.checked }); dlg.close();
+      toast(t("cal_imported", { n: r.added, y: r.year }) + (hol.checked ? ` · ${t("cal_imported_hol", { n: r.holidays })}` : "")); rerender(); }
     catch (er) { err.textContent = errText(er); }
   } },
     h("h2", null, t("cal_import_oman")), h("p", { class: "sub" }, t("cal_import_hint")),
-    field(t("year"), sel), err,
+    field(t("year"), sel),
+    h("label", { class: "row", style: { alignItems: "flex-start", flexWrap: "nowrap", gap: "10px", margin: "6px 0" } }, hol, h("span", null, h("b", null, t("cal_import_hol")), h("span", { class: "sub", style: { display: "block" } }, t("cal_import_hol_hint")))), err,
     h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), h("button", { class: "btn primary", type: "submit" }, t("cal_import")))));
   dlg.addEventListener("close", () => dlg.remove());
   document.body.append(dlg); dlg.showModal();
