@@ -118,7 +118,7 @@ export const backLink = (href) => h("a", { class: "back", href }, h("span", { "a
 export const empty = (text = t("no_results")) => h("div", { class: "empty" }, text);
 export const avatar = (emp, size = 40) => emp && emp.photo_file_id
   ? h("img", { class: "avatar", src: `/api/files/${emp.photo_file_id}`, alt: "", width: size, height: size, style: { width: size + "px", height: size + "px" } })
-  : h("span", { class: "avatar ph", style: { width: size + "px", height: size + "px", fontSize: Math.round(size / 2.4) + "px" }, "aria-hidden": "true" }, ((emp && (emp.name_ar || emp.name_en)) || "؟").trim().charAt(0));
+  : h("span", { class: "avatar ph", style: { width: size + "px", height: size + "px", fontSize: Math.round(size / 2.4) + "px" }, "aria-hidden": "true" }, ((emp && (getLang() === "en" ? emp.name_en || emp.name_ar : emp.name_ar || emp.name_en)) || "؟").trim().charAt(0).toUpperCase());
 /** Today's date in Muscat as YYYY-MM-DD. */
 export const todayIso = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Muscat", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 

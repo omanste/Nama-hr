@@ -195,7 +195,7 @@ export async function render(el, params, { me, can, opts }) {
         ["f_shift", h("span", null, t(`shift_${[1, 2, 3].includes(e.shift) ? e.shift : 2}_full`), " ", p.shiftSelf ? h("button", { class: "btn small", type: "button", onclick: () => shiftDialog(e) }, t("shift_change")) : null)]])),
       h("section", { class: "card", style: { gridColumn: "1 / -1" } }, h("h2", null, t("sec_contract")), facts([
         ["f_join_date", dmy(e.join_date)], ["service_length", serviceLength(e.join_date)], ["probation_end", dmy(p.leave.probationEnd)],
-        ["f_contract_type", e.contract_type], ["f_contract_end", e.contract_end ? h("span", null, dmy(e.contract_end), " ", expiryBadge(e.contract_end)) : null]]),
+        ["f_contract_type", tx(e.contract_type)], ["f_contract_end", e.contract_end ? h("span", null, dmy(e.contract_end), " ", expiryBadge(e.contract_end)) : null]]),
         p.login !== undefined ? h("div", { style: { marginTop: "14px" } }, h("h3", null, t("login_account")),
           p.login ? h("div", { class: "row", style: { justifyContent: "space-between" } },
               h("span", { class: "sub" }, `${p.login.username} · ${t("role_" + p.login.role)}${p.login.active ? "" : " · " + t("inactive")}`),
@@ -207,10 +207,17 @@ export async function render(el, params, { me, can, opts }) {
     p.seesBank ? bankCard(p, e, mayUpload) : null,
     h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_qualifications")), badgeIfPending(p, "qualifications"),
       mayUpload ? h("button", { class: "btn small", type: "button", onclick: () => qualDialog(e) }, t("edit")) : null), h("dl", { class: "facts" },
-      ["education", "specialization", "experience", "languages", "certifications"].map((k) => h("div", null, h("dt", null, t("f_" + k)), h("dd", { dir: "auto" }, tx(e[k]) || "—"))),
-      ["skills", "main_tasks"].map((k) => h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("f_" + k)), h("dd", { dir: "auto", style: { whiteSpace: "pre-line" } }, tx(e[k]) || "—"))))),
+      ["education", "specialization", "experience", "languages", "certifications"].map((k) => h("div", null, h("dt", null, t("f_" + k), oneLangTag(e[k])), h("dd", { dir: "auto" }, tx(e[k]) || "—"))),
+      ["skills", "main_tasks"].map((k) => h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("f_" + k), oneLangTag(e[k])), h("dd", { dir: "auto", style: { whiteSpace: "pre-line" } }, tx(e[k]) || "—"))))),
     documents(p, e, can, mayUpload, setPhoto),
     h("section", { class: "card kpi-placeholder" }, h("h2", null, t("sec_kpi")), h("p", null, t("kpi_later"))));
+}
+
+/** A small tag when a bilingual field was written in the other language only (so the English page shows Arabic, or the reverse). */
+function oneLangTag(v) {
+  const shown = tx(v); if (!shown) return null;
+  const other = getLang() === "en" ? /[\u0621-\u064A]/.test(shown) : !/[\u0621-\u064A]/.test(shown) && /[A-Za-z]{2}/.test(shown);
+  return other ? h("span", { class: "badge one-lang", title: t("one_lang_hint") }, t(getLang() === "en" ? "only_ar" : "only_en")) : null;
 }
 
 function documents(p, e, can, mayUpload, setPhoto) {

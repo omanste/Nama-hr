@@ -347,6 +347,8 @@ const D = {
   cal_import_hol_hint: ["حسب المرسوم السلطاني 88/2022: ذكرى التولي، الإسراء والمعراج، عيد الفطر (29 رمضان – 3 شوال)، عيد الأضحى (9–13 ذو الحجة)، رأس السنة الهجرية، المولد النبوي، والعيد الوطني. عدّلها في الإعدادات عند إعلان الحكومة.", "Per Royal Decree 88/2022: Accession Day, Isra and Mi'raj, Eid al-Fitr (29 Ramadan – 3 Shawwal), Eid al-Adha (9–13 Dhu al-Hijjah), Hijri New Year, the Prophet's Birthday and National Day. Adjust them in Settings when the government announces them."],
   cal_imported_hol: ["{n} يوم عطلة", "{n} holiday days"],
   cal_imported: ["أُضيفت {n} مناسبة لعام {y}", "Added {n} occasions for {y}"],
+  only_ar: ["بالعربية فقط", "Arabic only"], only_en: ["بالإنجليزية فقط", "English only"],
+  one_lang_hint: ["لم تُضف الترجمة بعد — أضفها من «تعديل».", "Not translated yet — add it with “Edit”."],
   cal_add_event: ["إضافة حدث", "Add event"], cal_personal: ["شخصي", "Personal"], cal_visibility: ["من يراه", "Who sees it"],
   cal_vis_personal: ["شخصي — أنا فقط", "Personal — only me"], cal_vis_company: ["مشترك مع جميع الموظفين", "Shared with all staff"],
   cal_hint_personal: ["لا يراه أحد غيرك.", "Nobody else sees it."], cal_hint_shared: ["يظهر في تقويم جميع الموظفين باسمك.", "Shows on every staff member's calendar, with your name."],
@@ -489,9 +491,11 @@ const ANSWERS = {
   arabic: "العربية", english: "الإنجليزية", hindi: "الهندية", urdu: "الأردية", indian: "الهندية", malayalam: "المالايالامية", bengali: "البنغالية",
   tagalog: "الفلبينية", filipino: "الفلبينية", french: "الفرنسية", persian: "الفارسية", farsi: "الفارسية", swahili: "السواحلية", german: "الألمانية", turkish: "التركية",
   yes: "نعم", no: "لا", "not sure": "غير متأكد", "not applicable": "لا ينطبق",
+  // the default contract types (Settings)
+  unlimited: "غير محدد المدة", limited: "محدد المدة", probation: "فترة تجربة", "part-time": "دوام جزئي",
 };
 const AR_TO_EN = Object.fromEntries(Object.entries(ANSWERS).map(([en, ar]) => [ar, en.replace(/^\w/, (c) => c.toUpperCase())]));
-const isArabic = (x) => /[\u0600-\u06FF]/.test(x);
+const isArabic = (x) => /[\u0621-\u064A]/.test(x); // Arabic letters (not the Arabic comma or digits, which show up in English text too)
 function oneItem(x, L) {
   const parts = x.split(/\s*\|\s*/).filter(Boolean);
   if (parts.length === 2) { // "English | عربي"
@@ -505,15 +509,21 @@ function oneItem(x, L) {
 export function tx(value, L = lang) {
   if (value === null || value === undefined || value === "") return "";
   const s = String(value);
-  // a whole field written in both languages: "English text | النص العربي"
-  const halves = s.split(/\s+\|\s+/);
-  if (halves.length === 2 && isArabic(halves[0]) !== isArabic(halves[1])) {
-    return halves.find((x) => isArabic(x) === (L === "ar"));
+  // a whole field written in both languages: "English text | النص العربي" — split at the last " | " that has only English
+  // before it (and Arabic after), so a "|" typed inside either text doesn't break the pair
+  let pair = null;
+  for (const m of s.matchAll(/\s+\|\s+/g)) {
+    const en = s.slice(0, m.index), ar = s.slice(m.index + m[0].length);
+    if (isArabic(en)) break;
+    if (en.trim() && isArabic(ar)) pair = [en, ar];
   }
+  if (pair) return L === "ar" ? pair[1] : pair[0];
   if (!s.includes("|") && !Object.keys(ANSWERS).some((k) => s.toLowerCase().includes(k)) && !Object.keys(AR_TO_EN).some((k) => s.includes(k))) return s;
   return s.split("\n").map((line) => {
     const items = line.split(/\s*[,،]\s*/);
     const out = items.map((y) => (y.trim() ? oneItem(y.trim(), L) : y));
+    // a line with nothing to translate stays exactly as written (its own commas too)
+    if (out.every((y, i) => y === items[i] || y === items[i].trim())) return line;
     return out.join(L === "ar" ? "، " : ", ");
   }).join("\n");
 }
