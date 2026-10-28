@@ -22,6 +22,51 @@ function show(k, v) {
   return h("span", { dir: "auto", style: { whiteSpace: "pre-line" } }, tx(String(v)));
 }
 
+/** Update every profile from its uploaded ID card and passport: start it, watch it run, read the result. */
+async function rereadCard() {
+  const box = h("section", { class: "card" });
+  let timer = null;
+  const DOC = { civil_id: "dt_civil_id", passport: "dt_passport" };
+  const draw = (b) => {
+    const start = h("button", { class: "btn primary", type: "button", disabled: !!(b && b.running), onclick: async () => {
+      if (!(await confirm(t("rr_confirm"), { okText: t("rr_start") }))) return;
+      try { await api.post("/api/profiles/reread-ids", {}); poll(); } catch (e) { toast(errText(e), "bad"); }
+    } }, "🪪 ", t("rr_start"));
+    const parts = [h("div", { class: "card-head" }, h("h2", null, t("rr_title")), start), h("p", { class: "sub" }, t("rr_hint"))];
+    if (b && b.running) parts.push(h("div", { class: "note" }, t("rr_running", { d: b.done, n: b.total || "…" }), h("progress", { max: b.total || 1, value: b.done, style: { width: "100%", marginTop: "8px" } })));
+    if (b && !b.running) {
+      const docs = b.results.flatMap((r) => r.docs.map((d) => ({ r, d })));
+      const upd = docs.filter((x) => x.d.status === "updated"), same = docs.filter((x) => x.d.status === "same"), bad = docs.filter((x) => x.d.status === "not_read");
+      parts.push(h("div", { class: "note" }, h("b", null, t("rr_done_at", { at: dateTime(b.finished_at), by: b.by })), " · ",
+        t("rr_summary", { u: new Set(upd.map((x) => x.r.id)).size, s: same.length, x: bad.length, n: b.noId.length })),
+        b.error ? h("div", { class: "note bad" }, b.error) : null);
+      const who = (r) => h("a", { href: `#/staff/${r.id}` }, nm(r) || r.emp_no, h("span", { class: "muted" }, ` · ${r.emp_no}`));
+      if (upd.length) parts.push(h("h3", null, t("rr_updated")), h("div", { class: "table-wrap" }, h("table", null,
+        h("thead", null, h("tr", null, h("th", null, t("employee")), h("th", null, t("doc_type")), h("th", null, t("rr_changes")))),
+        // one row per person and document; on a phone each becomes a card
+        h("tbody", null, upd.map(({ r, d }) => h("tr", null,
+          h("td", { "data-label": t("employee") }, who(r)), h("td", { "data-label": t("doc_type") }, t(DOC[d.doc_type])),
+          h("td", { "data-label": t("rr_changes") }, h("div", { class: "rr-changes" }, Object.entries(d.changes).map(([k, [a, v]]) => h("div", null,
+            h("span", { class: "muted" }, t("f_" + k), ": "), h("span", { class: "pc-old-inline" }, show(k, a)), getLang() === "ar" ? " ← " : " → ", h("b", null, show(k, v))))))))))));
+      if (bad.length) parts.push(h("h3", null, t("rr_not_read")), h("p", { class: "sub" }, t("rr_not_read_hint")),
+        h("ul", null, bad.map(({ r, d }) => h("li", null, who(r), " — ", t(DOC[d.doc_type]), " (", h("span", { dir: "auto" }, d.name), ")"))));
+      if (b.noId.length) parts.push(h("h3", null, t("rr_no_id")), h("p", { class: "sub" }, b.noId.map((p) => nm(p) || p.emp_no).join("، ")));
+    }
+    box.replaceChildren(...parts.filter(Boolean));
+  };
+  const poll = async () => {
+    clearTimeout(timer);
+    if (!box.isConnected && timer) return; // left the page
+    const { batch } = await api.get("/api/profiles/reread-ids").catch(() => ({ batch: null }));
+    draw(batch);
+    if (batch && batch.running) timer = setTimeout(poll, 2000);
+  };
+  const { batch } = await api.get("/api/profiles/reread-ids");
+  draw(batch);
+  if (batch && batch.running) timer = setTimeout(poll, 2000);
+  return box;
+}
+
 export async function render(el, _p, { me, query }) {
   if (!["hr", "admin"].includes(me.user.role)) throw { status: 403 };
   const status = query.get("status") || "pending";
@@ -36,6 +81,7 @@ export async function render(el, _p, { me, query }) {
   const mine = (c) => me.employee && me.employee.id === c.employee_id;
   el.append(pageHead(t("nav_profile_changes")),
     h("p", { class: "sub" }, t("pc_intro")),
+    await rereadCard(),
     h("div", { class: "toolbar" }, sel),
     items.length ? h("div", { class: "grid" }, items.map((c) => h("section", { class: "card" },
       h("div", { class: "card-head" },

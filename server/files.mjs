@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
-import { nowIso, tx } from "./db.mjs";
+import { nowIso, tx, getSetting, setSetting } from "./db.mjs";
 import { send, sendRaw, readBody, readJson, HttpError } from "./http.mjs";
 import { can, canViewEmployee } from "./perm.mjs";
 import { audit } from "./audit.mjs";
@@ -71,6 +71,29 @@ export function registerFiles(api, ctx) {
   // read value → profile column; the expiry goes to the matching date (civil ID, passport or visa)
   const readMap = (docType) => ({ civil_id: "civil_id", passport_no: docType === "passport" ? "passport_no" : null, dob: "dob", gender: "gender", nationality: "nationality", name_en: "name_en", name_ar: "name_ar",
     expiry: { civil_id: "civil_id_expiry", passport: "passport_expiry", visa: "visa_expiry" }[docType] || null });
+  /** Read a stored ID, passport or visa (image or PDF) on our server; keeps what was read on the file. Returns the values, or null. */
+  async function readStored(file) {
+    const pdf = file.mime === "application/pdf";
+    if (!READABLE.includes(file.doc_type) || !(file.mime.startsWith("image/") || pdf) || ctx.env.OCR === "off") return null;
+    try {
+      const body = fs.readFileSync(path.join(ctx.dataDir, "uploads", String(file.id)));
+      const opts = { arabic: ["civil_id", "passport"].includes(file.doc_type) }; // the Arabic name is printed on IDs and passports
+      const r = pdf ? await readPdf(body, ctx.readDocument || readDocument, opts) : await (ctx.readDocument || readDocument)(body, opts);
+      const read = r && Object.keys(r.found).some((k) => k !== "verified" && k !== "kind") ? r.found : null;
+      if (read) {
+        db.prepare("UPDATE files SET extracted=? WHERE id=?").run(JSON.stringify(read), file.id);
+        if (read.expiry && !file.expiry) { db.prepare("UPDATE files SET expiry=? WHERE id=?").run(read.expiry, file.id); file.expiry = read.expiry; }
+      }
+      return read;
+    } catch (e) { console.error(`reading document ${file.id} failed: ${e.message}`); return null; }
+  }
+  /** Which read values go on the profile without asking: the ones the "<<<" lines' check digits confirm, the Arabic name
+   * (the reader only returns a clean 2–7-word name), and anything for a field that is still empty. */
+  const autoKeys = (emp, file, read) => {
+    const verified = new Set(read.verified || []), map = readMap(file.doc_type);
+    return Object.keys(map).filter((k) => read[k] !== undefined && (verified.has(k) || k === "name_ar" || [null, undefined, ""].includes(emp[map[k]])));
+  };
+
   /** Put values read from a document on the profile (a person's own changes are listed for HR to verify). Returns the columns changed. */
   function applyRead(sess, emp, f, found, keys) {
     const map = readMap(f.doc_type), change = {};
@@ -112,24 +135,9 @@ export function registerFiles(api, ctx) {
     // digits (the machine-readable lines) replaces the profile's values at once — the English name too; anything read only from
     // the printed side fills empty fields and is offered for the rest. HR sees a person's own changes and can undo them.
     let read = null, applied = [];
-    const pdf = file.mime === "application/pdf";
-    if (kind === "doc" && READABLE.includes(file.doc_type) && (file.mime.startsWith("image/") || pdf) && ctx.env.OCR !== "off") {
-      try {
-        const body = fs.readFileSync(path.join(ctx.dataDir, "uploads", String(file.id)));
-        const opts = { arabic: ["civil_id", "passport"].includes(file.doc_type) }; // the Arabic name is printed on IDs and passports
-        const r = pdf ? await readPdf(body, ctx.readDocument || readDocument, opts) : await (ctx.readDocument || readDocument)(body, opts);
-        read = r && Object.keys(r.found).some((k) => k !== "verified" && k !== "kind") ? r.found : null;
-        if (read) {
-          db.prepare("UPDATE files SET extracted=? WHERE id=?").run(JSON.stringify(read), file.id);
-          if (read.expiry && !file.expiry) { db.prepare("UPDATE files SET expiry=? WHERE id=?").run(read.expiry, file.id); file.expiry = read.expiry; }
-        }
-      } catch (e) { console.error(`reading document ${file.id} failed: ${e.message}`); read = null; }
-    }
+    if (kind === "doc") read = await readStored(file);
     if (read) {
-      const verified = new Set(read.verified || []), map = readMap(file.doc_type);
-      // the Arabic name has no check digits, but the reader only returns a clean 2–7-word name, so it replaces the old one too
-      const keys = Object.keys(map).filter((k) => read[k] !== undefined && (verified.has(k) || k === "name_ar" || [null, undefined, ""].includes(emp[map[k]])));
-      try { applied = applyRead(req.sess, emp, file, read, keys); } catch (e) { console.error(`applying document ${file.id} failed: ${e.message}`); }
+      try { applied = applyRead(req.sess, emp, file, read, autoKeys(emp, file, read)); } catch (e) { console.error(`applying document ${file.id} failed: ${e.message}`); }
     }
     try { runExpiryCheck(ctx, ctx.today()); } catch (e) { console.error(e); }
     send(req, res, 201, { file, read, applied, current: read ? pick(getEmployee(db, emp.id)) : undefined });
@@ -207,6 +215,56 @@ export function registerFiles(api, ctx) {
       "Content-Disposition": `${req.query.get("download") ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(fname)}`,
       "Cache-Control": "private, max-age=300",
     });
+  });
+
+  // ---------- every profile from its uploaded ID card and passport (HR/Admin, in the background) ----------
+  // Re-reads the latest civil ID and passport of each person with the current reader and updates the profile the same way an
+  // upload does (passport first, so the ID card has the last word on the shared details). The result — who changed, old → new,
+  // what couldn't be read, who has no ID uploaded — is kept until the next run.
+  let batch = null;
+  const needHr = (sess) => { if (!["hr", "admin"].includes(sess.user.role)) throw forbidden(); };
+  async function runBatch(sess) {
+    const people = db.prepare("SELECT id, emp_no, name_ar, name_en FROM employees ORDER BY name_ar").all();
+    const latest = db.prepare(`SELECT * FROM files WHERE employee_id=? AND kind='doc' AND doc_type=? AND request_id IS NULL AND voice_id IS NULL
+      ORDER BY uploaded_at DESC, id DESC LIMIT 1`);
+    const work = people.map((p) => ({ p, docs: ["passport", "civil_id"].map((dt) => latest.get(p.id, dt)).filter(Boolean) }));
+    batch.total = work.reduce((n, w) => n + w.docs.length, 0);
+    for (const { p, docs } of work) {
+      if (!docs.some((d) => d.doc_type === "civil_id")) batch.noId.push({ id: p.id, emp_no: p.emp_no, name_ar: p.name_ar, name_en: p.name_en });
+      if (!docs.length) continue;
+      const row = { id: p.id, emp_no: p.emp_no, docs: [] };
+      for (const f of docs) {
+        const read = await readStored(f);
+        const item = { file_id: f.id, doc_type: f.doc_type, name: f.name, status: "not_read", changes: {} };
+        if (read) {
+          const before = getEmployee(db, p.id);
+          let cols = [];
+          try { cols = applyRead(sess, before, f, read, autoKeys(before, f, read)); } catch (e) { item.error = e.message; }
+          const after = getEmployee(db, p.id);
+          for (const c of cols) item.changes[c] = [before[c] ?? null, after[c] ?? null];
+          item.status = cols.length ? "updated" : "same";
+        }
+        row.docs.push(item); batch.done++;
+      }
+      const e = getEmployee(db, p.id); row.name_ar = e.name_ar; row.name_en = e.name_en;
+      batch.results.push(row);
+    }
+    try { runExpiryCheck(ctx, ctx.today()); } catch (e) { console.error(e); }
+  }
+  api.post("/api/profiles/reread-ids", (req, res) => {
+    needHr(req.sess);
+    if (batch && batch.running) throw new HttpError(409, "busy", "Already running");
+    batch = { running: true, done: 0, total: 0, started_at: nowIso(), by: req.sess.user.username, results: [], noId: [] };
+    audit(db, req.sess.user.id, "profiles.reread_ids", "employee", null, null, null);
+    const job = batch;
+    runBatch(req.sess)
+      .catch((e) => { job.error = e.message; console.error(`re-reading IDs failed: ${e.message}`); })
+      .finally(() => { job.running = false; job.finished_at = nowIso(); setSetting(db, "id_reread_last", job); });
+    send(req, res, 202, { started: true });
+  });
+  api.get("/api/profiles/reread-ids", (req, res) => {
+    needHr(req.sess);
+    send(req, res, 200, { batch: batch || getSetting(db, "id_reread_last", null) });
   });
 
   api.delete("/api/files/:id", (req, res) => {

@@ -148,3 +148,30 @@ test("a PDF can be viewed page by page as pictures — only by people who may se
   assert.equal((await staff.c.get(`/api/files/${id}/page/2`)).status, 404);
   assert.equal((await fetch(`${t.base}/api/files/${id}/page/1`, { headers: { cookie: other.c.cookie } })).status, 403);
 });
+
+test("HR updates every profile from its uploaded ID in one go, and sees old → new, unreadable files and who has no ID", async () => {
+  const jpg = fs.readFileSync(new URL("./fixtures/fake-id.jpg", import.meta.url));
+  const a = await makePerson(t.base, admin, { emp_no: "RR1", name_ar: "قديم", join_date: "2022-01-01" });
+  const bad = await makePerson(t.base, admin, { emp_no: "RR2", name_ar: "صورة غير واضحة", join_date: "2022-01-01" });
+  const none = await makePerson(t.base, admin, { emp_no: "RR3", name_ar: "بلا بطاقة", join_date: "2022-01-01" });
+  await hr.c.upload(`/api/employees/${a.emp.id}/files?kind=doc&doc_type=civil_id&name=id.jpg`, jpg, "image/jpeg");
+  // details changed by hand after the card was uploaded (e.g. the name saved family-first by the old reader)
+  await admin.put(`/api/employees/${a.emp.id}`, { name_en: "Altest Sample Person", name_ar: "قديم", dob: "1980-01-01" });
+  await hr.c.upload(`/api/employees/${bad.emp.id}/files?kind=doc&doc_type=civil_id&name=blur.jpg`, Buffer.from("ffd8ffe000104a464946", "hex"), "image/jpeg");
+  assert.equal((await staff.c.post("/api/profiles/reread-ids", {})).status, 403);
+  assert.equal((await hr.c.post("/api/profiles/reread-ids", {})).status, 202);
+  let b; for (let i = 0; i < 240; i++) { b = (await hr.c.get("/api/profiles/reread-ids")).data.batch; if (!b.running) break; await new Promise((r) => setTimeout(r, 500)); }
+  assert.equal(b.running, false);
+  const row = b.results.find((r) => r.id === a.emp.id);
+  const d = row.docs.find((x) => x.doc_type === "civil_id");
+  assert.equal(d.status, "updated");
+  assert.deepEqual(d.changes.name_en, ["Altest Sample Person", "Sample Person Altest"]);
+  assert.deepEqual(d.changes.name_ar, ["قديم", "عينة شخص الاختبار"]);
+  assert.deepEqual(d.changes.dob, ["1980-01-01", "1990-04-03"]);
+  assert.equal(b.results.find((r) => r.id === bad.emp.id).docs[0].status, "not_read");
+  assert.ok(b.noId.some((p) => p.id === none.emp.id));
+  const e = (await hr.c.get(`/api/employees/${a.emp.id}`)).data.employee;
+  assert.equal(e.name_en, "Sample Person Altest"); assert.equal(e.name_ar, "عينة شخص الاختبار");
+  // kept for later
+  assert.equal((await admin.get("/api/profiles/reread-ids")).data.batch.results.length, b.results.length);
+});

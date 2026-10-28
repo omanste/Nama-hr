@@ -419,3 +419,4 @@ dialog.dialog form > .row.end:last-child{position:sticky;bottom:-20px;z-index:1;
 .doc-groups{display:grid;gap:14px}
 .doc-group h3{display:flex;align-items:center;gap:8px;margin:0 0 6px;font-size:15px}
 .badge.one-lang{margin-inline-start:8px;font-size:11px;padding:1px 8px;vertical-align:middle}
+.rr-changes{display:grid;gap:4px}
