@@ -68,6 +68,29 @@ async function pdfPage(ctx, f, n) {
 export function registerFiles(api, ctx) {
   const { db } = ctx;
   const forbidden = () => new HttpError(403, "forbidden", "You do not have permission for this");
+  // read value → profile column; the expiry goes to the matching date (civil ID, passport or visa)
+  const readMap = (docType) => ({ civil_id: "civil_id", passport_no: docType === "passport" ? "passport_no" : null, dob: "dob", gender: "gender", nationality: "nationality", name_en: "name_en",
+    expiry: { civil_id: "civil_id_expiry", passport: "passport_expiry", visa: "visa_expiry" }[docType] || null });
+  /** Put values read from a document on the profile (a person's own changes are listed for HR to verify). Returns the columns changed. */
+  function applyRead(sess, emp, f, found, keys) {
+    const map = readMap(f.doc_type), change = {};
+    for (const k of keys) { const col = map[k]; if (col && found[k] !== undefined && String(emp[col] ?? "") !== String(found[k])) change[col] = found[k]; }
+    if (!Object.keys(change).length) return [];
+    let clean;
+    try { clean = cleanEmployee(db, change, emp); }
+    catch { // e.g. a civil number already on someone else's profile: keep the rest
+      clean = {};
+      for (const [c, v] of Object.entries(change)) { try { Object.assign(clean, cleanEmployee(db, { [c]: v }, emp)); } catch { /* skipped */ } }
+    }
+    const cols = Object.keys(clean);
+    if (!cols.length) return [];
+    tx(db, () => {
+      db.prepare(`UPDATE employees SET ${cols.map((c) => `${c}=?`).join(",")},updated_at=? WHERE id=?`).run(...cols.map((c) => clean[c]), nowIso(), emp.id);
+      audit(db, sess.user.id, "employee.update_from_id", "employee", emp.id, pick(emp), { ...clean, file_id: f.id });
+      recordSelfChange(ctx, sess, emp, emp, clean, "id");
+    });
+    return cols;
+  }
 
   api.post("/api/employees/:id/files", async (req, res) => {
     const emp = getEmployee(db, req.params.id);
@@ -85,8 +108,10 @@ export function registerFiles(api, ctx) {
       }
       audit(db, req.sess.user.id, "file.upload", "employee", emp.id, null, file);
     });
-    // ID card or passport photo: read it on our own server and offer the values (never applied without a person confirming)
-    let read = null;
+    // ID card or passport: read it on our own server. The document is the source of truth, so what was read with its check
+    // digits (the machine-readable lines) replaces the profile's values at once — the English name too; anything read only from
+    // the printed side fills empty fields and is offered for the rest. HR sees a person's own changes and can undo them.
+    let read = null, applied = [];
     const pdf = file.mime === "application/pdf";
     if (kind === "doc" && READABLE.includes(file.doc_type) && (file.mime.startsWith("image/") || pdf) && ctx.env.OCR !== "off") {
       try {
@@ -99,8 +124,13 @@ export function registerFiles(api, ctx) {
         }
       } catch (e) { console.error(`reading document ${file.id} failed: ${e.message}`); read = null; }
     }
+    if (read) {
+      const verified = new Set(read.verified || []), map = readMap(file.doc_type);
+      const keys = Object.keys(map).filter((k) => read[k] !== undefined && (verified.has(k) || [null, undefined, ""].includes(emp[map[k]])));
+      try { applied = applyRead(req.sess, emp, file, read, keys); } catch (e) { console.error(`applying document ${file.id} failed: ${e.message}`); }
+    }
     try { runExpiryCheck(ctx, ctx.today()); } catch (e) { console.error(e); }
-    send(req, res, 201, { file, read, current: read ? pick(getEmployee(db, emp.id)) : undefined });
+    send(req, res, 201, { file, read, applied, current: read ? pick(getEmployee(db, emp.id)) : undefined });
   });
 
   // Apply chosen values read from an ID photo to the profile. Only values the reader found are used — nobody can type new ones here.
@@ -112,24 +142,9 @@ export function registerFiles(api, ctx) {
     if (!emp || (!hr && emp.id !== req.sess.user.employee_id)) throw forbidden();
     const b = await readJson(req);
     const found = JSON.parse(f.extracted);
-    // the expiry goes to the matching profile date: civil ID, passport or visa
-    const map = { civil_id: "civil_id", passport_no: f.doc_type === "passport" ? "passport_no" : null, dob: "dob", gender: "gender", nationality: "nationality", name_en: "name_en",
-      expiry: { civil_id: "civil_id_expiry", passport: "passport_expiry", visa: "visa_expiry" }[f.doc_type] || null };
-    const change = {};
-    for (const k of Array.isArray(b.fields) ? b.fields : []) {
-      const col = map[k];
-      if (!col || found[k] === undefined) continue;
-      if (col === "name_en" && !hr && emp.name_en) continue; // staff may fill an empty English name, not rename themselves
-      change[col] = found[k];
-    }
-    if (!Object.keys(change).length) throw new HttpError(400, "invalid", "Choose at least one value");
-    const clean = cleanEmployee(db, change, emp);
-    tx(db, () => {
-      const cols = Object.keys(clean);
-      db.prepare(`UPDATE employees SET ${cols.map((c) => `${c}=?`).join(",")},updated_at=? WHERE id=?`).run(...cols.map((c) => clean[c]), nowIso(), emp.id);
-      audit(db, req.sess.user.id, "employee.update_from_id", "employee", emp.id, pick(emp), { ...clean, file_id: f.id });
-      recordSelfChange(ctx, req.sess, emp, emp, clean, "id");
-    });
+    const keys = (Array.isArray(b.fields) ? b.fields : []).filter((k) => readMap(f.doc_type)[k] && found[k] !== undefined);
+    if (!keys.length) throw new HttpError(400, "invalid", "Choose at least one value");
+    applyRead(req.sess, emp, f, found, keys);
     try { runExpiryCheck(ctx, ctx.today()); } catch (e) { console.error(e); }
     send(req, res, 200, { employee: getEmployee(db, emp.id) });
   });

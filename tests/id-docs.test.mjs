@@ -43,25 +43,30 @@ before(async () => {
 });
 after(async () => { await t.close(); });
 
-test("a real photo of a (made-up) ID card is read on our server and the values applied only after confirming", async () => {
+test("uploading an ID fills the personal details at once — replacing what was typed, the English name too; HR sees it to verify", async () => {
+  // details typed by hand before the card was uploaded
+  await admin.put(`/api/employees/${staff.emp.id}`, { name_en: "Typed Name", dob: "1985-01-01", gender: "female" });
   const jpg = fs.readFileSync(new URL("./fixtures/fake-id-back.jpg", import.meta.url));
   const up = await staff.c.upload(`/api/employees/${staff.emp.id}/files?kind=doc&doc_type=civil_id&name=id-back.jpg`, jpg, "image/jpeg");
   assert.equal(up.status, 201);
   assert.equal(up.data.read.civil_id, "98765432");
-  assert.equal(up.data.read.expiry, "2028-05-12");
   assert.ok(up.data.read.verified.includes("dob"));
   assert.equal(up.data.file.expiry, "2028-05-12"); // the copy keeps its expiry for alerts
-  // nothing changed yet
-  assert.equal((await staff.c.get(`/api/employees/${staff.emp.id}`)).data.employee.civil_id, null);
-  // someone else can't apply it; the owner can
-  assert.equal((await other.c.post(`/api/files/${up.data.file.id}/apply`, { fields: ["civil_id"] })).status, 403);
-  const ap = await staff.c.post(`/api/files/${up.data.file.id}/apply`, { fields: ["civil_id", "expiry", "dob", "gender", "nationality", "name_en", "made_up"] });
-  assert.equal(ap.status, 200);
-  const e = ap.data.employee;
+  assert.deepEqual([...up.data.applied].sort(), ["civil_id", "civil_id_expiry", "dob", "gender", "name_en", "nationality"]);
+  const e = (await staff.c.get(`/api/employees/${staff.emp.id}`)).data.employee;
   assert.equal(e.civil_id, "98765432"); assert.equal(e.civil_id_expiry, "2028-05-12"); assert.equal(e.dob, "1990-04-03");
   assert.equal(e.gender, "male"); assert.equal(e.nationality, "OM"); assert.equal(e.name_en, "Sample Person Altest");
-  const log = (await admin.get("/api/audit?entity=employee")).data.items.find((a) => a.action === "employee.update_from_id");
-  assert.ok(log);
+  // the name at the top and on the sign-in list follow the profile
+  assert.equal((await staff.c.get("/api/me")).data.employee.name_en, "Sample Person Altest");
+  // HR is shown what changed (old → new) and can undo it
+  const pc = (await hr.c.get("/api/profile-changes")).data.items.find((c) => c.employee_id === staff.emp.id && c.source === "id");
+  assert.deepEqual(pc.changes.name_en, ["Typed Name", "Sample Person Altest"]);
+  assert.ok((await admin.get("/api/audit?entity=employee")).data.items.find((a) => a.action === "employee.update_from_id"));
+  // uploading the same card again changes nothing
+  const again = await staff.c.upload(`/api/employees/${staff.emp.id}/files?kind=doc&doc_type=civil_id&name=id-back.jpg`, jpg, "image/jpeg");
+  assert.deepEqual(again.data.applied, []);
+  // someone else can't apply a read value to this profile
+  assert.equal((await other.c.post(`/api/files/${up.data.file.id}/apply`, { fields: ["civil_id"] })).status, 403);
 });
 
 test("values that were not read can't be pushed through apply", async () => {
@@ -105,13 +110,14 @@ test("a document's expiry date can be set or corrected (own papers or HR), and t
 
 test("a passport PDF (phone scan with a text layer) is read: number and expiry go to the profile after confirming", async () => {
   const pdf = fs.readFileSync(new URL("./fixtures/fake-passport.pdf", import.meta.url)); // made up, no real person
+  await admin.put(`/api/employees/${staff.emp.id}`, { passport_no: "OLD0001", passport_expiry: "2025-01-01" }); // an old passport typed earlier
   const up = await staff.c.upload(`/api/employees/${staff.emp.id}/files?kind=doc&doc_type=passport&name=passport.pdf`, pdf, "application/pdf");
   assert.equal(up.status, 201);
   if (!up.data.read) return; // this machine has no pdftotext (the server image installs it)
   assert.equal(up.data.read.passport_no, "T1234567"); assert.equal(up.data.read.expiry, "2031-01-30");
   assert.equal(up.data.read.civil_id, "98765432", "the civil number from the passport");
   assert.equal(up.data.file.expiry, "2031-01-30");
-  assert.equal((await staff.c.post(`/api/files/${up.data.file.id}/apply`, { fields: ["passport_no", "expiry"] })).status, 200);
+  assert.ok(up.data.applied.includes("passport_no") && up.data.applied.includes("passport_expiry"), "applied on upload");
   const e = (await staff.c.get(`/api/employees/${staff.emp.id}`)).data.employee;
   assert.equal(e.passport_no, "T1234567"); assert.equal(e.passport_expiry, "2031-01-30");
 });

@@ -333,7 +333,7 @@ const D = {
   f_passport_no: ["رقم جواز السفر", "Passport number"], f_passport_expiry: ["انتهاء جواز السفر", "Passport expiry"], f_visa_expiry: ["انتهاء التأشيرة", "Visa expiry"],
   view: ["عرض", "View"], previous: ["السابق", "Previous"], page_of: ["صفحة {n} من {total}", "Page {n} of {total}"], document: ["مستند", "Document"],
   open_new_tab: ["فتح في نافذة جديدة", "Open in new tab"], view_not_possible: ["لا يمكن عرض هذا الملف هنا — نزّله لفتحه.", "This file can't be shown here — download it to open it."],
-  read_filled: ["أُضيفت {n} بيانات من المستند الجديد إلى ملفك.", "{n} details from the new document were added to your profile."],
+  read_filled: ["حُدّثت {n} من بياناتك الشخصية من المستند.", "{n} of your personal details were updated from the document."],
   read_nothing_new: ["تم الحفظ — بياناتك مطابقة للمستند.", "Saved — your details already match the document."],
   read_update_title: ["تحديث بياناتك من المستند الجديد؟", "Update your details from the new document?"],
   read_update_intro: ["هذه القيم تختلف عمّا في ملفك. المحدد سيُستبدل بقيمة المستند الجديد.", "These differ from your profile. Ticked ones will be replaced with the new document's value."],

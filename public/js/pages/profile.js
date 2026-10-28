@@ -5,7 +5,7 @@ import { GOVERNORATES, MUSCAT_GROUPS, wilayatName, areaName, isWilayat, isArea }
 import { countryName } from "../countries.js";
 import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, errText, confirm, select, field, backLink, todayIso, isPermission, isAttendanceReq, durText, viewFile } from "../ui.js";
 import { balanceHero, requestItem } from "./home.js";
-import { render as rerender } from "../app.js";
+import { render as rerender, refreshMe } from "../app.js";
 
 const DOC_TYPES = ["civil_id", "passport", "visa", "resume", "certificate", "course", "contract", "medical", "consent", "other"]; // also the order the categories are listed in
 // staff may add their own papers (a copy of their contract too); payout consents stay with HR (server enforces the same)
@@ -75,15 +75,13 @@ async function readDialog(e, r, docType, canEditAll) {
   const FIELDS = [["civil_id", "f_civil_id", "civil_id"], ["passport_no", "f_passport_no", docType === "passport" ? "passport_no" : null],
     ["expiry", expCol ? "f_" + expCol : "doc_expiry", expCol],
     ["dob", "f_dob", "dob"], ["gender", "f_gender", "gender"], ["nationality", "f_nationality", "nationality"], ["name_en", "f_name_en", "name_en"]];
-  const usable = FIELDS.filter(([k, , col]) => found[k] !== undefined && col && !(k === "name_en" && !canEditAll && cur.name_en)) // staff don't rename themselves
+  // the server already put what it read (check-digit verified, or into empty fields) on the profile; only a value read from
+  // the printed side that differs from what's there is left to confirm
+  const ask = FIELDS.filter(([k, , col]) => found[k] !== undefined && col)
     .map(([k, label, col]) => ({ k, label, col, now: cur[col], same: String(cur[col] ?? "") === String(found[k]) }))
     .filter((x) => !x.same);
-  const fill = usable.filter((x) => (x.now === null || x.now === undefined || x.now === "") && verified.has(x.k));
-  const ask = usable.filter((x) => !fill.includes(x));
-  const filled = [];
-  if (fill.length) {
-    try { await api.post(`/api/files/${r.file.id}/apply`, { fields: fill.map((x) => x.k) }); filled.push(...fill); } catch (er) { toast(errText(er), "bad"); }
-  }
+  const filled = r.applied || [];
+  if (filled.length) await refreshMe(); // the name at the top (and on the sign-in list) follows the profile
   if (!ask.length) { toast(filled.length ? t("read_filled", { n: filled.length }) : t("read_nothing_new")); return; }
   const rows = ask.map((x) => {
     const box = h("input", { type: "checkbox", name: x.k, checked: true });
