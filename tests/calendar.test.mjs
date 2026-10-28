@@ -65,3 +65,18 @@ test("birthdays: on the calendar (no year), a heads-up 5 days before to everyone
   // 29 February birthdays show on 28 February in other years
   assert.ok((await s.c.get("/api/calendar?month=2027-02")).data.birthdays.some((x) => x.employee_id === other.emp.id && x.date === "2027-02-28"));
 });
+
+test("Oman's national and religious occasions: imported for a year, once; national/religious can also be added by hand", async () => {
+  const { omanOccasions } = await import("../server/oman-occasions.mjs");
+  const y26 = omanOccasions(2026);
+  assert.ok(y26.some((o) => o.kind === "national" && o.date === "2026-11-18"));
+  assert.ok(y26.some((o) => o.kind === "religious" && /Eid al-Adha/.test(o.name)));
+  const c = admin;
+  const r = await c.post("/api/calendar/import-oman", { year: 2026 });
+  assert.equal((await s.c.post("/api/calendar/import-oman", { year: 2026 })).status, 403, "staff can't import");
+  assert.equal(r.status, 200); assert.equal(r.data.added, y26.length);
+  assert.equal((await c.post("/api/calendar/import-oman", { year: 2026 })).data.added, 0, "not twice");
+  const nov = (await c.get("/api/calendar?month=2026-11")).data.events;
+  assert.ok(nov.some((e) => e.kind === "national" && e.start_date === "2026-11-18"));
+  assert.equal((await c.post("/api/calendar/entries", { kind: "religious", start: "2026-12-01", name: "Test" })).status, 201);
+});

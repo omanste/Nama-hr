@@ -121,6 +121,8 @@ const MIGRATIONS = [
   `ALTER TABLE employees ADD COLUMN perm_wilayat TEXT; ALTER TABLE employees ADD COLUMN current_area TEXT;`,
   // 19: passport number and expiry, visa expiry on the profile (filled from the uploaded documents)
   `ALTER TABLE employees ADD COLUMN passport_no TEXT; ALTER TABLE employees ADD COLUMN passport_expiry TEXT; ALTER TABLE employees ADD COLUMN visa_expiry TEXT;`,
+  // 20: national and religious occasions on the company calendar (Oman's, importable each year)
+  (db) => rebuildWithCheck(db, "calendar_events", "CHECK(kind IN ('blocked','event'))", "CHECK(kind IN ('blocked','event','national','religious'))"),
 ];
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */

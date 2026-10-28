@@ -389,3 +389,9 @@ dialog.dialog.viewer[open]{display:grid}
 .viewer-pager{justify-content:center;gap:10px}
 .viewer-pager:empty{display:none}
 .pc-old-inline{color:var(--muted);text-decoration:line-through}
+/* national (Nama green) and religious (violet) occasions on the calendar */
+.tag.nat{background:var(--brand);color:var(--brand-fg)}
+.tag.rel{background:#EEE7F8;color:#5B3E8F}
+i.nat{background:var(--brand)} i.rel{background:#8A6CC0}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .tag.rel{background:#2E2440;color:#CDB8F0} }
+:root[data-theme="dark"] .tag.rel{background:#2E2440;color:#CDB8F0}

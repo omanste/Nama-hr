@@ -1,7 +1,7 @@
 // Company calendar: a month grid with leave (by what each person may see), official holidays, blocked days,
 // company occasions and birthdays. HR and Admin add or remove entries here.
 import { api } from "../api.js";
-import { t, nm, getLang } from "../i18n.js";
+import { t, nm, getLang, tx } from "../i18n.js";
 import { h, field, select, pageHead, toast, errText, confirm, dmy, todayIso, isPermission, empty } from "../ui.js";
 import { render as rerender } from "../app.js";
 
@@ -31,6 +31,8 @@ export async function render(el, _p, { query }) {
     holiday: holidays.get(d),
     blocked: data.events.filter((e) => e.kind === "blocked" && inRange(d, e.start_date, e.end_date)),
     events: data.events.filter((e) => e.kind === "event" && inRange(d, e.start_date, e.end_date)),
+    national: data.events.filter((e) => e.kind === "national" && inRange(d, e.start_date, e.end_date)),
+    religious: data.events.filter((e) => e.kind === "religious" && inRange(d, e.start_date, e.end_date)),
     birthdays: data.birthdays.filter((b) => b.date === d),
     off: data.items.filter((r) => inRange(d, r.start_date, r.end_date)),
   });
@@ -50,15 +52,18 @@ export async function render(el, _p, { query }) {
       },
         h("span", { class: "dnum" }, String(d)),
         x.holiday ? h("span", { class: "tag hol" }, x.holiday) : null,
-        x.blocked.map((e) => h("span", { class: "tag blk" }, "⛔ ", e.name)),
-        x.events.map((e) => h("span", { class: "tag ev" }, "★ ", e.name)),
+        x.blocked.map((e) => h("span", { class: "tag blk" }, "⛔ ", tx(e.name))),
+        x.national.map((e) => h("span", { class: "tag nat" }, tx(e.name))),
+        x.religious.map((e) => h("span", { class: "tag rel" }, tx(e.name))),
+        x.events.map((e) => h("span", { class: "tag ev" }, "★ ", tx(e.name))),
         x.birthdays.map((b) => h("span", { class: "tag bd" }, "🎂 ", nm(b))),
         leaves.slice(0, 3).map((r) => h("span", { class: `tag lv ${r.status}` }, nm(r))),
         leaves.length > 3 ? h("span", { class: "tag more" }, `+${leaves.length - 3}`) : null,
         perms.length ? h("span", { class: "tag pm" }, "⏱ ", String(perms.length)) : null,
         // phones: dots instead of words
         h("span", { class: "dots", "aria-hidden": "true" },
-          x.holiday ? h("i", { class: "hol" }) : null, x.blocked.length ? h("i", { class: "blk" }) : null, x.events.length ? h("i", { class: "ev" }) : null,
+          x.holiday ? h("i", { class: "hol" }) : null, x.blocked.length ? h("i", { class: "blk" }) : null, x.national.length ? h("i", { class: "nat" }) : null,
+          x.religious.length ? h("i", { class: "rel" }) : null, x.events.length ? h("i", { class: "ev" }) : null,
           x.birthdays.length ? h("i", { class: "bd" }) : null, leaves.length ? h("i", { class: "lv" }) : null, perms.length ? h("i", { class: "pm" }) : null)));
     }
     grid.replaceChildren(...wk.map((w) => h("div", { class: "cal-wk", role: "columnheader" }, w)), ...cells);
@@ -69,9 +74,11 @@ export async function render(el, _p, { query }) {
     const rows = [
       x.holiday ? h("div", { class: "item" }, h("span", { class: "badge b-on_leave" }, t("holiday")), h("div", { class: "grow" }, x.holiday),
         del(async () => { if (await confirm(t("delete_q"), { danger: true })) { try { await api.del(`/api/calendar/holidays/${selected}`); toast(t("saved")); rerender(); } catch (e) { toast(errText(e), "bad"); } } })) : null,
-      ...x.blocked.map((e) => h("div", { class: "item" }, h("span", { class: "badge b-rejected" }, t("cal_blocked")), h("div", { class: "grow" }, e.name, h("div", { class: "meta" }, `${dmy(e.start_date)} – ${dmy(e.end_date)} · ${t("cal_blocked_hint")}`)),
+      ...[...x.national, ...x.religious].map((e) => h("div", { class: "item" }, h("span", { class: `badge ${e.kind === "national" ? "b-approved" : "b-on_leave"}` }, t("cal_" + e.kind)), h("div", { class: "grow" }, tx(e.name)),
         del(async () => { if (await confirm(t("delete_q"), { danger: true })) { try { await api.del(`/api/calendar/entries/${e.id}`); toast(t("saved")); rerender(); } catch (er) { toast(errText(er), "bad"); } } }))),
-      ...x.events.map((e) => h("div", { class: "item" }, h("span", { class: "badge b-pending" }, t("cal_event")), h("div", { class: "grow" }, e.name, h("div", { class: "meta" }, e.start_date === e.end_date ? dmy(e.start_date) : `${dmy(e.start_date)} – ${dmy(e.end_date)}`)),
+      ...x.blocked.map((e) => h("div", { class: "item" }, h("span", { class: "badge b-rejected" }, t("cal_blocked")), h("div", { class: "grow" }, tx(e.name), h("div", { class: "meta" }, `${dmy(e.start_date)} – ${dmy(e.end_date)} · ${t("cal_blocked_hint")}`)),
+        del(async () => { if (await confirm(t("delete_q"), { danger: true })) { try { await api.del(`/api/calendar/entries/${e.id}`); toast(t("saved")); rerender(); } catch (er) { toast(errText(er), "bad"); } } }))),
+      ...x.events.map((e) => h("div", { class: "item" }, h("span", { class: "badge b-pending" }, t("cal_event")), h("div", { class: "grow" }, tx(e.name), h("div", { class: "meta" }, e.start_date === e.end_date ? dmy(e.start_date) : `${dmy(e.start_date)} – ${dmy(e.end_date)}`)),
         del(async () => { if (await confirm(t("delete_q"), { danger: true })) { try { await api.del(`/api/calendar/entries/${e.id}`); toast(t("saved")); rerender(); } catch (er) { toast(errText(er), "bad"); } } }))),
       ...x.birthdays.map((b) => h("div", { class: "item" }, h("span", { class: "badge" }, "🎂"), h("div", { class: "grow" }, t("cal_birthday_of", { name: nm(b) })))),
       ...x.off.map((r) => h("a", { class: "item", href: `#/leave/${r.id}` }, h("span", { class: `badge ${r.status === "approved" ? "b-approved" : "b-pending"}` }, t("rs_" + r.status)),
@@ -83,8 +90,10 @@ export async function render(el, _p, { query }) {
   drawGrid(); drawDetail();
 
   const legend = h("div", { class: "row sub cal-legend" },
-    [["hol", "holiday"], ["blk", "cal_blocked"], ["ev", "cal_event"], ["bd", "cal_birthday"], ["lv", "cal_leave"], ["pm", "nav_permissions"]].map(([c, k]) => h("span", null, h("i", { class: `key ${c}` }), t(k))));
-  el.append(pageHead(t("nav_calendar"), data.canEdit ? h("button", { class: "btn primary", type: "button", onclick: () => addDialog(selected) }, "+ ", t("cal_add")) : null),
+    [["hol", "holiday"], ["nat", "cal_national"], ["rel", "cal_religious"], ["blk", "cal_blocked"], ["ev", "cal_event"], ["bd", "cal_birthday"], ["lv", "cal_leave"], ["pm", "nav_permissions"]].map(([c, k]) => h("span", null, h("i", { class: `key ${c}` }), t(k))));
+  el.append(pageHead(t("nav_calendar"),
+      data.canEdit ? h("button", { class: "btn", type: "button", onclick: () => importDialog(y) }, "⬇ ", t("cal_import_oman")) : null,
+      data.canEdit ? h("button", { class: "btn primary", type: "button", onclick: () => addDialog(selected) }, "+ ", t("cal_add")) : null),
     h("div", { class: "toolbar cal-nav" },
       h("button", { class: "btn", type: "button", "aria-label": t("prev_month"), onclick: () => go(shift(month, -1)) }, getLang() === "ar" ? "→" : "←"),
       monthSel, yearSel,
@@ -95,7 +104,7 @@ export async function render(el, _p, { query }) {
 }
 
 function addDialog(day) {
-  const kind = select("kind", [["blocked", t("cal_blocked")], ["event", t("cal_event")], ["holiday", t("holiday")]], "blocked");
+  const kind = select("kind", [["blocked", t("cal_blocked")], ["event", t("cal_event")], ["national", t("cal_national")], ["religious", t("cal_religious")], ["holiday", t("holiday")]], "blocked");
   const from = h("input", { type: "date", value: day, required: true }), to = h("input", { type: "date", value: day });
   const name = h("input", { required: true, maxlength: 100, dir: "auto" });
   const hint = h("p", { class: "sub" });
@@ -113,4 +122,20 @@ function addDialog(day) {
     h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), h("button", { class: "btn primary", type: "submit" }, t("save")))));
   dlg.addEventListener("close", () => dlg.remove());
   document.body.append(dlg); dlg.showModal(); name.focus();
+}
+
+/** Add Oman's national occasions and the expected religious occasions (Hijri calendar) for a year. */
+function importDialog(year) {
+  const sel = select("year", [year - 1, year, year + 1].map((k) => [k, String(k)]), year);
+  const err = h("div", { class: "form-error" });
+  const dlg = h("dialog", { class: "dialog" }, h("form", { class: "form", onsubmit: async (ev) => {
+    ev.preventDefault();
+    try { const r = await api.post("/api/calendar/import-oman", { year: Number(sel.value) }); dlg.close(); toast(t("cal_imported", { n: r.added, y: r.year })); rerender(); }
+    catch (er) { err.textContent = errText(er); }
+  } },
+    h("h2", null, t("cal_import_oman")), h("p", { class: "sub" }, t("cal_import_hint")),
+    field(t("year"), sel), err,
+    h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), h("button", { class: "btn primary", type: "submit" }, t("cal_import")))));
+  dlg.addEventListener("close", () => dlg.remove());
+  document.body.append(dlg); dlg.showModal();
 }

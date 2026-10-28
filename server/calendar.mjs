@@ -7,6 +7,7 @@ import { can, approvedDepartments } from "./perm.mjs";
 import { audit } from "./audit.mjs";
 import { notify } from "./notify.mjs";
 import { isIsoDate, addDays, addMonths, PERMISSION_TYPES } from "./leave.mjs";
+import { omanOccasions } from "./oman-occasions.mjs";
 
 export const BLOCKABLE = ["annual", "unpaid", ...PERMISSION_TYPES];
 const editors = ["admin", "hr"];
@@ -85,7 +86,7 @@ export function registerCalendar(api, ctx) {
     needEditor(req.sess);
     const b = await readJson(req);
     const kind = b.kind, start = b.start, end = b.end || b.start, name = String(b.name || "").trim().slice(0, 100);
-    if (!["holiday", "blocked", "event"].includes(kind)) throw bad("kind", "Choose what to add");
+    if (!["holiday", "blocked", "event", "national", "religious"].includes(kind)) throw bad("kind", "Choose what to add");
     if (!isIsoDate(start)) throw bad("start", "A valid date is required");
     if (!isIsoDate(end) || end < start) throw bad("end", "The end date is before the start");
     if (addDays(start, 92) < end) throw bad("end", "At most 3 months at a time");
@@ -106,7 +107,7 @@ export function registerCalendar(api, ctx) {
       audit(db, req.sess.user.id, `calendar.add_${kind}`, "calendar", out.id || start, null, out);
     });
     // a blocked period or company occasion is news for everyone
-    if (kind !== "holiday") {
+    if (kind === "blocked" || kind === "event") {
       const users = db.prepare("SELECT id FROM users WHERE active=1").all().map((r) => r.id);
       const when = start === end ? start.split("-").reverse().join("/") : `${start.split("-").reverse().join("/")} – ${end.split("-").reverse().join("/")}`;
       notify(ctx, users, kind === "blocked"
@@ -114,6 +115,22 @@ export function registerCalendar(api, ctx) {
         : { title_ar: `مناسبة للشركة: ${name}`, title_en: `Company occasion: ${name}`, body_ar: when, body_en: when, link: "#/calendar", inAppOnly: true });
     }
     send(req, res, 201, { entry: out });
+  });
+
+  // add Oman's national and religious occasions for a year (skips ones already there)
+  api.post("/api/calendar/import-oman", async (req, res) => {
+    needEditor(req.sess);
+    const year = Number((await readJson(req)).year);
+    if (!Number.isInteger(year) || year < 2020 || year > 2100) throw bad("year", "Choose a year");
+    const have = db.prepare("SELECT 1 FROM calendar_events WHERE kind=? AND start_date=? AND name=?");
+    const ins = db.prepare("INSERT INTO calendar_events(kind,start_date,end_date,name,created_by,created_at) VALUES(?,?,?,?,?,?)");
+    let added = 0;
+    const list = omanOccasions(year);
+    tx(db, () => {
+      for (const o of list) if (!have.get(o.kind, o.date, o.name)) { ins.run(o.kind, o.date, o.date, o.name, req.sess.user.id, nowIso()); added++; }
+      audit(db, req.sess.user.id, "calendar.import_oman", "calendar", year, null, { year, added });
+    });
+    send(req, res, 200, { year, added, total: list.length });
   });
 
   api.delete("/api/calendar/entries/:id", (req, res) => {

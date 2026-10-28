@@ -46,6 +46,7 @@ Everything runs on Nama's own server (Dokploy); no outside services — ID cards
 * Nothing is applied automatically: no penalties (violation cases are a later step).
 
 ## Calendar
+* National and religious occasions (their own colours). **Import Oman occasions** (HR/Admin) adds a year's: Accession Day, Teacher's Day, Renaissance Day, Omani Women's Day, Omani Youth Day, National Day; and, on their expected Hijri (Umm al-Qura) dates, Islamic New Year, the Prophet's Birthday, Isra and Mi'raj, start of Ramadan, Eid al-Fitr, Day of Arafah, Eid al-Adha. Never added twice; they aren't days off (official holidays stay separate).
 * Month grid for everyone: leave (by what you may see), official holidays, blocked days, company occasions, birthdays (day/month only).
 * HR/Admin add holidays, **blocked days** (no annual leave, unpaid leave or permissions; statutory leave can't be blocked) and occasions.
 * Birthday heads-up to all colleagues 5 days before — never to the person.
