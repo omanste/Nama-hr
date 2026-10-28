@@ -11,7 +11,7 @@ import { isIsoDate } from "./leave.mjs";
 import { getEmployee } from "./employees.mjs";
 import { deputyOf } from "./requests.mjs";
 import { readDocument, readPdf } from "./idread.mjs";
-import { toArabicName, arKey } from "./names-ar.mjs";
+import { toArabicName, completeArabicName } from "./names-ar.mjs";
 import { canReadVoice } from "./voice.mjs";
 import { runExpiryCheck } from "./jobs.mjs";
 import { recordSelfChange } from "./profile-changes.mjs";
@@ -93,9 +93,8 @@ export function registerFiles(api, ctx) {
    * replace a different spelling someone typed. */
   function arabicFallback(emp, read) {
     if (read.name_ar || !read.name_en) return;
-    const ar = toArabicName(read.name_en); if (!ar) return;
-    const have = arKey(emp.name_ar).split(" ").filter(Boolean), want = arKey(ar).split(" ");
-    if (!have.length || (have.length < want.length && have.every((w) => want.includes(w)))) { read.name_ar = ar; read.name_ar_from = "english"; }
+    const ar = String(emp.name_ar || "").trim() ? completeArabicName(read.name_en, emp.name_ar) : toArabicName(read.name_en);
+    if (ar) { read.name_ar = ar; read.name_ar_from = "english"; }
   }
   /** Which read values go on the profile without asking: the ones the "<<<" lines' check digits confirm, the Arabic name
    * (the reader only returns a clean 2–7-word name), and anything for a field that is still empty. */
@@ -229,16 +228,17 @@ export function registerFiles(api, ctx) {
   });
 
   // ---------- every profile from its uploaded ID card and passport (HR/Admin, in the background) ----------
-  // Re-reads the latest civil ID and passport of each person with the current reader and updates the profile the same way an
+  // Re-reads the latest civil IDs (up to 3 files: front and back) and passports (up to 2) of each person with the current reader and updates the profile the same way an
   // upload does (passport first, so the ID card has the last word on the shared details). The result — who changed, old → new,
   // what couldn't be read, who has no ID uploaded — is kept until the next run.
   let batch = null;
   const needHr = (sess) => { if (!["hr", "admin"].includes(sess.user.role)) throw forbidden(); };
   async function runBatch(sess) {
     const people = db.prepare("SELECT id, emp_no, name_ar, name_en FROM employees ORDER BY name_ar").all();
-    const latest = db.prepare(`SELECT * FROM files WHERE employee_id=? AND kind='doc' AND doc_type=? AND request_id IS NULL AND voice_id IS NULL
-      ORDER BY uploaded_at DESC, id DESC LIMIT 1`);
-    const work = people.map((p) => ({ p, docs: ["passport", "civil_id"].map((dt) => latest.get(p.id, dt)).filter(Boolean) }));
+    // the latest few of each (the front and the back of an ID are often two files), oldest first so the newest has the last word
+    const latest = db.prepare(`SELECT * FROM (SELECT * FROM files WHERE employee_id=? AND kind='doc' AND doc_type=? AND request_id IS NULL AND voice_id IS NULL
+      ORDER BY uploaded_at DESC, id DESC LIMIT ?) ORDER BY uploaded_at, id`);
+    const work = people.map((p) => ({ p, docs: [...latest.all(p.id, "passport", 2), ...latest.all(p.id, "civil_id", 3)] }));
     batch.total = work.reduce((n, w) => n + w.docs.length, 0);
     for (const { p, docs } of work) {
       if (!docs.some((d) => d.doc_type === "civil_id")) batch.noId.push({ id: p.id, emp_no: p.emp_no, name_ar: p.name_ar, name_en: p.name_en });

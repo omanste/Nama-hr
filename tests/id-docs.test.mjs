@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { boot, adminClient, makePerson } from "./helpers.mjs";
 import { parseMrz, parseFront, parseArabicName, fullPrintedName, arabicNameFrom } from "../server/idread.mjs";
-import { toArabicName, completeFamily } from "../server/names-ar.mjs";
+import { toArabicName, completeFamily, completeArabicName } from "../server/names-ar.mjs";
 import { runExpiryCheck } from "../server/jobs.mjs";
 
 test("reader: check-digit verified ID lines and printed front labels", () => {
@@ -207,4 +207,26 @@ test("a card with a long name and no Arabic: the full English name, and the Arab
   await hr.c.upload(`/api/employees/${b.emp.id}/files?kind=doc&doc_type=civil_id&name=id.jpg`, jpg, "image/jpeg");
   e = (await hr.c.get(`/api/employees/${b.emp.id}`)).data.employee;
   assert.equal(e.name_ar, "شيخه سليم الهنائي"); assert.equal(e.name_en, "Shaikha Salim Khalfan Al Hinai");
+});
+
+test("Arabic name completed from the English one even with words the list doesn't know (the saved ones are kept)", () => {
+  assert.equal(completeArabicName("Shaikha Xyzq Abdallah Al-Qwerty", "شيخة إسحاق الحوقاني"), "شيخة إسحاق عبدالله الحوقاني");
+  assert.equal(completeArabicName("Shaikha Salim Khalfan Al Hinai", "شيخة سالم الهنائي"), "شيخة سالم خلفان الهنائي");
+  assert.equal(completeArabicName("Shaikha Salim Khalfan Al Hinai", "منى سالم"), null, "doesn't line up: left alone");
+  assert.equal(completeArabicName("Shaikha Salim Al Hinai", "شيخة سالم الهنائي"), null, "already complete");
+  assert.equal(toArabicName("Shaikha Ishaq Abdallah Al-Hoqani"), "شيخة إسحاق عبدالله الحوقاني");
+  assert.equal(arabicNameFrom("سلطنة عمان\nشيخة إسحاق عبدالله الحوقاني", "Shaikha Xyzq Abdallah Al-Qwerty"), "شيخة إسحاق عبدالله الحوقاني", "first name enough to find the line");
+  assert.equal(fullPrintedName("SHAIKHA ISHAQ 'ABDALLAH AL-HOQANI", "Shaikha Ishaq Abdal"), "Shaikha Ishaq 'Abdallah Al-Hoqani");
+});
+
+test("the Arabic name on the front of a card laid out in columns (read broken over lines around \"الاسم\")", async () => {
+  assert.equal(parseArabicName("شيخة إسحاق عبدالله\nالاسم الحوقاني\nالرقم المدني"), "شيخة إسحاق عبدالله الحوقاني");
+  assert.equal(parseArabicName("الاسم\nشيخة إسحاق عبدالله\n06\nالحوقاني\nالرقم", "Shaikha Ishaq Abdallah Al-Hoqani"), "شيخة إسحاق عبدالله الحوقاني");
+  assert.equal(parseArabicName("شيخة سالم الهنائي :الاسم"), "شيخة سالم الهنائي", "the label read last");
+  assert.equal(parseArabicName("الإسم\nشيخة سالم الهنائي"), "شيخة سالم الهنائي", "another spelling of the label");
+  const jpg = fs.readFileSync(new URL("./fixtures/fake-id-front.jpg", import.meta.url));
+  const a = await makePerson(t.base, admin, { emp_no: "FR1", name_ar: "شيخة الحوقاني", join_date: "2022-01-01" });
+  const up = await hr.c.upload(`/api/employees/${a.emp.id}/files?kind=doc&doc_type=civil_id&name=front.jpg`, jpg, "image/jpeg");
+  assert.equal(up.data.read.name_ar, "شيخة إسحاق عبدالله الحوقاني");
+  assert.equal((await hr.c.get(`/api/employees/${a.emp.id}`)).data.employee.name_ar, "شيخة إسحاق عبدالله الحوقاني");
 });

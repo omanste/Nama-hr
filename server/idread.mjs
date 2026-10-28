@@ -7,7 +7,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { toArabicName, completeFamily, arKey } from "./names-ar.mjs";
+import { nameParts, completeFamily, arKey } from "./names-ar.mjs";
 
 const require = createRequire(import.meta.url);
 const workers = {}; // one per language: "eng" (labels, "<<<" lines) and "ara" (the Arabic name on the front)
@@ -25,10 +25,10 @@ function worker(lang = "eng") {
 
 const MRZ_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<";
 /** OCR text of an image (jpeg/png/webp); mrz=true reads only the "<<<" alphabet. One image at a time, so a busy day can't exhaust the server. */
-export function ocr(buffer, { mrz = false, lang = "eng" } = {}) {
+export function ocr(buffer, { mrz = false, lang = "eng", sparse = false } = {}) {
   const job = queue.then(async () => {
     const w = await worker(lang);
-    await w.setParameters(mrz ? { tessedit_char_whitelist: MRZ_CHARS, tessedit_pageseg_mode: "6", debug_file: "/dev/null" } : { tessedit_char_whitelist: "", tessedit_pageseg_mode: "3", debug_file: "/dev/null" });
+    await w.setParameters(mrz ? { tessedit_char_whitelist: MRZ_CHARS, tessedit_pageseg_mode: "6", debug_file: "/dev/null" } : { tessedit_char_whitelist: "", tessedit_pageseg_mode: sparse ? "11" : "3", debug_file: "/dev/null" });
     return (await w.recognize(buffer, { rotateAuto: true })).data.text || "";
   });
   queue = job.catch(() => {});
@@ -130,18 +130,38 @@ export function parseFront(text) {
 // ---------- the Arabic name printed on the front ----------
 const AR_WORD = /^[\u0621-\u064A]{2,}$/;
 const NOT_NAME = /سلطنة|عمان|البطاقة|الشخصية|المدنية|شرطة|السلطانية|المديرية|جواز|السفر|الجنسية|تاريخ|الرقم|رقم|الميلاد|الانتهاء|الإصدار|الجنس|ذكر|أنثى/;
-/** The Arabic name after the "الاسم" label (same line, else the next): 2–7 Arabic words, nothing else — or undefined. */
-export function parseArabicName(text) {
-  const lines = String(text || "").split(/\r?\n/).map((l) => l.replace(/[\u064B-\u0652\u0640]/g, "").trim()); // drop vowel marks and tatweel
+const LABEL = /(.*?)(?:^|\s|:)ال\s?[اإأآ]\s?س\s?م(?=\s|:|：|$)\s*[:：.\-]?\s*(.*)$/; // الاسم / الإسم / الأسم, as printed or as read
+const nameWords = (x) => String(x || "").replace(/[^\u0621-\u064A\s]/g, " ").split(/\s+/).filter(Boolean);
+const nameLike = (ws) => ws.length > 0 && ws.every((w) => AR_WORD.test(w)) && !ws.some((w) => NOT_NAME.test(w));
+/** The Arabic name next to the "الاسم" label. A card's layout often makes the reader break the name over lines around the
+ * label ("شيخة إسحاق عبدالله" / "الاسم الحوقاني"), so the pieces around it are joined in the likely ways and, when the
+ * English name is known, the join that matches it (same number of parts, same first name) is taken. */
+export function parseArabicName(text, nameEn = null) {
+  const lines = String(text || "").split(/\r?\n/).map((l) => l.replace(/[\u064B-\u0652\u0640]/g, "").trim()).filter((l) => /[\u0621-\u064A]/.test(l)); // drop vowel marks, tatweel and junk lines
+  const parts = nameEn ? nameParts(nameEn) : [];
+  const first = parts[0] && parts[0].ar ? arKey(parts[0].ar) : null, last = parts.length && parts.at(-1).ar ? arKey(parts.at(-1).ar) : null;
+  let best = null;
+  const consider = (ws, base) => {
+    if (ws.length < 2 || ws.length > 7 || !nameLike(ws)) return;
+    let score = base;
+    if (parts.length) score += (ws.length === parts.length ? 3 : 0) + (first && arKey(ws[0]) === first ? 3 : 0) + (last && arKey(ws.at(-1)) === last ? 1 : 0);
+    if (!best || score > best.score) best = { ws, score };
+  };
   for (let i = 0; i < lines.length; i++) {
-    const m = /(?:^|\s)ال[اإأ]سم\s*[:：.\-]?\s*(.*)$/.exec(lines[i]);
+    const m = LABEL.exec(lines[i]);
     if (!m) continue;
-    for (const cand of [m[1], lines[i + 1] || ""]) {
-      const ws = cand.replace(/[^\u0621-\u064A\s]/g, " ").split(/\s+/).filter(Boolean);
-      if (ws.length >= 2 && ws.length <= 7 && ws.every((w) => AR_WORD.test(w)) && !ws.some((w) => NOT_NAME.test(w))) return ws.join(" ");
-    }
+    const after = nameWords(m[2]), before = nameWords(m[1]);
+    const prev = i > 0 && nameLike(nameWords(lines[i - 1])) ? nameWords(lines[i - 1]) : [];
+    const next = []; // the name-like lines that follow, up to the next label
+    for (let k = i + 1; k < Math.min(lines.length, i + 4); k++) { const ws = nameWords(lines[k]); if (!nameLike(ws)) break; next.push(ws); }
+    // on its own line with the label first: the plainest reading, preferred when nothing else decides
+    consider(after, 2); consider(before, 1);
+    for (let k = 1; k <= next.length; k++) { const n = next.slice(0, k).flat(); consider([...after, ...n], k === 1 && !after.length ? 2 : 0); }
+    if (prev.length) { consider([...prev, ...after], 0); consider([...prev, ...before, ...after], 0); }
   }
-  return undefined;
+  if (!best) return undefined;
+  if (parts.length && best.score < 3) return undefined; // with the English name to check against, a join that doesn't match it isn't trusted
+  return best.ws.join(" ");
 }
 
 function clean(o) { for (const k of Object.keys(o)) if (o[k] === undefined || o[k] === null || o[k] === "") delete o[k]; return o; }
@@ -158,17 +178,17 @@ export function fullPrintedName(text, short) {
     const cand = ws.join(" ");
     if (ws.length >= 2 && ws.length <= 8 && key(cand).startsWith(k) && key(cand).length > k.length && (!best || cand.length > best.length)) best = cand;
   }
-  return best ? best.split(" ").map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase()).join(" ") : null;
+  return best ? best.toLowerCase().replace(/(^|[\s'-])([a-z])/g, (_, a, b) => a + b.toUpperCase()) : null; // "'abdallah Al-hoqani" → "'Abdallah Al-Hoqani"
 }
 /** The Arabic name: after "الاسم", or else the line whose words match the English name spelled in Arabic. */
 export function arabicNameFrom(text, nameEn) {
-  const labelled = parseArabicName(text);
+  const labelled = parseArabicName(text, nameEn);
   if (labelled) return labelled;
-  const guess = toArabicName(nameEn); if (!guess) return undefined;
-  const first = arKey(guess.split(" ")[0]), last = arKey(guess.split(" ").at(-1));
+  const parts = nameParts(nameEn); if (parts.length < 2 || !parts[0].ar) return undefined;
+  const first = arKey(parts[0].ar), last = parts.at(-1).ar ? arKey(parts.at(-1).ar) : null; // the family name may not be in the list
   for (const line of String(text || "").split(/\r?\n/)) {
     const ws = line.replace(/[\u064B-\u0652\u0640]/g, "").replace(/[^\u0621-\u064A\s]/g, " ").split(/\s+/).filter(Boolean);
-    if (ws.length >= 2 && ws.length <= 7 && arKey(ws[0]) === first && arKey(ws.at(-1)) === last && !ws.some((w) => NOT_NAME.test(w))) return ws.join(" ");
+    if (ws.length >= 2 && ws.length <= 7 && arKey(ws[0]) === first && (!last || arKey(ws.at(-1)) === last) && !ws.some((w) => NOT_NAME.test(w))) return ws.join(" ");
   }
   return undefined;
 }
@@ -182,7 +202,14 @@ export async function readDocument(buffer, { arabic = false } = {}) {
   if (!mrz.dob && !mrz.expiry) { const t2 = await ocr(buffer, { mrz: true }); const m2 = parseMrz(t2); if (Object.keys(m2).length > Object.keys(mrz).length) mrz = m2; }
   const front = parseFront(text);
   fixName(mrz, text);
-  if (arabic) { try { const ar = arabicNameFrom(await ocr(buffer, { lang: "ara" }), mrz.name_en); if (ar) front.name_ar = ar; } catch (e) { console.error(`ID reader (Arabic): ${e.message}`); } }
+  if (arabic) {
+    try {
+      // the front of the card: the usual reading, then — if the name wasn't found — one that looks for scattered text (card layouts)
+      let ar = arabicNameFrom(await ocr(buffer, { lang: "ara" }), mrz.name_en);
+      if (!ar) ar = arabicNameFrom(await ocr(buffer, { lang: "ara", sparse: true }), mrz.name_en);
+      if (ar) front.name_ar = ar;
+    } catch (e) { console.error(`ID reader (Arabic): ${e.message}`); }
+  }
   const found = { ...front, ...mrz }; // MRZ wins: it is check-digit verified
   // which values the card's own check digits confirm (the rest need a closer look)
   found.verified = Object.keys(mrz).filter((k) => k !== "kind");

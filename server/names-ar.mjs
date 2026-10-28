@@ -47,11 +47,17 @@ const GIVEN = {
   warda: "وردة", yasmin: "ياسمين", yasmeen: "ياسمين", zuhoor: "زهور", zuhur: "زهور", ghaliya: "غالية", ghalia: "غالية", buthaina: "بثينة", hafsa: "حفصة", mahfoodha: "محفوظة",
   athari: "أثير", atheer: "أثير", jamila: "جميلة", jameela: "جميلة", nusaiba: "نسيبة", rauda: "روضة", rawda: "روضة", raudha: "روضة", shurooq: "شروق", sharifa: "شريفة",
   // joining words
+  isehaq: "إسحاق", eshaq: "إسحاق", ishak: "إسحاق", isehak: "إسحاق", ishaaq: "إسحاق", abdalla: "عبدالله", abdellah: "عبدالله", abdulah: "عبدالله",
+  mohd: "محمد", mhd: "محمد", hamaed: "حمد", khalaf: "خلف", saud: "سعود", sauod: "سعود", sabt: "سبت", nasr: "نصر", mahfoodh: "محفوظ",
+  mahfoud: "محفوظ", mahfudh: "محفوظ", sharaf: "شرف", abdulaleem: "عبدالعليم", sulaiyim: "سليم", salmeen: "سالمين",
+  ghanim: "غانم", ghanem: "غانم", amour: "عامور", amur: "عامور", muslim: "مسلم", musallam: "مسلم", rashood: "رشود", dhiyab: "ذياب", diyab: "ذياب", murshid: "مرشد",
   bin: "بن", ibn: "بن", bint: "بنت", binti: "بنت", abu: "أبو", umm: "أم",
 };
 // family and tribe names (without "Al"); "Al X" and a last word X become "الX"
 const FAMILY = {
-  jabri: "جابري", balushi: "بلوشي", busaidi: "بوسعيدي", hinai: "هنائي", harthi: "حارثي", hashmi: "هاشمي", hosni: "حوسني", habsi: "حبسي", hajri: "هاجري",
+  jabri: "جابري", hoqani: "حوقاني", huqani: "حوقاني", hoqany: "حوقاني", hugani: "حوقاني", hooqani: "حوقاني", khaldi: "خالدي", khalili: "خليلي", mamri: "معمري",
+  mahrizi: "محرزي", maskry: "مسكري", ghassany: "غساني", tamimi: "تميمي", toqi: "طوقي", touqi: "طوقي", wardi: "وردي",
+  yaqubi: "يعقوبي", zuhaimi: "زهيمي", hajari: "هاجري", hashimi: "هاشمي", hosani: "حوسني", kalbany: "كلباني", rawas: "رواس", rawasi: "رواسي", balushi: "بلوشي", busaidi: "بوسعيدي", hinai: "هنائي", harthi: "حارثي", hashmi: "هاشمي", hosni: "حوسني", habsi: "حبسي", hajri: "هاجري",
   hadhrami: "حضرمي", hamdani: "همداني", hakmani: "حكماني", hasani: "حسني", amri: "عامري", ameri: "عامري", abri: "عبري", alawi: "علوي", araimi: "عريمي", azri: "عزري",
   badi: "بادي", bahri: "بحري", battashi: "بطاشي", bulushi: "بلوشي", bustani: "بستاني", farsi: "فارسي", farisi: "فارسي", ghafri: "غافري", ghailani: "غيلاني",
   ghaithi: "غيثي", habsy: "حبسي", hadidi: "حديدي", haddabi: "هدابي", hajji: "حاجي", harrasi: "حراصي", hasni: "حسني", hatmi: "حاتمي", hilali: "هلالي", hinaai: "هنائي",
@@ -71,30 +77,45 @@ const FAMILY = {
   jahdhami: "جهضمي", musalmi: "مسلمي", mushaifri: "مشيفري", mashrafi: "مشرفي", ghunaimi: "غنيمي", afifi: "عفيفي", ghabshi: "غبشي", ghanbouri: "غنبوري",
 };
 const word = (w) => w.toLowerCase().replace(/[^a-z]/g, "");
-/** "Jawaher Salim Khalfan Al Jabri" → "جواهر سالم خلفان الجابري", or null if any word isn't known. */
-export function toArabicName(en) {
+/** The name's parts, each with its Arabic when known (null when not): "Al Jabri" and "Abdul Aziz" are one part each. */
+export function nameParts(en) {
   const ws = String(en || "").split(/[\s-]+/).map(word).filter(Boolean);
-  if (ws.length < 2) return null;
   const out = [];
   for (let i = 0; i < ws.length; i++) {
-    const w = ws[i];
+    const w = ws[i], last = i === ws.length - 1;
     if ((w === "al" || w === "el") && ws[i + 1]) { // "Al Jabri" → الجابري, "Al Abri" → العبري
       const n = ws[++i], ar = FAMILY[n] || GIVEN[n];
-      if (!ar) return null;
-      out.push("ال" + ar); continue;
+      out.push({ en: `al ${n}`, ar: ar ? "ال" + ar : null }); continue;
     }
     if ((w === "abdul" || w === "abd" || w === "abdel") && ws[i + 1]) { // "Abdul Aziz" → عبدالعزيز
-      const ar = GIVEN[ws[++i]];
-      if (!ar) return null;
-      out.push("عبدال" + ar); continue;
+      const n = ws[++i], ar = GIVEN[n];
+      out.push({ en: `abdul ${n}`, ar: ar ? "عبدال" + ar : null }); continue;
     }
-    if (w.startsWith("al") && FAMILY[w.slice(2)]) { out.push("ال" + FAMILY[w.slice(2)]); continue; } // "Aljabri"
-    const g = GIVEN[w];
-    if (g && !(i === ws.length - 1 && FAMILY[w] && i > 0)) { out.push(g); continue; }
-    if (FAMILY[w] && i === ws.length - 1 && i > 0) { out.push("ال" + FAMILY[w]); continue; } // a family name written without "Al"
-    return null;
+    if (w.startsWith("al") && FAMILY[w.slice(2)]) { out.push({ en: w, ar: "ال" + FAMILY[w.slice(2)] }); continue; } // "Aljabri"
+    if (FAMILY[w] && last && i > 0 && !GIVEN[w]) { out.push({ en: w, ar: "ال" + FAMILY[w] }); continue; } // a family name without "Al"
+    out.push({ en: w, ar: GIVEN[w] || (FAMILY[w] && last && i > 0 ? "ال" + FAMILY[w] : null) });
   }
-  return out.join(" ");
+  return out;
+}
+/** "Jawaher Salim Khalfan Al Jabri" → "جواهر سالم خلفان الجابري", or null if any part isn't known. */
+export function toArabicName(en) {
+  const parts = nameParts(en);
+  return parts.length >= 2 && parts.every((p) => p.ar) ? parts.map((p) => p.ar).join(" ") : null;
+}
+/** The Arabic name already saved, completed from the English one: its words are kept, in order, for the parts the list doesn't
+ * know, and the known parts it lacks are added — "رزان إسحاق الحوقاني" + "Razan Isehaq Abdallah Al Hoqani" →
+ * "رزان إسحاق عبدالله الحوقاني". Null when they don't line up (every saved word must be used, and at least one must match). */
+export function completeArabicName(en, saved) {
+  const parts = nameParts(en), have = String(saved || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2 || !have.length || have.length >= parts.length) return null;
+  const out = []; let j = 0, anchors = 0;
+  for (const p of parts) {
+    if (p.ar && j < have.length && arKey(p.ar) === arKey(have[j])) { out.push(have[j++]); anchors++; } // the same word: keep its spelling
+    else if (p.ar) out.push(p.ar); // a known part the saved name lacks
+    else if (j < have.length) out.push(have[j++]); // a part the list doesn't know: the saved word in its place
+    else return null;
+  }
+  return j === have.length && anchors > 0 ? out.join(" ") : null;
 }
 /** A family name the card cut short ("Jabr" from "JABRI", the "<<<" line is only 30 letters): the one family name it starts, if just one. */
 export function completeFamily(part) {
