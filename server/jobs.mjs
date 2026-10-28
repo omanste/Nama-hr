@@ -111,7 +111,7 @@ export function registerCapReviews(api, ctx) {
 
 /** Remind HR (in-app) about probation ending today and civil IDs expiring within 30 days — once per item. */
 const DOC_NAMES = { civil_id: ["البطاقة المدنية", "Civil ID"], passport: ["جواز السفر", "Passport"], visa: ["التأشيرة / الإقامة", "Visa / residence"], contract: ["عقد العمل", "Employment contract"],
-  certificate: ["شهادة", "Certificate"], medical: ["مستند طبي", "Medical document"], consent: ["موافقة", "Consent"], other: ["مستند", "Document"] };
+  certificate: ["الشهادة العلمية", "Academic certificate"], resume: ["السيرة الذاتية", "Resume"], course: ["شهادة دورة تدريبية", "Course certificate"], medical: ["مستند طبي", "Medical document"], consent: ["موافقة", "Consent"], other: ["مستند", "Document"] };
 
 /** Everything with an expiry date that ends within `days` (or already ended), for active staff. */
 export function expiringItems(db, today, days = 30) {

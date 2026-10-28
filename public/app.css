@@ -415,3 +415,6 @@ dialog.dialog form > .row.end:last-child{position:sticky;bottom:-20px;z-index:1;
   .table-wrap.hol-table:not(.keep-table) td:nth-child(5){grid-column:3;grid-row:2}
   .table-wrap.hol-table:not(.keep-table) td:nth-child(4),.table-wrap.hol-table:not(.keep-table) td:nth-child(5){justify-self:end}
 }
+/* documents grouped by type */
+.doc-groups{display:grid;gap:14px}
+.doc-group h3{display:flex;align-items:center;gap:8px;margin:0 0 6px;font-size:15px}

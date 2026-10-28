@@ -27,19 +27,21 @@ test("nationality text becomes a country code; Omani checks still work", async (
   assert.equal((await hr.c.put(`/api/employees/${staff.emp.id}`, { nationality: "PK" })).data.employee.nationality, "PK");
 });
 
-test("staff upload their own photo and papers (ID, passport…), not contracts, consents or other people's", async () => {
+test("staff upload their own photo and papers (ID, passport, resume, course certificates, a contract copy…), not consents or other people's", async () => {
   const jpg = Buffer.from("ffd8ffe000104a464946", "hex");
   const id = await staff.c.upload(`/api/employees/${staff.emp.id}/files?kind=doc&doc_type=civil_id&name=id-front.jpg`, jpg, "image/jpeg");
   assert.equal(id.status, 201);
   assert.equal(id.data.file.doc_type, "civil_id");
   assert.equal((await staff.c.upload(`/api/employees/${staff.emp.id}/files?kind=doc&doc_type=passport&name=p.pdf`, Buffer.from("%PDF-1.4"), "application/pdf")).status, 201);
-  for (const dt of ["contract", "consent"]) assert.equal((await staff.c.upload(`/api/employees/${staff.emp.id}/files?kind=doc&doc_type=${dt}`, jpg, "image/jpeg")).status, 403);
+  for (const dt of ["resume", "course", "contract"]) assert.equal((await staff.c.upload(`/api/employees/${staff.emp.id}/files?kind=doc&doc_type=${dt}&name=${dt}.pdf`, Buffer.from("%PDF-1.4"), "application/pdf")).status, 201, dt);
+  assert.equal((await staff.c.upload(`/api/employees/${staff.emp.id}/files?kind=doc&doc_type=consent`, jpg, "image/jpeg")).status, 403);
+  assert.equal((await staff.c.upload(`/api/employees/${staff.emp.id}/files?kind=doc&doc_type=diploma`, jpg, "image/jpeg")).status, 403, "unknown type");
   assert.equal((await staff.c.upload(`/api/employees/${staff.emp.id}/files?kind=photo`, jpg, "image/jpeg")).status, 201); // own photo: yes
   assert.equal((await staff.c.upload(`/api/employees/${staff2.emp.id}/files?kind=photo`, jpg, "image/jpeg")).status, 403); // someone else's: no
   assert.equal((await staff.c.upload(`/api/employees/${staff2.emp.id}/files?kind=doc&doc_type=civil_id`, jpg, "image/jpeg")).status, 403);
   assert.equal((await staff.c.del(`/api/files/${id.data.file.id}`)).status, 403);
   const files = (await staff.c.get(`/api/employees/${staff.emp.id}`)).data.files;
-  assert.equal(files.filter((f) => f.kind === "doc").length, 2);
+  assert.deepEqual(files.filter((f) => f.kind === "doc").map((f) => f.doc_type).sort(), ["civil_id", "contract", "course", "passport", "resume"]);
 });
 
 test("holidays save as a sorted list of dates", async () => {

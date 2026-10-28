@@ -19,12 +19,12 @@ import { cleanEmployee } from "./employees.mjs";
 export const MAX_FILE = 10 * 1024 * 1024;
 const IMAGES = ["image/jpeg", "image/png", "image/webp"];
 const DOCS = [...IMAGES, "application/pdf"];
-export const DOC_TYPES = ["civil_id", "passport", "contract", "visa", "certificate", "medical", "consent", "other"];
-// what staff may upload to their own profile; contracts and payout consents stay with HR
+export const DOC_TYPES = ["civil_id", "passport", "visa", "resume", "certificate", "course", "contract", "medical", "consent", "other"];
+// what staff may upload to their own profile (a copy of their contract too); payout consents stay with HR. Only HR deletes.
 const READABLE = ["civil_id", "passport", "visa"];
 const pick = (e) => ({ civil_id: e.civil_id, civil_id_expiry: e.civil_id_expiry, passport_no: e.passport_no, passport_expiry: e.passport_expiry, visa_expiry: e.visa_expiry,
   dob: e.dob, gender: e.gender, nationality: e.nationality, name_en: e.name_en });
-export const SELF_DOC_TYPES = ["civil_id", "passport", "visa", "certificate", "medical", "other"];
+export const SELF_DOC_TYPES = ["civil_id", "passport", "visa", "resume", "certificate", "course", "contract", "medical", "other"];
 
 /** Store an uploaded body; returns the files row. Caller checks permissions. */
 export async function storeUpload(ctx, req, { employeeId, requestId = null, voiceId = null, kind = "doc" }) {

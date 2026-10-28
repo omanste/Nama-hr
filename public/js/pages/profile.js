@@ -7,9 +7,9 @@ import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, e
 import { balanceHero, requestItem } from "./home.js";
 import { render as rerender } from "../app.js";
 
-const DOC_TYPES = ["civil_id", "passport", "contract", "visa", "certificate", "medical", "consent", "other"];
-// staff may add their own papers; contracts and payout consents stay with HR (server enforces the same)
-const SELF_DOC_TYPES = ["civil_id", "passport", "visa", "certificate", "medical", "other"];
+const DOC_TYPES = ["civil_id", "passport", "visa", "resume", "certificate", "course", "contract", "medical", "consent", "other"]; // also the order the categories are listed in
+// staff may add their own papers (a copy of their contract too); payout consents stay with HR (server enforces the same)
+const SELF_DOC_TYPES = ["civil_id", "passport", "visa", "resume", "certificate", "course", "contract", "medical", "other"];
 const DOC_ACCEPT = "application/pdf,image/png,image/jpeg,image/webp";
 
 async function uploadDoc(e, f, docType, expiry, canEditAll) {
@@ -228,9 +228,12 @@ function documents(p, e, can, mayUpload, setPhoto) {
     field(t("doc_type"), type), field(t("doc_expiry"), expiry),
     h("div", { class: "field", style: { alignSelf: "end" } }, picks)) : null;
   return h("section", { class: "card" }, h("h2", null, t("sec_documents")),
-    docs.length ? h("div", { class: "list" }, docs.map((f) => h("div", { class: "item doc-item" },
+    // one group per document type (category), in the order of the type list
+    docs.length ? h("div", { class: "doc-groups" }, [...DOC_TYPES].map((k) => [k, docs.filter((f) => (DOC_TYPES.includes(f.doc_type) ? f.doc_type : "other") === k)]).filter(([, fs]) => fs.length).map(([k, fs]) =>
+      h("div", { class: "doc-group" }, h("h3", null, t("dt_" + k), h("span", { class: "badge" }, fs.length)),
+    h("div", { class: "list" }, fs.map((f) => h("div", { class: "item doc-item" },
       h("div", { class: "grow" }, h("div", { class: "title" }, h("a", { href: `/api/files/${f.id}`, target: "_blank", rel: "noopener", onclick: (ev) => { ev.preventDefault(); viewFile(f); } }, f.name)),
-        h("div", { class: "meta" }, t("dt_" + (f.doc_type || "other")), f.expiry ? ` · ${t("doc_expiry")}: ${dmy(f.expiry)}` : "", ` · ${dateTime(f.uploaded_at)} `, expiryBadge(f.expiry))),
+        h("div", { class: "meta" }, f.expiry ? `${t("doc_expiry")}: ${dmy(f.expiry)} · ` : "", `${dateTime(f.uploaded_at)} `, expiryBadge(f.expiry))),
       // actions on their own line under the name, so a phone never gets wider than the screen
       h("div", { class: "row doc-actions" },
         h("button", { class: "btn small primary", type: "button", onclick: () => viewFile(f) }, "👁 ", t("view")),
@@ -241,7 +244,7 @@ function documents(p, e, can, mayUpload, setPhoto) {
         can.edit() ? h("button", { class: "btn small danger", type: "button", onclick: async () => {
           if (!(await confirm(t("delete_file_q"), { danger: true, okText: t("delete") }))) return;
           try { await api.del(`/api/files/${f.id}`); rerender(); } catch (er) { toast(errText(er), "bad"); }
-        } }, t("delete")) : null)))) : h("div", { class: "empty" }, t("no_results")),
+        } }, t("delete")) : null))))))) : h("div", { class: "empty" }, t("no_results")),
     upload,
     mayUpload ? h("div", { style: { marginTop: "14px" } }, h("h3", null, t("photo_personal")),
       h("div", { class: "row" },

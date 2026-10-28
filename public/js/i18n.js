@@ -125,7 +125,7 @@ const D = {
   adjust_unit_days: ["أيام", "Days"], adjust_unit_hours: ["ساعات", "Hours"], adjust_reason: ["السبب (مطلوب)", "Reason (required)"],
   upload_document: ["رفع مستند", "Upload document"], doc_type: ["نوع المستند", "Document type"], doc_expiry: ["تاريخ الانتهاء", "Expiry"],
   dt_civil_id: ["البطاقة المدنية", "Civil ID"], dt_passport: ["جواز السفر", "Passport"], dt_contract: ["العقد", "Contract"], dt_visa: ["التأشيرة", "Visa"],
-  dt_certificate: ["شهادة", "Certificate"], dt_medical: ["تقرير طبي", "Medical note"], dt_other: ["أخرى", "Other"],
+  dt_certificate: ["الشهادة العلمية", "Academic certificate"], dt_resume: ["السيرة الذاتية", "Resume / CV"], dt_course: ["شهادة دورة تدريبية", "Course certificate"], dt_medical: ["تقرير طبي", "Medical note"], dt_other: ["أخرى", "Other"],
   change_photo: ["تغيير الصورة", "Change photo"], delete_file_q: ["حذف هذا الملف؟", "Delete this file?"],
   lk_opening: ["رصيد افتتاحي", "Opening balance"], lk_annual_credit: ["استحقاق سنوي", "Yearly entitlement"], lk_cap_forfeit: ["سقوط ما فوق ٦٠ يوماً", "Above 60-day cap"],
   lk_annual_leave: ["إجازة سنوية", "Annual leave"], lk_early_leave: ["مغادرة مبكرة", "Early leave"], lk_comp_credit: ["يوم إضافي", "Extra day"],
