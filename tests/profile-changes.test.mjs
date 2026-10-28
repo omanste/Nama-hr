@@ -82,3 +82,11 @@ test("a new photo is recorded for review; undo puts the old photo back", async (
   await hr.c.post(`/api/profile-changes/${last.id}/revert`, { note: "صورة غير واضحة" });
   assert.equal((await hr.c.get(`/api/employees/${s.emp.id}`)).data.employee.photo_file_id, first);
 });
+
+test("addresses: permanent wilayat and current area in Muscat are part of contact (and reviewed)", async () => {
+  const r = await s.c.put(`/api/employees/${s.emp.id}/contact`, { perm_wilayat: "Nizwa", current_area: "Al Khuwair", address: "Way 1234, Building 56" });
+  assert.equal(r.status, 200);
+  assert.deepEqual([r.data.employee.perm_wilayat, r.data.employee.current_area], ["Nizwa", "Al Khuwair"]);
+  const c = (await hr.c.get("/api/profile-changes")).data.items.find((x) => x.employee_id === s.emp.id && x.changes.perm_wilayat);
+  assert.deepEqual(c.changes.perm_wilayat, [null, "Nizwa"]);
+});

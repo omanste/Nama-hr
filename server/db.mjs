@@ -117,6 +117,8 @@ const MIGRATIONS = [
      changes TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','confirmed','reverted')),
      decided_by INTEGER, decided_at TEXT, note TEXT, created_at TEXT NOT NULL);
    CREATE INDEX pc_status ON profile_changes(status, employee_id);`,
+  // 18: addresses — permanent (a wilayat of Oman) and current (an area of Muscat); "address" keeps the street details
+  `ALTER TABLE employees ADD COLUMN perm_wilayat TEXT; ALTER TABLE employees ADD COLUMN current_area TEXT;`,
 ];
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */

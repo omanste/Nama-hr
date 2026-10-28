@@ -370,3 +370,6 @@ dialog.dialog.wide{max-width:min(720px,calc(100vw - 24px))}
 td.pc-old{color:var(--muted);text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--bad) 60%,transparent)}
 td.pc-old img{opacity:.7}
 td.pc-new{font-weight:600}
+/* a group inside a card (e.g. Address, Emergency contact inside Contact) */
+.sub-box{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.sub-box h3{margin:0 0 6px;font-size:14px;color:var(--muted)}
