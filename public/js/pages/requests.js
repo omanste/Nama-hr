@@ -59,6 +59,7 @@ export async function render(el, _p, { opts, query, me }) {
   };
   for (const s of [status, yearSel, monthSel, kindSel]) if (s) s.addEventListener("change", load);
   el.append(pageHead(t(perm ? "my_permissions" : opts.kind === "leave" && mine ? "my_leave" : TITLES[scope]),
+      mine && me.employee && perm ? h("a", { class: "btn", href: "#/attendance/mission?from=permissions" }, t("lt_mission")) : null,
       mine && me.employee ? h("a", { class: "btn primary", href: perm ? "#/permissions/new" : "#/leave/new" }, t(perm ? "apply_permission" : "new_request")) : null),
     h("div", { class: "toolbar" }, yearSel, monthSel), head,
     h("h2", { style: { margin: "18px 0 8px" } }, t("history")),

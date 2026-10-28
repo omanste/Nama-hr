@@ -141,6 +141,11 @@ test("an external task counts as work; an absence with a pending request is not 
   assert.equal((await d28()).status, "pending");
   await mgr.c.post(`/api/requests/${m.data.request.id}/approve`, {});
   assert.equal((await d28()).status, "mission");
+  // listed on my permissions page too (and still on the attendance list), never with leave
+  const ids = async (kind) => (await s.c.get(`/api/requests?scope=mine&kind=${kind}`)).data.items.map((r) => r.id);
+  assert.ok((await ids("permission")).includes(m.data.request.id));
+  assert.ok((await ids("attendance")).includes(m.data.request.id));
+  assert.ok(!(await ids("leave")).includes(m.data.request.id));
   assert.equal((await s.c.post("/api/requests", { type: "mission", date: "2026-10-28", time: "10:00", end_time: "11:00", reason: "x", place: "y" })).status, 409);
   // tasks and corrections don't appear on the leave calendar
   assert.ok(!(await hr.c.get("/api/calendar?month=2026-10")).data.items.some((x) => x.type === "mission"));

@@ -57,7 +57,9 @@ export async function render(el, _p, { me, query }) {
     submit.disabled = !m || holiday || rest;
   }
   function draw() {
-    typeBox.replaceChildren(...PERMISSIONS.map((k) => h("button", { type: "button", "aria-pressed": String(k === type), onclick: () => { type = k; draw(); } }, t("lt_" + k))));
+    typeBox.replaceChildren(...PERMISSIONS.map((k) => h("button", { type: "button", "aria-pressed": String(k === type), onclick: () => { type = k; draw(); } }, t("lt_" + k))),
+      // an external work task is asked for on its own form (§10) — offered here too, where staff look for it
+      h("button", { type: "button", "aria-pressed": "false", onclick: () => { location.hash = "#/attendance/mission?from=permissions"; } }, t("lt_mission")));
     fillTimes();
     fieldsBox.replaceChildren(...[
       field(t("date"), date, { req: true }),

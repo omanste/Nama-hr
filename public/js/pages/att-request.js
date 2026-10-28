@@ -12,6 +12,7 @@ export async function render(el, _p, { me, opts, query }) {
   const kind = opts.kind; // correction | mission
   if (!me.employee) { el.append(h("div", { class: "empty" }, t("no_profile"))); return; }
   const today = todayIso();
+  const back = query.get("from") === "permissions" ? "#/permissions" : "#/attendance";
   const sheet = await api.get(`/api/attendance/employee/${me.employee.id}?month=${(query.get("date") || today).slice(0, 7)}`);
   const pre = /^\d{4}-\d{2}-\d{2}$/.test(query.get("date") || "") ? query.get("date") : kind === "correction" ? addDays(today, -1) : today;
   const dayOf = (iso) => sheet.days.find((x) => x.date === iso);
@@ -68,7 +69,7 @@ export async function render(el, _p, { me, opts, query }) {
       kind === "mission" ? field(t("mission_place"), place, { full: true, req: true, hint: t("mission_place_hint") }) : null,
       field(t(kind === "mission" ? "mission_purpose" : "reason"), reason, { full: true, req: true }))),
     info,
-    h("div", { class: "form-actions" }, h("a", { class: "btn", href: "#/attendance" }, t("cancel")), submit));
-  el.append(backLink("#/attendance"), h("h1", null, t(kind === "mission" ? "new_mission" : "new_correction")), form);
+    h("div", { class: "form-actions" }, h("a", { class: "btn", href: back }, t("cancel")), submit));
+  el.append(backLink(back), h("h1", null, t(kind === "mission" ? "new_mission" : "new_correction")), form);
   fill();
 }

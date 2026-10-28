@@ -12,7 +12,7 @@ export const balanceHero = (leave, { apply = true } = {}) => h("section", { clas
     fact("bal_used", leave.used), fact("bal_pending", leave.pending), leave.extra ? fact("bal_extra", leave.extra) : null,
     leave.adjustments ? fact("bal_adjustments", leave.adjustments) : null,
     leave.encashed ? fact("bal_encashed", leave.encashed) : null),
-  apply ? h("div", { class: "row hero-actions" }, h("a", { class: "btn gold", href: "#/leave/new" }, t("apply_leave")), h("a", { class: "btn ghost-light", href: "#/permissions/new" }, t("apply_permission"))) : null);
+  apply ? h("div", { class: "row hero-actions" }, h("a", { class: "btn gold", href: "#/leave/new" }, t("apply_leave")), h("a", { class: "btn ghost-light", href: "#/permissions/new" }, t("apply_permission")), h("a", { class: "btn ghost-light", href: "#/attendance/mission" }, t("lt_mission"))) : null);
 const fact = (key, min) => h("div", null, h("b", null, num(daysOf(min))), h("span", null, t(key)));
 
 export const requestItem = (r, showName = false) => h("a", { class: "item", href: `#/leave/${r.id}` },

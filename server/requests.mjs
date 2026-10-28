@@ -291,7 +291,7 @@ export function registerRequests(api, ctx) {
     const emp = req.query.get("employee");
     if (emp) { where.push("r.employee_id=?"); args.push(Number(emp)); }
     const kind = req.query.get("kind"); // permission = early/late/break; attendance = corrections and external tasks; leave = everything else
-    if (kind === "permission") where.push(`r.type IN ${PERM_SQL}`);
+    if (kind === "permission") where.push(`(r.type IN ${PERM_SQL} OR r.type='mission')`); // external work tasks sit with permissions too
     else if (kind === "attendance") where.push(`r.type IN ${ATT_SQL}`);
     else if (kind === "leave") where.push(`r.type NOT IN ${PERM_SQL} AND r.type NOT IN ${ATT_SQL}`);
     const items = db.prepare(`${withNames} ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY r.created_at DESC, r.id DESC LIMIT 500`).all(...args);
