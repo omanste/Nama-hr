@@ -7,7 +7,7 @@ import { can, approvedDepartments } from "./perm.mjs";
 import { audit } from "./audit.mjs";
 import { notify } from "./notify.mjs";
 import { isIsoDate, addDays, addMonths, PERMISSION_TYPES } from "./leave.mjs";
-import { omanOccasions } from "./oman-occasions.mjs";
+import { omanOccasions, NATIONAL } from "./oman-occasions.mjs";
 
 export const BLOCKABLE = ["annual", "unpaid", ...PERMISSION_TYPES];
 const editors = ["admin", "hr"];
@@ -80,6 +80,13 @@ export function registerCalendar(api, ctx) {
     // everything shared with the company, plus my own personal events
     const events = db.prepare(`SELECT c.*, c.created_by=? mine, e.name_ar by_ar, e.name_en by_en FROM calendar_events c LEFT JOIN users u ON u.id=c.created_by LEFT JOIN employees e ON e.id=u.employee_id
       WHERE c.start_date<=? AND c.end_date>=? AND (c.visibility='company' OR c.created_by=?) ORDER BY c.start_date`).all(sess.user.id, last, first, sess.user.id);
+    // Oman's national days fall on the same date every year: always on everyone's calendar (unless one was also added by hand)
+    for (const [md, name] of NATIONAL) {
+      const date = `${month.slice(0, 4)}-${md}`;
+      if (date >= first && date <= last && !events.some((e) => e.kind === "national" && e.start_date === date))
+        events.push({ id: null, kind: "national", start_date: date, end_date: date, name, visibility: "company", fixed: true });
+    }
+    events.sort((a, b) => (a.start_date < b.start_date ? -1 : a.start_date > b.start_date ? 1 : 0));
     send(req, res, 200, { month, items, holidays, events, birthdays: birthdaysBetween(db, first, last), canEdit: editors.includes(sess.user.role), blockable: BLOCKABLE });
   });
 
@@ -124,7 +131,7 @@ export function registerCalendar(api, ctx) {
     send(req, res, 201, { entry: out });
   });
 
-  // add Oman's national and religious occasions for a year (skips ones already there)
+  // add Oman's religious occasions for a year (skips ones already there); national days are built in
   api.post("/api/calendar/import-oman", async (req, res) => {
     needEditor(req.sess);
     const year = Number((await readJson(req)).year);
@@ -132,7 +139,7 @@ export function registerCalendar(api, ctx) {
     const have = db.prepare("SELECT 1 FROM calendar_events WHERE kind=? AND start_date=? AND name=?");
     const ins = db.prepare("INSERT INTO calendar_events(kind,start_date,end_date,name,created_by,created_at) VALUES(?,?,?,?,?,?)");
     let added = 0;
-    const list = omanOccasions(year);
+    const list = omanOccasions(year).filter((o) => o.kind === "religious");
     tx(db, () => {
       for (const o of list) if (!have.get(o.kind, o.date, o.name)) { ins.run(o.kind, o.date, o.date, o.name, req.sess.user.id, nowIso()); added++; }
       audit(db, req.sess.user.id, "calendar.import_oman", "calendar", year, null, { year, added });

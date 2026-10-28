@@ -75,7 +75,7 @@ export async function render(el, _p, { query }) {
       x.holiday ? h("div", { class: "item" }, h("span", { class: "badge b-on_leave" }, t("holiday")), h("div", { class: "grow" }, x.holiday),
         del(async () => { if (await confirm(t("delete_q"), { danger: true })) { try { await api.del(`/api/calendar/holidays/${selected}`); toast(t("saved")); rerender(); } catch (e) { toast(errText(e), "bad"); } } })) : null,
       ...[...x.national, ...x.religious].map((e) => h("div", { class: "item" }, h("span", { class: `badge ${e.kind === "national" ? "b-approved" : "b-on_leave"}` }, t("cal_" + e.kind)), h("div", { class: "grow" }, tx(e.name)),
-        del(async () => { if (await confirm(t("delete_q"), { danger: true })) { try { await api.del(`/api/calendar/entries/${e.id}`); toast(t("saved")); rerender(); } catch (er) { toast(errText(er), "bad"); } } }))),
+        e.fixed ? null : del(async () => { if (await confirm(t("delete_q"), { danger: true })) { try { await api.del(`/api/calendar/entries/${e.id}`); toast(t("saved")); rerender(); } catch (er) { toast(errText(er), "bad"); } } }))),
       ...x.blocked.map((e) => h("div", { class: "item" }, h("span", { class: "badge b-rejected" }, t("cal_blocked")), h("div", { class: "grow" }, tx(e.name), h("div", { class: "meta" }, `${dmy(e.start_date)} – ${dmy(e.end_date)} · ${t("cal_blocked_hint")}`)),
         del(async () => { if (await confirm(t("delete_q"), { danger: true })) { try { await api.del(`/api/calendar/entries/${e.id}`); toast(t("saved")); rerender(); } catch (er) { toast(errText(er), "bad"); } } }))),
       ...x.events.map((e) => h("div", { class: "item" }, h("span", { class: `badge ${e.visibility === "personal" ? "" : "b-pending"}` }, t(e.visibility === "personal" ? "cal_personal" : "cal_event")),
@@ -131,7 +131,7 @@ function addDialog(day, editor) {
   document.body.append(dlg); dlg.showModal(); name.focus();
 }
 
-/** Add Oman's national occasions and the expected religious occasions (Hijri calendar) for a year. */
+/** Add the expected religious occasions (Hijri calendar) for a year; national days are always shown. */
 function importDialog(year) {
   const sel = select("year", [year - 1, year, year + 1].map((k) => [k, String(k)]), year);
   const err = h("div", { class: "form-error" });

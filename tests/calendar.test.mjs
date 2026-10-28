@@ -66,7 +66,12 @@ test("birthdays: on the calendar (no year), a heads-up 5 days before to everyone
   assert.ok((await s.c.get("/api/calendar?month=2027-02")).data.birthdays.some((x) => x.employee_id === other.emp.id && x.date === "2027-02-28"));
 });
 
-test("Oman's national and religious occasions: imported for a year, once; national/religious can also be added by hand", async () => {
+test("Oman's national days show every year for everyone without importing; religious ones are imported once a year", async () => {
+  for (const [c, m, day] of [[s.c, "2027-01", "2027-01-11"], [other.c, "2030-07", "2030-07-23"], [admin, "2026-10", "2026-10-26"]]) {
+    const ev = (await c.get(`/api/calendar?month=${m}`)).data.events.filter((e) => e.kind === "national");
+    assert.ok(ev.some((e) => e.start_date === day && e.fixed), `${day} shown`);
+  }
+  assert.deepEqual((await s.c.get("/api/calendar?month=2026-10")).data.events.filter((e) => e.kind === "national").map((e) => e.start_date), ["2026-10-17", "2026-10-26"]);
   const { omanOccasions } = await import("../server/oman-occasions.mjs");
   const y26 = omanOccasions(2026);
   assert.ok(y26.some((o) => o.kind === "national" && o.date === "2026-11-18"));
@@ -74,10 +79,10 @@ test("Oman's national and religious occasions: imported for a year, once; nation
   const c = admin;
   const r = await c.post("/api/calendar/import-oman", { year: 2026 });
   assert.equal((await s.c.post("/api/calendar/import-oman", { year: 2026 })).status, 403, "staff can't import");
-  assert.equal(r.status, 200); assert.equal(r.data.added, y26.length);
+  assert.equal(r.status, 200); assert.equal(r.data.added, y26.filter((o) => o.kind === "religious").length);
   assert.equal((await c.post("/api/calendar/import-oman", { year: 2026 })).data.added, 0, "not twice");
   const nov = (await c.get("/api/calendar?month=2026-11")).data.events;
-  assert.ok(nov.some((e) => e.kind === "national" && e.start_date === "2026-11-18"));
+  assert.equal(nov.filter((e) => e.kind === "national" && e.start_date === "2026-11-18").length, 1, "built in, once");
   assert.equal((await c.post("/api/calendar/entries", { kind: "religious", start: "2026-12-01", name: "Test" })).status, 201);
 });
 
@@ -88,12 +93,12 @@ test("staff add their own events: personal (only they see it) or shared with eve
   assert.equal(sh.status, 201);
   assert.equal((await s.c.post("/api/calendar/entries", { kind: "event", start: "2027-01-08", name: "x" })).status, 400, "staff must choose");
   assert.equal((await s.c.post("/api/calendar/entries", { kind: "national", start: "2027-01-08", name: "x" })).status, 403);
-  const mine = (await s.c.get("/api/calendar?month=2027-01")).data.events;
+  const mine = (await s.c.get("/api/calendar?month=2027-01")).data.events.filter((e) => e.kind === "event");
   assert.deepEqual(mine.map((e) => [e.name, e.visibility, !!e.mine]).sort(), [["غداء الفريق", "company", true], ["موعد طبيب", "personal", true]]);
-  for (const c of [other.c, hr.c, admin]) assert.deepEqual((await c.get("/api/calendar?month=2027-01")).data.events.map((e) => e.name), ["غداء الفريق"]);
+  for (const c of [other.c, hr.c, admin]) assert.deepEqual((await c.get("/api/calendar?month=2027-01")).data.events.filter((e) => e.kind === "event").map((e) => e.name), ["غداء الفريق"]);
   assert.equal((await other.c.del(`/api/calendar/entries/${sh.data.entry.id}`)).status, 403);
   assert.equal((await hr.c.del(`/api/calendar/entries/${p.data.entry.id}`)).status, 404, "a personal event is invisible to others");
   assert.equal((await s.c.del(`/api/calendar/entries/${p.data.entry.id}`)).status, 200);
   assert.equal((await hr.c.del(`/api/calendar/entries/${sh.data.entry.id}`)).status, 200);
-  assert.equal((await s.c.get("/api/calendar?month=2027-01")).data.events.length, 0);
+  assert.equal((await s.c.get("/api/calendar?month=2027-01")).data.events.filter((e) => e.kind === "event").length, 0);
 });
