@@ -141,3 +141,35 @@ export function pager(items, renderItem, perPage = 50) {
   show(1);
   return box;
 }
+
+/** Show a document in a pop-up: a picture as it is; a PDF as page pictures (Previous / Next), or the browser's own viewer
+ * when the server can't draw pages. f = {id, name, mime}. */
+export async function viewFile(f) {
+  const body = h("div", { class: "viewer-body" });
+  const pager = h("div", { class: "row viewer-pager" });
+  const dlg = h("dialog", { class: "dialog viewer" },
+    h("div", { class: "viewer-head" }, h("b", { class: "viewer-name", dir: "auto" }, f.name || t("document")),
+      h("button", { class: "btn small", type: "button", "aria-label": t("close"), onclick: () => dlg.close() }, "✕")),
+    body, pager,
+    h("div", { class: "row end" },
+      h("a", { class: "btn", href: `/api/files/${f.id}`, target: "_blank", rel: "noopener" }, t("open_new_tab")),
+      h("a", { class: "btn", href: `/api/files/${f.id}?download=1` }, t("download")),
+      h("button", { class: "btn primary", type: "button", onclick: () => dlg.close() }, t("close"))));
+  dlg.addEventListener("close", () => dlg.remove());
+  document.body.append(dlg); dlg.showModal();
+  if (/^image\//.test(f.mime || "")) { body.append(h("img", { src: `/api/files/${f.id}`, alt: f.name || "" })); return; }
+  if (f.mime !== "application/pdf") { body.append(h("p", { class: "sub" }, t("view_not_possible"))); return; }
+  body.append(h("p", { class: "sub" }, t("loading")));
+  let pages = 0;
+  try { pages = (await (await fetch(`/api/files/${f.id}/pages`, { credentials: "same-origin" })).json()).pages || 0; } catch {}
+  if (!pages) { body.replaceChildren(h("iframe", { src: `/api/files/${f.id}`, title: f.name || "PDF" })); return; }
+  let n = 1;
+  const show = () => {
+    body.replaceChildren(h("img", { src: `/api/files/${f.id}/page/${n}`, alt: `${f.name || ""} · ${n}` }));
+    pager.replaceChildren(...(pages > 1 ? [
+      h("button", { class: "btn small", type: "button", disabled: n === 1, onclick: () => { n--; show(); } }, getLang() === "ar" ? "→" : "←", " ", t("previous")),
+      h("span", { class: "sub" }, t("page_of", { n, total: pages })),
+      h("button", { class: "btn small", type: "button", disabled: n === pages, onclick: () => { n++; show(); } }, t("next"), " ", getLang() === "ar" ? "←" : "→")] : []));
+  };
+  show();
+}

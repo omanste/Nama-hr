@@ -331,6 +331,8 @@ const D = {
   expiry_hint: ["نذكّرك أنت والموارد البشرية قبل الانتهاء بـ30 يوماً و7 أيام.", "You and HR are reminded 30 days and 7 days before it expires."],
   expiry_add: ["إضافة تاريخ الانتهاء", "Add expiry date"], expiry_change: ["تعديل تاريخ الانتهاء", "Change expiry date"], later: ["لاحقاً", "Later"],
   f_passport_no: ["رقم جواز السفر", "Passport number"], f_passport_expiry: ["انتهاء جواز السفر", "Passport expiry"], f_visa_expiry: ["انتهاء التأشيرة", "Visa expiry"],
+  view: ["عرض", "View"], previous: ["السابق", "Previous"], page_of: ["صفحة {n} من {total}", "Page {n} of {total}"], document: ["مستند", "Document"],
+  open_new_tab: ["فتح في نافذة جديدة", "Open in new tab"], view_not_possible: ["لا يمكن عرض هذا الملف هنا — نزّله لفتحه.", "This file can't be shown here — download it to open it."],
   sec_address: ["العنوان", "Address"], emergency_person: ["الاسم", "Name"], sec_emergency: ["جهة الاتصال للطوارئ", "Emergency contact"],
   place_other: ["أخرى…", "Other…"], place_other_hint: ["اكتب المكان", "Type the place"],
   address_hint: ["مثال: سكة 1234، مبنى 56، شقة 7", "e.g. Way 1234, Building 56, Flat 7"],

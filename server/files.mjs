@@ -1,5 +1,7 @@
 /* Photos and documents: stored in DATA_DIR/uploads/<id>, served only to people allowed to see the employee. */
 import fs from "node:fs";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import path from "node:path";
 import { nowIso, tx } from "./db.mjs";
 import { send, sendRaw, readBody, readJson, HttpError } from "./http.mjs";
@@ -42,6 +44,25 @@ export async function storeUpload(ctx, req, { employeeId, requestId = null, voic
   const id = Number(r.lastInsertRowid);
   fs.writeFileSync(path.join(ctx.dataDir, "uploads", String(id)), body);
   return db.prepare("SELECT id,employee_id,request_id,kind,doc_type,name,mime,size,expiry,note,uploaded_at FROM files WHERE id=?").get(id);
+}
+
+const run = promisify(execFile);
+const previewDir = (ctx) => { const d = path.join(ctx.dataDir, "previews"); fs.mkdirSync(d, { recursive: true }); return d; };
+/** Number of pages in a stored PDF (0 when poppler isn't installed). */
+async function pdfPages(ctx, f) {
+  try {
+    const out = (await run("pdfinfo", [path.join(ctx.dataDir, "uploads", String(f.id))], { timeout: 15000 })).stdout;
+    return Math.min(50, Number((/^Pages:\s+(\d+)/m.exec(out) || [0, 0])[1]));
+  } catch { return 0; }
+}
+/** One page of a stored PDF as a PNG (made once, then kept in DATA_DIR/previews). */
+async function pdfPage(ctx, f, n) {
+  const out = path.join(previewDir(ctx), `${f.id}-${n}.png`);
+  if (!fs.existsSync(out)) {
+    try { await run("pdftoppm", ["-png", "-r", "110", "-f", String(n), "-l", String(n), "-singlefile", path.join(ctx.dataDir, "uploads", String(f.id)), out.slice(0, -4)], { timeout: 60000 }); }
+    catch { return null; }
+  }
+  return fs.existsSync(out) ? fs.readFileSync(out) : null;
 }
 
 export function registerFiles(api, ctx) {
@@ -130,7 +151,8 @@ export function registerFiles(api, ctx) {
     send(req, res, 200, { file: db.prepare("SELECT id,employee_id,kind,doc_type,name,mime,size,expiry,note,uploaded_at FROM files WHERE id=?").get(f.id) });
   });
 
-  api.get("/api/files/:id", (req, res) => {
+  /** The file row if this session may open it (its person, HR/managers who see them, the request's approver, Voice readers). */
+  function fileFor(req) {
     const f = db.prepare("SELECT * FROM files WHERE id=?").get(Number(req.params.id));
     if (!f) throw new HttpError(404, "not_found", "File not found");
     const emp = getEmployee(db, f.employee_id);
@@ -140,6 +162,26 @@ export function registerFiles(api, ctx) {
       const m = db.prepare("SELECT * FROM voice_messages WHERE id=?").get(f.voice_id);
       if (!m || !canReadVoice(req.sess, m)) throw forbidden();
     } else if (!approverOfRequest && !canViewEmployee(db, req.sess, emp)) throw forbidden();
+    return f;
+  }
+
+  // a PDF shown as pictures, page by page, so it looks the same on every phone (poppler renders it; cached)
+  api.get("/api/files/:id/pages", async (req, res) => {
+    const f = fileFor(req);
+    if (f.mime !== "application/pdf") return send(req, res, 200, { pages: 0 });
+    send(req, res, 200, { pages: await pdfPages(ctx, f) });
+  });
+  api.get("/api/files/:id/page/:n", async (req, res) => {
+    const f = fileFor(req);
+    const n = Number(req.params.n);
+    if (f.mime !== "application/pdf" || !Number.isInteger(n) || n < 1 || n > 50) throw new HttpError(404, "not_found", "No such page");
+    const png = await pdfPage(ctx, f, n);
+    if (!png) throw new HttpError(404, "not_found", "This page can't be shown here — download the file");
+    sendRaw(req, res, 200, png, "image/png", { "Cache-Control": "private, max-age=300" });
+  });
+
+  api.get("/api/files/:id", (req, res) => {
+    const f = fileFor(req);
     const p = path.join(ctx.dataDir, "uploads", String(f.id));
     if (!fs.existsSync(p)) throw new HttpError(404, "not_found", "File missing on disk");
     const ext = { "application/pdf": ".pdf", "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp" }[f.mime] || "";
@@ -161,6 +203,7 @@ export function registerFiles(api, ctx) {
       audit(db, req.sess.user.id, "file.delete", "employee", f.employee_id, f, null);
     });
     fs.rmSync(path.join(ctx.dataDir, "uploads", String(f.id)), { force: true });
+    for (const x of fs.existsSync(path.join(ctx.dataDir, "previews")) ? fs.readdirSync(path.join(ctx.dataDir, "previews")) : []) if (x.startsWith(`${f.id}-`)) fs.rmSync(path.join(ctx.dataDir, "previews", x), { force: true });
     send(req, res, 200, { ok: true });
   });
 }

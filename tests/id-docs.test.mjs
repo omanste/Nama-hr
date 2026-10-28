@@ -102,3 +102,17 @@ test("a passport PDF (phone scan with a text layer) is read: number and expiry g
   const e = (await staff.c.get(`/api/employees/${staff.emp.id}`)).data.employee;
   assert.equal(e.passport_no, "T1234567"); assert.equal(e.passport_expiry, "2031-01-30");
 });
+
+test("a PDF can be viewed page by page as pictures — only by people who may see it", async () => {
+  const up = await staff.c.upload(`/api/employees/${staff.emp.id}/files?kind=doc&doc_type=certificate&name=cert.pdf`, fs.readFileSync(new URL("./fixtures/fake-passport.pdf", import.meta.url)), "application/pdf");
+  const id = up.data.file.id;
+  assert.equal((await other.c.get(`/api/files/${id}/pages`)).status, 403);
+  const p = (await staff.c.get(`/api/files/${id}/pages`)).data.pages;
+  if (!p) return; // no poppler on this machine (the server image has it)
+  assert.equal(p, 1);
+  const png = await fetch(`${t.base}/api/files/${id}/page/1`, { headers: { cookie: hr.c.cookie } });
+  assert.equal(png.status, 200); assert.equal(png.headers.get("content-type"), "image/png");
+  assert.deepEqual([...Buffer.from(await png.arrayBuffer()).subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
+  assert.equal((await staff.c.get(`/api/files/${id}/page/2`)).status, 404);
+  assert.equal((await fetch(`${t.base}/api/files/${id}/page/1`, { headers: { cookie: other.c.cookie } })).status, 403);
+});

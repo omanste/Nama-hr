@@ -1,6 +1,6 @@
 import { api } from "../api.js";
 import { t, nm } from "../i18n.js";
-import { h, badge, when, amountText, dateTime, daysText, confirm, toast, errText, backLink, dmy, field, isPermission, isAttendanceReq } from "../ui.js";
+import { h, badge, when, amountText, dateTime, daysText, confirm, toast, errText, backLink, dmy, field, isPermission, isAttendanceReq, viewFile } from "../ui.js";
 import { render as rerender, refreshMe } from "../app.js";
 
 export async function decide(id, action) {
@@ -68,7 +68,8 @@ export async function render(el, params, { me, can }) {
       row("submitted_at", dateTime(r.created_at)),
       r.reason ? h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("reason")), h("dd", null, r.reason)) : null),
       d.files.length ? h("div", { style: { marginTop: "14px" } }, h("h3", null, t("attachments")),
-        d.files.map((f) => h("div", null, h("a", { href: `/api/files/${f.id}`, target: "_blank", rel: "noopener" }, f.name)))) : null,
+        d.files.map((f) => h("div", { class: "row" }, h("a", { href: `/api/files/${f.id}`, target: "_blank", rel: "noopener", onclick: (ev) => { ev.preventDefault(); viewFile(f); } }, f.name),
+          h("button", { class: "btn small", type: "button", onclick: () => viewFile(f) }, "👁 ", t("view"))))) : null,
       d.needsProof ? h("div", { class: "note", style: { marginTop: "14px" } }, t("proof_needed"),
         own || can.edit() ? h("label", { class: "btn small", style: { marginInlineStart: "10px", cursor: "pointer" } }, t("attach_proof"),
           h("input", { type: "file", hidden: true, accept: "application/pdf,image/png,image/jpeg,image/webp", onchange: async (ev) => {

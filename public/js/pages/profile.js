@@ -3,7 +3,7 @@ import { t, nm, getLang, tx, splitLangs, joinLangs } from "../i18n.js";
 import { BANKS, bankName, ibanText, validIban } from "../banks.js";
 import { GOVERNORATES, MUSCAT_GROUPS, wilayatName, areaName, isWilayat, isArea } from "../places.js";
 import { countryName } from "../countries.js";
-import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, errText, confirm, select, field, backLink, todayIso, isPermission, isAttendanceReq, durText } from "../ui.js";
+import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, errText, confirm, select, field, backLink, todayIso, isPermission, isAttendanceReq, durText, viewFile } from "../ui.js";
 import { balanceHero, requestItem } from "./home.js";
 import { render as rerender } from "../app.js";
 
@@ -191,7 +191,7 @@ function civilIdCard(p, e, mayUpload, can) {
   const ids = p.files.filter((f) => f.kind === "doc" && f.doc_type === "civil_id");
   return h("div", { style: { marginTop: "14px" } },
     h("h3", null, t("civil_id_copy")),
-    ids.length ? h("div", { class: "id-thumbs" }, ids.map((f) => h("a", { href: `/api/files/${f.id}`, target: "_blank", rel: "noopener", title: f.name },
+    ids.length ? h("div", { class: "id-thumbs" }, ids.map((f) => h("a", { href: `/api/files/${f.id}`, target: "_blank", rel: "noopener", title: f.name, onclick: (ev) => { ev.preventDefault(); viewFile(f); } },
       f.mime.startsWith("image/") ? h("img", { src: `/api/files/${f.id}`, alt: t("dt_civil_id"), loading: "lazy" }) : h("span", { class: "pdf" }, "PDF")))) : h("p", { class: "sub" }, t("civil_id_missing")),
     mayUpload && ids.some((f) => f.mime.startsWith("image/")) ? h("button", { class: "btn small", type: "button", style: { marginTop: "8px" }, onclick: () => cropDialog(e, ids.find((f) => f.mime.startsWith("image/")).id) }, "👤 ", t("photo_from_id")) : null,
     mayUpload ? h("div", { style: { marginTop: "8px" } }, pickButtons((f) => uploadDoc(e, f, "civil_id", null, can.edit())), h("p", { class: "sub", style: { margin: "6px 0 0" } }, t("scan_tip"))) : null);
@@ -207,10 +207,11 @@ function documents(p, e, can, mayUpload, setPhoto) {
     h("div", { class: "field", style: { alignSelf: "end" } }, pickButtons((f) => uploadDoc(e, f, type.value, expiry.value, can.edit())))) : null;
   return h("section", { class: "card" }, h("h2", null, t("sec_documents")),
     docs.length ? h("div", { class: "list" }, docs.map((f) => h("div", { class: "item doc-item" },
-      h("div", { class: "grow" }, h("div", { class: "title" }, h("a", { href: `/api/files/${f.id}`, target: "_blank", rel: "noopener" }, f.name)),
+      h("div", { class: "grow" }, h("div", { class: "title" }, h("a", { href: `/api/files/${f.id}`, target: "_blank", rel: "noopener", onclick: (ev) => { ev.preventDefault(); viewFile(f); } }, f.name)),
         h("div", { class: "meta" }, t("dt_" + (f.doc_type || "other")), f.expiry ? ` · ${t("doc_expiry")}: ${dmy(f.expiry)}` : "", ` · ${dateTime(f.uploaded_at)} `, expiryBadge(f.expiry))),
       // actions on their own line under the name, so a phone never gets wider than the screen
       h("div", { class: "row doc-actions" },
+        h("button", { class: "btn small primary", type: "button", onclick: () => viewFile(f) }, "👁 ", t("view")),
         mayUpload && ["civil_id", "passport"].includes(f.doc_type) && f.mime.startsWith("image/") ? h("button", { class: "btn small", type: "button", onclick: () => cropDialog(e, f.id) }, "👤 ", t("photo_use")) : null,
         (can.edit() || (mayUpload && SELF_DOC_TYPES.includes(f.doc_type || "other"))) && (f.expiry || EXPIRING.includes(f.doc_type))
           ? h("button", { class: "btn small", type: "button", onclick: async () => { await expiryDialog(f); rerender(); } }, "📅 ", t(f.expiry ? "expiry_change" : "expiry_add")) : null,
