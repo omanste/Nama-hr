@@ -360,3 +360,13 @@ tr.warn-row td{background:color-mix(in srgb,var(--warn) 10%,transparent)}
   .att-table .badge{font-size:11px;padding:2px 6px;white-space:normal}
   .att-table .chip,.att-table .btn.small{font-size:11px}
 }
+
+/* wider dialogs (qualifications, photo from an ID) */
+dialog.dialog.wide{max-width:min(720px,calc(100vw - 24px))}
+/* photo from an ID: a square the person moves over the face */
+.crop-stage{position:relative;touch-action:none;border-radius:8px;overflow:hidden;background:#000}
+.crop-box{position:absolute;border:3px solid #fff;box-shadow:0 0 0 9999px rgba(0,0,0,.55);border-radius:6px;cursor:move;touch-action:none}
+.pc-photo{width:72px;height:72px;object-fit:cover;border-radius:10px}
+td.pc-old{color:var(--muted);text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--bad) 60%,transparent)}
+td.pc-old img{opacity:.7}
+td.pc-new{font-weight:600}

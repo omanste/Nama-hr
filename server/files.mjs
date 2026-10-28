@@ -11,6 +11,7 @@ import { deputyOf } from "./requests.mjs";
 import { readDocument } from "./idread.mjs";
 import { canReadVoice } from "./voice.mjs";
 import { runExpiryCheck } from "./jobs.mjs";
+import { recordSelfChange } from "./profile-changes.mjs";
 import { cleanEmployee } from "./employees.mjs";
 
 export const MAX_FILE = 10 * 1024 * 1024;
@@ -56,7 +57,10 @@ export function registerFiles(api, ctx) {
     if (!emp) throw new HttpError(404, "not_found", "Employee not found");
     const file = await storeUpload(ctx, req, { employeeId: emp.id, kind });
     tx(db, () => {
-      if (kind === "photo") db.prepare("UPDATE employees SET photo_file_id=?,updated_at=? WHERE id=?").run(file.id, nowIso(), emp.id);
+      if (kind === "photo") {
+        db.prepare("UPDATE employees SET photo_file_id=?,updated_at=? WHERE id=?").run(file.id, nowIso(), emp.id);
+        recordSelfChange(ctx, req.sess, emp, { photo_file_id: emp.photo_file_id }, { photo_file_id: file.id }, "photo");
+      }
       audit(db, req.sess.user.id, "file.upload", "employee", emp.id, null, file);
     });
     // ID card or passport photo: read it on our own server and offer the values (never applied without a person confirming)
@@ -96,6 +100,7 @@ export function registerFiles(api, ctx) {
       const cols = Object.keys(clean);
       db.prepare(`UPDATE employees SET ${cols.map((c) => `${c}=?`).join(",")},updated_at=? WHERE id=?`).run(...cols.map((c) => clean[c]), nowIso(), emp.id);
       audit(db, req.sess.user.id, "employee.update_from_id", "employee", emp.id, pick(emp), { ...clean, file_id: f.id });
+      recordSelfChange(ctx, req.sess, emp, emp, clean, "id");
     });
     try { runExpiryCheck(ctx, ctx.today()); } catch (e) { console.error(e); }
     send(req, res, 200, { employee: getEmployee(db, emp.id) });

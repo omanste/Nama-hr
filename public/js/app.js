@@ -36,6 +36,7 @@ const ROUTES = [
   ["/attendance/mission", "att-request", { kind: "mission" }],
   ["/attendance/report", "att-report"],
   ["/attendance/upload", "att-upload"],
+  ["/profile-changes", "profile-changes"],
   ["/menu", "menu"],
 ].map(([pattern, page, opts = {}]) => {
   const keys = [];
@@ -65,7 +66,7 @@ function navItems() {
   if (can.viewAll()) items.push(["#/requests", "nav_requests", "list"]);
   if (can.viewAll() || me.isApprover) items.push(["#/reports", "nav_reports", "chart"]);
   if (["hr", "admin", "ceo", "accounts"].includes(me.user.role) || me.isApprover) items.push(["#/attendance/report", "nav_att_report", "chart", me.pendingHr]);
-  if (can.edit()) items.push(["#/cap-reviews", "nav_cap_reviews", "clock", me.pendingCapReviews], ["#/import", "nav_import", "upload"]);
+  if (can.edit()) items.push(["#/profile-changes", "nav_profile_changes", "check", me.pendingProfileChanges], ["#/cap-reviews", "nav_cap_reviews", "clock", me.pendingCapReviews], ["#/import", "nav_import", "upload"]);
   if (can.admin()) items.push(["#/settings", "nav_settings", "gear"], ["#/users", "nav_users", "key"]);
   if (can.viewAll()) items.push(["#/audit", "nav_audit", "clock"]);
   if (me.employee) items.push(["#/me", "nav_me", "user"]); // my profile is always the last entry

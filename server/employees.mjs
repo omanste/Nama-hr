@@ -12,14 +12,25 @@ import { toCountryCode } from "../public/js/countries.js";
 import { permissionSummary } from "./permissions.mjs";
 import { rerouteFallbacks } from "./requests.mjs";
 import { SHIFTS, SELF_SHIFTS } from "./shifts.mjs";
+import { recordSelfChange, pendingChangesOf } from "./profile-changes.mjs";
 
-const CONTACT = ["mobile", "address", "emergency_name", "emergency_relation", "emergency_phone"];
+const CONTACT = ["mobile", "personal_phone", "personal_email", "address", "emergency_name", "emergency_relation", "emergency_phone"];
+const BANK = ["bank_name", "bank_account", "bank_iban"];
+/** Who sees bank details: the person, HR, Admin and Accounts (salary transfer). */
+const seesBank = (sess, emp) => ["hr", "admin", "accounts"].includes(sess.user.role) || (sess.employee && sess.employee.id === emp.id);
+/** Oman IBAN: OM + 2 check digits + 3-digit bank code + 16 characters, checked with mod 97. */
+export function validIban(s) {
+  if (!/^OM\d{2}\d{3}[0-9A-Z]{16}$/.test(s)) return false;
+  const r = (s.slice(4) + s.slice(0, 4)).replace(/[A-Z]/g, (c) => String(c.charCodeAt(0) - 55));
+  let m = 0; for (const d of r) m = (m * 10 + Number(d)) % 97;
+  return m === 1;
+}
 export const STATUSES = ["active", "on_leave", "resigned", "terminated", "disabled"];
 const GONE = ["resigned", "terminated", "disabled"]; // no access to the portal
 const TEXT = ["name_ar", "name_en", "civil_id", "nationality", "mobile", "address", "emergency_name", "emergency_relation", "emergency_phone", "job_title", "contract_type"];
 const DATES = ["civil_id_expiry", "dob", "join_date", "contract_end"];
 export const LONG = ["education", "specialization", "experience", "languages", "skills", "certifications", "main_tasks"];
-export const FIELDS = ["emp_no", ...TEXT, ...LONG, "email", ...DATES, "department_id", "manager_employee_id", "status", "gender", "shift", "shift_locked"];
+export const FIELDS = ["emp_no", ...TEXT, ...LONG, "email", ...DATES, "department_id", "manager_employee_id", "status", "gender", "shift", "shift_locked", "personal_email", "personal_phone", ...BANK];
 export const GENDERS = ["male", "female"];
 
 const bad = (field, message) => Object.assign(new HttpError(400, "invalid", message), { field });
@@ -39,7 +50,9 @@ export function cleanEmployee(db, body, cur = null) {
     if (typeof v === "string") v = v.trim();
     if (v === "" || v === undefined) v = null;
     if (DATES.includes(k) && v !== null && !isIsoDate(v)) throw bad(k, `${k} must be a valid date (YYYY-MM-DD)`);
-    if (k === "email" && v !== null && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) throw bad(k, "email is not valid");
+    if ((k === "email" || k === "personal_email") && v !== null && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) throw bad(k, "email is not valid");
+    if (k === "bank_account" && v !== null) { v = v.replace(/[\s-]/g, ""); if (!/^\d{6,20}$/.test(v)) throw bad(k, "The account number is 6–20 digits"); }
+    if (k === "bank_iban" && v !== null) { v = v.replace(/\s/g, "").toUpperCase(); if (!validIban(v)) throw bad(k, "Not a valid Oman IBAN (OM + 21 characters)"); }
     if (k === "status" && !STATUSES.includes(v ?? "active")) throw bad(k, "unknown status");
     if (k === "status" && v === null) v = "active";
     if (k === "gender" && v !== null && !GENDERS.includes(v)) throw bad(k, "gender must be male or female");
@@ -91,7 +104,12 @@ export function profile(db, sess, emp, today) {
   const dept = emp.department_id ? db.prepare("SELECT * FROM departments WHERE id=?").get(emp.department_id) : null;
   const manager = emp.manager_employee_id ? db.prepare("SELECT id,emp_no,name_ar,name_en FROM employees WHERE id=?").get(emp.manager_employee_id) : null;
   const user = db.prepare("SELECT id,username,role,active FROM users WHERE employee_id=?").get(emp.id) || null;
-  const out = { employee: emp, department: dept, manager, files, requests, leave: leaveSummary(db, emp, today), permissions: permissionSummary(db, emp.id, today),
+  // bank details only for the person, HR, Admin and Accounts; what they changed themselves and HR hasn't verified yet
+  const bank = seesBank(sess, emp);
+  if (!bank) { emp = { ...emp }; for (const k of BANK) delete emp[k]; }
+  const mine = sess.employee && sess.employee.id === emp.id;
+  const out = { employee: emp, department: dept, seesBank: bank,
+    pendingChanges: mine || ["hr", "admin"].includes(sess.user.role) ? pendingChangesOf(db, emp.id) : undefined, manager, files, requests, leave: leaveSummary(db, emp, today), permissions: permissionSummary(db, emp.id, today),
     shiftSelf: !!(sess.employee && sess.employee.id === emp.id) && maySelfShift(db, emp), login: can(sess, "employee.viewAll") ? user : undefined };
   if (can(sess, "ledger.adjust")) out.ledger = ledgerRows(db, emp.id);
   return out;
@@ -156,22 +174,27 @@ export function registerEmployees(api, ctx) {
   });
 
   // staff keep their own contact details current; the work e-mail stays with HR/Admin
-  api.put("/api/employees/:id/contact", async (req, res) => {
+  // sections people keep up to date themselves (HR/Admin can too): saved at once; their own changes go to HR/Admin to verify
+  const selfSection = (name, fields) => api.put(`/api/employees/:id/${name}`, async (req, res) => {
     const cur = getEmployee(db, req.params.id);
     if (!cur) throw new HttpError(404, "not_found", "Employee not found");
     if (!can(req.sess, "employee.edit") && cur.id !== req.sess.user.employee_id) throw new HttpError(403, "forbidden", "You do not have permission for this");
     const b = await readJson(req);
-    const body = Object.fromEntries(CONTACT.filter((k) => k in b).map((k) => [k, b[k]]));
+    const body = Object.fromEntries(fields.filter((k) => k in b).map((k) => [k, b[k]]));
     const values = cleanEmployee(db, body, cur);
     const emp = tx(db, () => {
       const cols = Object.keys(values);
       if (cols.length) db.prepare(`UPDATE employees SET ${cols.map((c) => `${c}=?`).join(",")},updated_at=? WHERE id=?`).run(...cols.map((c) => values[c]), nowIso(), cur.id);
       const e = getEmployee(db, cur.id);
-      audit(db, req.sess.user.id, "employee.contact", "employee", cur.id, Object.fromEntries(cols.map((c) => [c, cur[c]])), values);
+      audit(db, req.sess.user.id, `employee.${name}`, "employee", cur.id, Object.fromEntries(cols.map((c) => [c, cur[c]])), values);
+      recordSelfChange(ctx, req.sess, cur, cur, Object.fromEntries(cols.map((c) => [c, e[c]])), name);
       return e;
     });
     send(req, res, 200, { employee: emp });
   });
+  selfSection("contact", CONTACT);
+  selfSection("qualifications", LONG);
+  selfSection("bank", BANK);
 
   // staff choose their own shift while the company allows it and HR hasn't fixed theirs (policy §3: HR assigns it in writing)
   api.put("/api/employees/:id/shift", async (req, res) => {

@@ -175,7 +175,8 @@ export function registerAuth(api, ctx) {
     const pendingHr = ["hr", "admin"].includes(s.user.role) ? db.prepare("SELECT count(*) n FROM leave_requests WHERE status='approved' AND hr_class IS NULL AND type IN ('early','late','break','correction')").get().n : 0;
     // a manager sees their team's attendance: department approver, or someone's direct manager
     const hasTeam = !!s.employee && (s.isApprover || !!db.prepare("SELECT 1 FROM employees WHERE manager_employee_id=? AND status IN ('active','on_leave')").get(s.employee.id));
-    send(req, res, 200, { user: publicUser(s.user), employee: s.employee, isApprover: s.isApprover, pendingApprovals, pendingCapReviews, pendingHr, hasTeam, voiceInbox: voiceInboxCount(db, s), env: ctx.appEnv });
+    const pendingProfileChanges = ["hr", "admin"].includes(s.user.role) ? db.prepare("SELECT count(*) n FROM profile_changes WHERE status='pending' AND employee_id<>?").get(s.employee ? s.employee.id : -1).n : 0;
+    send(req, res, 200, { user: publicUser(s.user), employee: s.employee, isApprover: s.isApprover, pendingApprovals, pendingCapReviews, pendingHr, pendingProfileChanges, hasTeam, voiceInbox: voiceInboxCount(db, s), env: ctx.appEnv });
   });
 
   api.post("/api/me/password", async (req, res) => {

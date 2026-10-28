@@ -1,5 +1,6 @@
 import { api } from "../api.js";
-import { t, nm, getLang, tx } from "../i18n.js";
+import { t, nm, getLang, tx, splitLangs, joinLangs } from "../i18n.js";
+import { BANKS, bankName, ibanText, validIban } from "../banks.js";
 import { countryName } from "../countries.js";
 import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, errText, confirm, select, field, backLink, todayIso, isPermission, isAttendanceReq, durText } from "../ui.js";
 import { balanceHero, requestItem } from "./home.js";
@@ -127,7 +128,8 @@ export async function render(el, params, { me, can, opts }) {
         ["f_civil_id", e.civil_id], ["f_civil_id_expiry", e.civil_id_expiry ? h("span", null, dmy(e.civil_id_expiry), " ", expiryBadge(e.civil_id_expiry)) : null]]), civilIdCard(p, e, mayUpload, can)),
       h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_contact")),
           mayUpload ? h("button", { class: "btn small", type: "button", onclick: () => contactDialog(e) }, t("edit")) : null), facts([
-        ["f_mobile", e.mobile && h("a", { href: `tel:${e.mobile}`, dir: "ltr" }, e.mobile)], ["f_email", e.email && h("a", { href: `mailto:${e.email}` }, e.email)], ["f_address", e.address],
+        ["f_mobile", e.mobile && h("a", { href: `tel:${e.mobile}`, dir: "ltr" }, e.mobile)], ["f_personal_phone", e.personal_phone && h("a", { href: `tel:${e.personal_phone}`, dir: "ltr" }, e.personal_phone)],
+        ["f_email", e.email && h("a", { href: `mailto:${e.email}` }, e.email)], ["f_personal_email", e.personal_email && h("a", { href: `mailto:${e.personal_email}`, dir: "ltr" }, e.personal_email)], ["f_address", e.address],
         ["f_emergency_name", e.emergency_name], ["f_emergency_relation", e.emergency_relation], ["f_emergency_phone", e.emergency_phone && h("span", { dir: "ltr" }, e.emergency_phone)]])),
       h("section", { class: "card" }, h("h2", null, t("sec_job")), facts([
         ["f_department_id", nm(p.department)], ["f_job_title", tx(e.job_title)], ["f_manager_employee_id", nm(p.manager)], ["f_join_date", dmy(e.join_date)], ["f_status", t("st_" + e.status)],
@@ -142,10 +144,13 @@ export async function render(el, params, { me, can, opts }) {
                 ? h("button", { class: "btn small", type: "button", onclick: () => resetPassword(e, p.login) }, "🔑 ", t("reset_password")) : null)
             : h("div", { class: "row" }, h("span", { class: "sub" }, t("no_login")), can.edit() ? h("button", { class: "btn small", type: "button", onclick: () => createLogin(e) }, "🔑 ", t("reset_password")) : null)) : null)),
 
-    h("section", { class: "card" }, h("h2", null, t("sec_qualifications")), h("dl", { class: "facts" },
+    pendingNote(p, own, can),
+    p.seesBank ? bankCard(p, e, mayUpload) : null,
+    h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_qualifications")), badgeIfPending(p, "qualifications"),
+      mayUpload ? h("button", { class: "btn small", type: "button", onclick: () => qualDialog(e) }, t("edit")) : null), h("dl", { class: "facts" },
       ["education", "specialization", "experience", "languages", "certifications"].map((k) => h("div", null, h("dt", null, t("f_" + k)), h("dd", { dir: "auto" }, tx(e[k]) || "—"))),
       ["skills", "main_tasks"].map((k) => h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("f_" + k)), h("dd", { dir: "auto", style: { whiteSpace: "pre-line" } }, tx(e[k]) || "—"))))),
-    documents(p, e, can, mayUpload),
+    documents(p, e, can, mayUpload, setPhoto),
     h("section", { class: "card kpi-placeholder" }, h("h2", null, t("sec_kpi")), h("p", null, t("kpi_later"))));
 }
 
@@ -156,10 +161,11 @@ function civilIdCard(p, e, mayUpload, can) {
     h("h3", null, t("civil_id_copy")),
     ids.length ? h("div", { class: "id-thumbs" }, ids.map((f) => h("a", { href: `/api/files/${f.id}`, target: "_blank", rel: "noopener", title: f.name },
       f.mime.startsWith("image/") ? h("img", { src: `/api/files/${f.id}`, alt: t("dt_civil_id"), loading: "lazy" }) : h("span", { class: "pdf" }, "PDF")))) : h("p", { class: "sub" }, t("civil_id_missing")),
+    mayUpload && ids.some((f) => f.mime.startsWith("image/")) ? h("button", { class: "btn small", type: "button", style: { marginTop: "8px" }, onclick: () => cropDialog(e, ids.find((f) => f.mime.startsWith("image/")).id) }, "👤 ", t("photo_from_id")) : null,
     mayUpload ? h("div", { style: { marginTop: "8px" } }, pickButtons((f) => uploadDoc(e, f, "civil_id", null, can.edit())), h("p", { class: "sub", style: { margin: "6px 0 0" } }, t("scan_tip"))) : null);
 }
 
-function documents(p, e, can, mayUpload) {
+function documents(p, e, can, mayUpload, setPhoto) {
   const docs = p.files.filter((f) => f.kind === "doc");
   const types = can.edit() ? DOC_TYPES : SELF_DOC_TYPES;
   const type = select("doc_type", types.map((d) => [d, t("dt_" + d)]), "passport");
@@ -171,12 +177,120 @@ function documents(p, e, can, mayUpload) {
     docs.length ? h("div", { class: "list" }, docs.map((f) => h("div", { class: "item" },
       h("div", { class: "grow" }, h("div", { class: "title" }, h("a", { href: `/api/files/${f.id}`, target: "_blank", rel: "noopener" }, f.name)),
         h("div", { class: "meta" }, t("dt_" + (f.doc_type || "other")), f.expiry ? ` · ${t("doc_expiry")}: ${dmy(f.expiry)}` : "", ` · ${dateTime(f.uploaded_at)} `, expiryBadge(f.expiry))),
+      mayUpload && ["civil_id", "passport"].includes(f.doc_type) && f.mime.startsWith("image/") ? h("button", { class: "btn small", type: "button", onclick: () => cropDialog(e, f.id) }, "👤 ", t("photo_use")) : null,
       h("a", { class: "btn small", href: `/api/files/${f.id}?download=1` }, t("download")),
       can.edit() ? h("button", { class: "btn small danger", type: "button", onclick: async () => {
         if (!(await confirm(t("delete_file_q"), { danger: true, okText: t("delete") }))) return;
         try { await api.del(`/api/files/${f.id}`); rerender(); } catch (er) { toast(errText(er), "bad"); }
       } }, t("delete")) : null))) : h("div", { class: "empty" }, t("no_results")),
-    upload);
+    upload,
+    mayUpload ? h("div", { style: { marginTop: "14px" } }, h("h3", null, t("photo_personal")),
+      h("div", { class: "row" },
+        h("label", { class: "btn" }, "📷 ", t("photo_camera"), h("input", { type: "file", hidden: true, accept: "image/*", capture: "user", onchange: (ev) => { const f = ev.target.files[0]; ev.target.value = ""; setPhoto(f); } })),
+        h("label", { class: "btn" }, "🖼️ ", t("photo_upload"), h("input", { type: "file", hidden: true, accept: "image/png,image/jpeg,image/webp", onchange: (ev) => { const f = ev.target.files[0]; ev.target.value = ""; setPhoto(f); } })))) : null);
+}
+
+const SOURCE_KEYS = { contact: "sec_contact", qualifications: "sec_qualifications", bank: "sec_bank", id: "pc_src_id", photo: "pc_src_photo" };
+const pendingOf = (p, source) => (p.pendingChanges || []).filter((c) => c.source === source);
+const badgeIfPending = (p, source) => (pendingOf(p, source).length ? h("span", { class: "badge b-pending" }, t("not_verified_yet")) : null);
+/** What changed and still waits for HR — the person sees it; HR gets a link to review. */
+function pendingNote(p, own, can) {
+  const list = p.pendingChanges || [];
+  if (!list.length) return null;
+  const what = [...new Set(list.map((c) => t(SOURCE_KEYS[c.source] || c.source)))].join(getLang() === "ar" ? "، " : ", ");
+  return h("div", { class: "note" }, own ? t("pc_mine_pending", { what }) : t("pc_hr_pending", { what }),
+    !own && can.edit() ? h("a", { class: "btn small", href: "#/profile-changes", style: { marginInlineStart: "10px" } }, t("pc_review")) : null);
+}
+
+/** Bank details for salary transfer: the person, HR, Admin and Accounts see them. */
+function bankCard(p, e, mayUpload) {
+  return h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_bank")), badgeIfPending(p, "bank"),
+      mayUpload ? h("button", { class: "btn small", type: "button", onclick: () => bankDialog(e) }, t("edit")) : null),
+    h("dl", { class: "facts" },
+      h("div", null, h("dt", null, t("f_bank_name")), h("dd", null, bankName(e.bank_name) || "—")),
+      h("div", null, h("dt", null, t("f_bank_account")), h("dd", { dir: "ltr", class: "num" }, e.bank_account || "—")),
+      h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("f_bank_iban")), h("dd", { dir: "ltr", class: "num" }, ibanText(e.bank_iban) || "—"))),
+    h("p", { class: "sub", style: { margin: "8px 0 0" } }, t("bank_private")));
+}
+function bankDialog(e) {
+  const known = BANKS.some(([en]) => en === e.bank_name);
+  const bank = select("bank_name", [["", "—"], ...BANKS.map(([en]) => [en, bankName(en)]), ["__other", t("bank_other")]], known ? e.bank_name : e.bank_name ? "__other" : "");
+  const other = h("input", { name: "bank_other", value: known ? "" : e.bank_name || "", maxlength: 100 });
+  const otherField = field(t("bank_other_name"), other);
+  const showOther = () => { otherField.hidden = bank.value !== "__other"; };
+  bank.addEventListener("change", showOther); showOther();
+  const acct = h("input", { name: "bank_account", value: e.bank_account || "", dir: "ltr", inputmode: "numeric", autocomplete: "off" });
+  const iban = h("input", { name: "bank_iban", value: ibanText(e.bank_iban), dir: "ltr", autocomplete: "off", placeholder: "OM00 0000 0000 0000 0000 000", style: { textTransform: "uppercase" } });
+  return simpleDialog(t("sec_bank"), [field(t("f_bank_name"), bank, { full: true }), otherField, field(t("f_bank_account"), acct), field(t("f_bank_iban"), iban, { hint: t("iban_hint") })],
+    () => {
+      if (acct.value.trim() && !/^\d{6,20}$/.test(acct.value.replace(/[\s-]/g, ""))) throw { message: t("acct_bad") };
+      if (iban.value.trim() && !validIban(iban.value)) throw { message: t("iban_bad") };
+      return api.put(`/api/employees/${e.id}/bank`, { bank_name: bank.value === "__other" ? other.value.trim() : bank.value || null, bank_account: acct.value || null, bank_iban: iban.value || null });
+    }, t("verify_note"));
+}
+const QUAL = ["education", "specialization", "experience", "languages", "certifications", "skills", "main_tasks"];
+/** Qualifications in Arabic and English (stored together as "English | عربي"). */
+function qualDialog(e) {
+  const boxes = QUAL.map((k) => {
+    const v = splitLangs(e[k]), long = ["skills", "main_tasks", "experience"].includes(k);
+    const box = (lang) => { const c = long ? h("textarea", { rows: 3, maxlength: 2000, dir: lang === "ar" ? "rtl" : "ltr" }) : h("input", { maxlength: 300, dir: lang === "ar" ? "rtl" : "ltr" }); c.value = v[lang] || ""; return c; };
+    return { k, ar: box("ar"), en: box("en") };
+  });
+  const rows = boxes.map(({ k, ar, en }) => h("div", { class: "field full bilingual" }, h("label", null, t("f_" + k)),
+    h("div", { class: "pair" }, h("div", null, h("span", { class: "lang-tag" }, "عربي"), ar), h("div", null, h("span", { class: "lang-tag" }, "English"), en))));
+  return simpleDialog(t("sec_qualifications"), rows,
+    () => api.put(`/api/employees/${e.id}/qualifications`, Object.fromEntries(boxes.map(({ k, ar, en }) => [k, joinLangs(ar.value, en.value)]))), t("verify_note"), true);
+}
+/** A dialog with fields and Save/Cancel; save() returns a promise. */
+function simpleDialog(title, fields, save, note, wide = false) {
+  const err = h("div", { class: "form-error" });
+  const dlg = h("dialog", { class: wide ? "dialog wide" : "dialog" }, h("form", { class: "form", novalidate: true, onsubmit: async (ev) => {
+    ev.preventDefault();
+    try { await save(); dlg.close(); toast(t("saved")); rerender(); } catch (er) { err.textContent = er.field ? `${t("f_" + er.field)}: ${errText(er)}` : errText(er); }
+  } },
+    h("h2", null, title), h("div", { class: "fields" }, fields), note ? h("p", { class: "sub" }, note) : null, err,
+    h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), h("button", { class: "btn primary", type: "submit" }, t("save")))));
+  dlg.addEventListener("close", () => dlg.remove());
+  document.body.append(dlg); dlg.showModal();
+}
+
+/** Take the profile photo from an ID or passport scan: move and size the square over the face, then save (or keep the current photo). */
+function cropDialog(e, fileId) {
+  const img = h("img", { src: `/api/files/${fileId}`, alt: "", draggable: "false", style: { display: "block", width: "100%", userSelect: "none" } });
+  const box = h("div", { class: "crop-box" });
+  const stage = h("div", { class: "crop-stage" }, img, box);
+  const size = h("input", { type: "range", min: 10, max: 90, value: 30, "aria-label": t("photo_size") });
+  let x = 4, y = 18; // % of the image's width/height
+  const place = () => {
+    const W = img.clientWidth, H = img.clientHeight, s = (Number(size.value) / 100) * W;
+    x = Math.max(0, Math.min(x, 100 - (s / W) * 100)); y = Math.max(0, Math.min(y, 100 - (s / H) * 100));
+    Object.assign(box.style, { left: `${x}%`, top: `${y}%`, width: `${s}px`, height: `${s}px` });
+  };
+  let drag = null;
+  box.addEventListener("pointerdown", (ev) => { drag = { px: ev.clientX, py: ev.clientY, x, y }; box.setPointerCapture(ev.pointerId); ev.preventDefault(); });
+  box.addEventListener("pointermove", (ev) => {
+    if (!drag) return;
+    x = drag.x + ((ev.clientX - drag.px) / img.clientWidth) * 100; y = drag.y + ((ev.clientY - drag.py) / img.clientHeight) * 100; place();
+  });
+  box.addEventListener("pointerup", () => { drag = null; });
+  size.addEventListener("input", place);
+  img.addEventListener("load", place);
+  const err = h("div", { class: "form-error" });
+  const dlg = h("dialog", { class: "dialog wide" }, h("form", { class: "form", onsubmit: async (ev) => {
+    ev.preventDefault();
+    const k = img.naturalWidth / img.clientWidth, s = box.offsetWidth * k;
+    const c = document.createElement("canvas"); c.width = c.height = 400;
+    c.getContext("2d").drawImage(img, (x / 100) * img.naturalWidth, (y / 100) * img.naturalHeight, s, s, 0, 0, 400, 400);
+    const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.9));
+    try { await api.upload(`/api/employees/${e.id}/files?kind=photo&name=photo-from-id.jpg`, blob); dlg.close(); toast(t("saved")); rerender(); }
+    catch (er) { err.textContent = errText(er); }
+  } },
+    h("h2", null, t("photo_from_id")), h("p", { class: "sub" }, t("photo_crop_hint")),
+    stage, field(t("photo_size"), size), err,
+    h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("photo_keep")), h("button", { class: "btn primary", type: "submit" }, t("photo_use")))));
+  dlg.addEventListener("close", () => dlg.remove());
+  document.body.append(dlg); dlg.showModal();
+  if (img.complete) place();
 }
 
 // no login yet: "Reset password" creates the staff login and shows its temporary password
@@ -292,8 +406,8 @@ function shiftDialog(e) {
 }
 
 function contactDialog(e) {
-  const F = ["mobile", "address", "emergency_name", "emergency_relation", "emergency_phone"];
-  const inputs = Object.fromEntries(F.map((k) => [k, h("input", { name: k, value: e[k] || "", ...(k.endsWith("phone") || k === "mobile" ? { type: "tel", dir: "ltr", inputmode: "tel" } : {}) })]));
+  const F = ["mobile", "personal_phone", "personal_email", "address", "emergency_name", "emergency_relation", "emergency_phone"];
+  const inputs = Object.fromEntries(F.map((k) => [k, h("input", { name: k, value: e[k] || "", ...(k.endsWith("phone") || k === "mobile" ? { type: "tel", dir: "ltr", inputmode: "tel" } : k === "personal_email" ? { type: "email", dir: "ltr", autocomplete: "email" } : {}) })]));
   const err = h("div", { class: "form-error" });
   const dlg = h("dialog", { class: "dialog" }, h("form", { class: "form", onsubmit: async (ev) => {
     ev.preventDefault();
@@ -302,7 +416,7 @@ function contactDialog(e) {
   } },
     h("h2", null, t("sec_contact")),
     h("div", { class: "fields" }, F.map((k) => field(t("f_" + k), inputs[k], { full: k === "address" }))),
-    h("p", { class: "sub" }, t("email_by_hr")), err,
+    h("p", { class: "sub" }, t("email_by_hr"), " ", t("verify_note")), err,
     h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), h("button", { class: "btn primary", type: "submit" }, t("save")))));
   dlg.addEventListener("close", () => dlg.remove());
   document.body.append(dlg); dlg.showModal();

@@ -109,6 +109,14 @@ const MIGRATIONS = [
    INSERT OR IGNORE INTO settings(key,value) VALUES('attendance_start', '"' || date('now') || '"');`,
   // 16: HR can stop one person choosing their own shift (the company-wide switch is the "shift_self_select" setting)
   `ALTER TABLE employees ADD COLUMN shift_locked INTEGER NOT NULL DEFAULT 0;`,
+  // 17: personal e-mail and phone, bank details for salary transfer, and the changes staff make to their own profile
+  // (saved at once, then HR/Admin confirm or undo them — before and after are kept)
+  `ALTER TABLE employees ADD COLUMN personal_email TEXT; ALTER TABLE employees ADD COLUMN personal_phone TEXT;
+   ALTER TABLE employees ADD COLUMN bank_name TEXT; ALTER TABLE employees ADD COLUMN bank_account TEXT; ALTER TABLE employees ADD COLUMN bank_iban TEXT;
+   CREATE TABLE profile_changes(id INTEGER PRIMARY KEY, employee_id INTEGER NOT NULL REFERENCES employees(id), user_id INTEGER, source TEXT NOT NULL,
+     changes TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','confirmed','reverted')),
+     decided_by INTEGER, decided_at TEXT, note TEXT, created_at TEXT NOT NULL);
+   CREATE INDEX pc_status ON profile_changes(status, employee_id);`,
 ];
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */

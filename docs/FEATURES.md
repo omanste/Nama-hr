@@ -57,6 +57,12 @@ Everything runs on Nama's own server (Dokploy); no outside services — ID cards
 * ID card / passport photo: read on the server (check-digit verified), values offered for confirmation.
 * Expiry alerts to HR and the person at 30 days, 7 days and on the day.
 
+## Staff keep their profile current (verified by HR)
+* Staff edit their own contact (mobile, personal phone, personal e-mail, address, emergency contact), qualifications (Arabic + English), and bank details for salary transfer (bank from the Oman list, account number, IBAN checked OM + mod 97).
+* Values read from an uploaded ID (civil ID, passport) fill the personal details after the person ticks them; the profile photo can be cut from the ID scan (move/size a square; or keep the current photo). Personal photo can also be uploaded from Documents.
+* Each self-change is saved at once and listed under **Profile updates** for HR/Admin with before and after: Confirm keeps it, Undo (with a reason) puts the old values back and tells the person. Nobody verifies their own changes. Bank details show "Awaiting HR verification" until confirmed.
+* Bank details are visible only to the person, HR, Admin and Accounts.
+
 ## Staff Voice (صوت الموظف)
 * Suggestions, questions, complaints, notes — to my manager, HR or the CEO. Never anonymous.
 * Seen only by the sender, the recipient(s) and Admin. Conversation with replies, attachment, status. Counts in reports.
