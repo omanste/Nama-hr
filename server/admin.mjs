@@ -15,6 +15,9 @@ export const DEFAULT_CEO_FINAL = ["unpaid"];
 const FINAL_OK = ["annual", "emergency", "sick", "bereavement", "marriage", "paternity", "maternity", "hajj", "exam", "patient_care", "childcare", "unpaid", "comp_day"];
 /** "CEO Office" and "Chairman's Office": departments for the people who report to them directly, approved by them. */
 function ensureOffices(db) {
+  // the Management department: approved by the CEO (unless someone else was chosen for it)
+  const ceo = getSetting(db, "managers_approver_employee_id", null);
+  if (ceo) db.prepare("UPDATE departments SET approver_employee_id=? WHERE (lower(name_en)='management' OR name_ar='الإدارة') AND approver_employee_id IS NULL").run(ceo);
   for (const [key, setKey, ar, en] of [["managers_approver_employee_id", "ceo_office_dept_id", "مكتب الرئيس التنفيذي", "CEO Office"],
     ["chairman_employee_id", "chairman_office_dept_id", "مكتب رئيس مجلس الإدارة", "Chairman's Office"]]) {
     const who = getSetting(db, key, null);

@@ -136,6 +136,9 @@ const MIGRATIONS = [
     rebuildWithCheck(db, "users", "CHECK(role IN ('staff','manager','hr','accounts','ceo','chairman','admin'))", "CHECK(role IN ('staff','manager','hr','accounts','ceo','chairman','consultant','admin'))");
     rebuildWithCheck(db, "voice_messages", "CHECK(to_kind IN ('manager','hr','ceo'))", "CHECK(to_kind IN ('manager','hr','ceo','chairman'))");
   },
+  // 26: a "Management" department in the list (top management and the people around them); the CEO approves it
+  `INSERT INTO departments(name_ar,name_en,active) SELECT 'الإدارة','Management',1
+     WHERE NOT EXISTS (SELECT 1 FROM departments WHERE lower(name_en)='management' OR name_ar IN ('الإدارة','الادارة'));`,
 ];
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */

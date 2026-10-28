@@ -124,3 +124,8 @@ test("a consultant: sees staff, requests and reports — not documents, IDs, ban
   await admin.put(`/api/employees/${con.emp.id}`, { contract_end: "2020-01-31" });
   assert.equal((await con.c.get("/api/me")).status, 401);
 });
+
+test("a Management department is in the list, approved by the CEO", async () => {
+  const m = (await admin.get("/api/departments")).data.items.filter((d) => d.name_en === "Management");
+  assert.equal(m.length, 1); assert.equal(m[0].name_ar, "الإدارة"); assert.equal(m[0].approver_employee_id, ceo.emp.id);
+});
