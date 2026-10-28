@@ -125,6 +125,8 @@ const MIGRATIONS = [
   (db) => rebuildWithCheck(db, "calendar_events", "CHECK(kind IN ('blocked','event'))", "CHECK(kind IN ('blocked','event','national','religious'))"),
   // 21: staff add their own events: personal (only they see it) or shared with all staff
   `ALTER TABLE calendar_events ADD COLUMN visibility TEXT NOT NULL DEFAULT 'company';`,
+  // 22: a renewed ID, passport or visa: the old copy is archived (HR/Admin still see it; the person sees only the new one)
+  `ALTER TABLE files ADD COLUMN archived_at TEXT; ALTER TABLE files ADD COLUMN replaced_by INTEGER;`,
 ];
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */

@@ -230,3 +230,31 @@ test("the Arabic name on the front of a card laid out in columns (read broken ov
   assert.equal(up.data.read.name_ar, "شيخة إسحاق عبدالله الحوقاني");
   assert.equal((await hr.c.get(`/api/employees/${a.emp.id}`)).data.employee.name_ar, "شيخة إسحاق عبدالله الحوقاني");
 });
+
+test("renewing an expired ID: the new one replaces it and updates Personal; the old one is archived, seen only by HR/Admin", async () => {
+  const p = await makePerson(t.base, admin, { emp_no: "RN1", name_ar: "قديم", name_en: "Old Name", join_date: "2022-01-01" }, "staff");
+  const old = (await p.c.upload(`/api/employees/${p.emp.id}/files?kind=doc&doc_type=civil_id&name=old-id.pdf&expiry=2026-01-31`, Buffer.from("%PDF-1.4"), "application/pdf")).data.file;
+  // only an ID, passport or visa of this person, and as the same type
+  const cert = (await p.c.upload(`/api/employees/${p.emp.id}/files?kind=doc&doc_type=certificate&name=c.pdf`, Buffer.from("%PDF-1.4"), "application/pdf")).data.file;
+  const jpg = fs.readFileSync(new URL("./fixtures/fake-id.jpg", import.meta.url));
+  assert.equal((await p.c.upload(`/api/employees/${p.emp.id}/files?kind=doc&doc_type=civil_id&replaces=${cert.id}`, jpg, "image/jpeg")).status, 400);
+  assert.equal((await p.c.upload(`/api/employees/${p.emp.id}/files?kind=doc&doc_type=passport&replaces=${old.id}`, jpg, "image/jpeg")).status, 400);
+  assert.equal((await other.c.upload(`/api/employees/${other.emp.id}/files?kind=doc&doc_type=civil_id&replaces=${old.id}`, jpg, "image/jpeg")).status, 400);
+  const up = await p.c.upload(`/api/employees/${p.emp.id}/files?kind=doc&doc_type=civil_id&name=new-id.jpg&replaces=${old.id}`, jpg, "image/jpeg");
+  assert.equal(up.status, 201);
+  const e = (await p.c.get(`/api/employees/${p.emp.id}`)).data;
+  assert.equal(e.employee.name_en, "Sample Person Altest"); assert.equal(e.employee.civil_id_expiry, "2028-05-12"); // Personal updated from the new card
+  // the person sees only the new one, and can't open the old one
+  assert.deepEqual(e.files.filter((f) => f.doc_type === "civil_id").map((f) => f.id), [up.data.file.id]);
+  assert.equal((await p.c.get(`/api/files/${old.id}`)).status, 404);
+  // HR sees both, the old one marked archived and pointing at its replacement
+  const hf = (await hr.c.get(`/api/employees/${p.emp.id}`)).data.files.find((f) => f.id === old.id);
+  assert.ok(hf.archived_at); assert.equal(hf.replaced_by, up.data.file.id);
+  assert.equal((await hr.c.get(`/api/files/${old.id}`)).status, 200);
+  // the archived copy no longer sends expiry reminders
+  assert.ok(!(await hr.c.get("/api/expiring")).data.items.some((x) => x.file && x.file.id === old.id));
+  // an archived copy can't be renewed again; deleting the new one brings the old one back
+  assert.equal((await p.c.upload(`/api/employees/${p.emp.id}/files?kind=doc&doc_type=civil_id&replaces=${old.id}`, jpg, "image/jpeg")).status, 400);
+  assert.equal((await hr.c.del(`/api/files/${up.data.file.id}`)).status, 200);
+  assert.ok((await p.c.get(`/api/employees/${p.emp.id}`)).data.files.some((f) => f.id === old.id));
+});

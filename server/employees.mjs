@@ -99,7 +99,9 @@ function deactivateIfLeft(db, emp) {
 export const maySelfShift = (db, emp) => getSetting(db, "shift_self_select", true) !== false && !emp.shift_locked && SELF_SHIFTS.includes(Number(emp.shift));
 
 export function profile(db, sess, emp, today) {
-  const files = db.prepare("SELECT id,kind,doc_type,name,mime,size,expiry,note,uploaded_at FROM files WHERE employee_id=? AND request_id IS NULL AND voice_id IS NULL ORDER BY uploaded_at DESC").all(emp.id);
+  // archived copies (a renewed ID, passport or visa) only for HR and Admin
+  const files = db.prepare(`SELECT id,kind,doc_type,name,mime,size,expiry,note,uploaded_at,archived_at,replaced_by FROM files WHERE employee_id=? AND request_id IS NULL AND voice_id IS NULL
+    ${["hr", "admin"].includes(sess.user.role) ? "" : "AND archived_at IS NULL"} ORDER BY uploaded_at DESC`).all(emp.id);
   const requests = db.prepare("SELECT * FROM leave_requests WHERE employee_id=? ORDER BY start_date DESC, id DESC").all(emp.id);
   const dept = emp.department_id ? db.prepare("SELECT * FROM departments WHERE id=?").get(emp.department_id) : null;
   const manager = emp.manager_employee_id ? db.prepare("SELECT id,emp_no,name_ar,name_en FROM employees WHERE id=?").get(emp.manager_employee_id) : null;

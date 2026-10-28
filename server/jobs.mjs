@@ -124,7 +124,7 @@ export function expiringItems(db, today, days = 30) {
     if (e.visa_expiry && e.visa_expiry <= limit) out.push({ key: `visa:${e.id}`, employee: e, what: "visa", expiry: e.visa_expiry });
     if (e.contract_end && e.contract_end <= limit) out.push({ key: `contract_end:${e.id}`, employee: e, what: "contract", expiry: e.contract_end });
   }
-  for (const f of db.prepare("SELECT * FROM files WHERE kind='doc' AND request_id IS NULL AND expiry IS NOT NULL AND expiry<=?").all(limit)) {
+  for (const f of db.prepare("SELECT * FROM files WHERE kind='doc' AND request_id IS NULL AND archived_at IS NULL AND expiry IS NOT NULL AND expiry<=?").all(limit)) {
     const e = byId.get(f.employee_id);
     if (!e) continue;
     // the civil ID copy carries the same date as the profile field: one alert is enough

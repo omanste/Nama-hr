@@ -428,3 +428,8 @@ th[aria-sort="ascending"] .arrow,th[aria-sort="descending"] .arrow{color:var(--b
 .sort-mobile{display:contents}
 @media (min-width:900px){.sort-mobile{display:none}}
 .sort-mobile > select{flex:1 1 160px;min-width:0}
+/* renewing an ID / passport / visa, and the archive of earlier copies (HR/Admin) */
+.btn.small.warn{border-color:var(--warn,#B7791F);color:var(--warn,#B7791F)}
+.doc-archive{margin-top:8px}
+.doc-archive summary{cursor:pointer;color:var(--muted);font-size:13px;padding:4px 0}
+.item.doc-item.archived{opacity:.75;background:var(--surface-2)}

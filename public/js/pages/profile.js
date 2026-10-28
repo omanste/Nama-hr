@@ -12,10 +12,11 @@ const DOC_TYPES = ["civil_id", "passport", "visa", "resume", "certificate", "cou
 const SELF_DOC_TYPES = ["civil_id", "passport", "visa", "resume", "certificate", "course", "contract", "medical", "other"];
 const DOC_ACCEPT = "application/pdf,image/png,image/jpeg,image/webp";
 
-async function uploadDoc(e, f, docType, expiry, canEditAll) {
+async function uploadDoc(e, f, docType, expiry, canEditAll, replaces = null) {
   if (!f) return;
   const qs = new URLSearchParams({ kind: "doc", doc_type: docType, name: f.name || `${docType}.jpg` });
   if (expiry) qs.set("expiry", expiry);
+  if (replaces) qs.set("replaces", replaces); // renewing: the old copy is archived
   const reading = EXPIRING.includes(docType) && (/^image\//.test(f.type) || f.type === "application/pdf");
   if (reading) toast(t("reading_card"));
   try {
@@ -218,6 +219,32 @@ function oneLangTag(v) {
   return other ? h("span", { class: "badge one-lang", title: t("one_lang_hint") }, t(getLang() === "en" ? "only_ar" : "only_en")) : null;
 }
 
+/** Documents that can be renewed, and when: expired, or expiring within 30 days. */
+const RENEWABLE = ["civil_id", "passport", "visa"];
+function renewButton(e, f, can, mayUpload) {
+  if (!RENEWABLE.includes(f.doc_type) || !f.expiry) return null;
+  if (!(can.edit() || (mayUpload && SELF_DOC_TYPES.includes(f.doc_type)))) return null;
+  const days = Math.round((Date.parse(f.expiry) - Date.parse(todayIso())) / 864e5);
+  if (days > 30) return null;
+  // the new copy is a file (a clear scan or PDF reads better than a phone photo); it replaces this one and updates Personal
+  return h("label", { class: `btn small ${days < 0 ? "warn" : ""}`, title: t("renew_hint") }, "🔄 ", t("renew"),
+    h("input", { type: "file", hidden: true, accept: DOC_ACCEPT, onchange: async (ev) => {
+      const nf = ev.target.files[0]; ev.target.value = "";
+      if (nf && (await confirm(t("renew_q", { what: t("dt_" + f.doc_type) }), { okText: t("renew") }))) await uploadDoc(e, nf, f.doc_type, "", can.edit(), f.id);
+    } }));
+}
+/** Earlier copies of a renewed document — HR and Admin only (the server sends them to nobody else). */
+function archivedList(fs) {
+  if (!fs.length) return null;
+  return h("details", { class: "doc-archive" }, h("summary", null, t("doc_archive"), " ", h("span", { class: "badge" }, fs.length)),
+    h("div", { class: "list" }, fs.map((f) => h("div", { class: "item doc-item archived" },
+      h("div", { class: "grow" }, h("div", { class: "title" }, h("a", { href: `/api/files/${f.id}`, target: "_blank", rel: "noopener", onclick: (ev) => { ev.preventDefault(); viewFile(f); } }, f.name)),
+        h("div", { class: "meta" }, h("span", { class: "badge" }, t("doc_archived")), " ", f.expiry ? `${t("doc_expiry")}: ${dmy(f.expiry)} · ` : "", t("doc_replaced_on", { d: dateTime(f.archived_at) }))),
+      h("div", { class: "row doc-actions" },
+        h("button", { class: "btn small", type: "button", onclick: () => viewFile(f) }, "👁 ", t("view")),
+        h("a", { class: "btn small", href: `/api/files/${f.id}?download=1` }, t("download")))))));
+}
+
 function documents(p, e, can, mayUpload, setPhoto) {
   const docs = p.files.filter((f) => f.kind === "doc");
   const types = can.edit() ? DOC_TYPES : SELF_DOC_TYPES;
@@ -235,8 +262,8 @@ function documents(p, e, can, mayUpload, setPhoto) {
   return h("section", { class: "card" }, h("h2", null, t("sec_documents")),
     // one group per document type (category), in the order of the type list
     docs.length ? h("div", { class: "doc-groups" }, [...DOC_TYPES].map((k) => [k, docs.filter((f) => (DOC_TYPES.includes(f.doc_type) ? f.doc_type : "other") === k)]).filter(([, fs]) => fs.length).map(([k, fs]) =>
-      h("div", { class: "doc-group" }, h("h3", null, t("dt_" + k), h("span", { class: "badge" }, fs.length)),
-    h("div", { class: "list" }, fs.map((f) => h("div", { class: "item doc-item" },
+      h("div", { class: "doc-group" }, h("h3", null, t("dt_" + k), h("span", { class: "badge" }, fs.filter((f) => !f.archived_at).length)),
+    h("div", { class: "list" }, fs.filter((f) => !f.archived_at).map((f) => h("div", { class: "item doc-item" },
       h("div", { class: "grow" }, h("div", { class: "title" }, h("a", { href: `/api/files/${f.id}`, target: "_blank", rel: "noopener", onclick: (ev) => { ev.preventDefault(); viewFile(f); } }, f.name)),
         h("div", { class: "meta" }, f.expiry ? `${t("doc_expiry")}: ${dmy(f.expiry)} · ` : "", `${dateTime(f.uploaded_at)} `, expiryBadge(f.expiry))),
       // actions on their own line under the name, so a phone never gets wider than the screen
@@ -246,10 +273,12 @@ function documents(p, e, can, mayUpload, setPhoto) {
         (can.edit() || (mayUpload && SELF_DOC_TYPES.includes(f.doc_type || "other"))) && (f.expiry || EXPIRING.includes(f.doc_type))
           ? h("button", { class: "btn small", type: "button", onclick: async () => { await expiryDialog(f); rerender(); } }, "📅 ", t(f.expiry ? "expiry_change" : "expiry_add")) : null,
         h("a", { class: "btn small", href: `/api/files/${f.id}?download=1` }, t("download")),
+        renewButton(e, f, can, mayUpload),
         can.edit() ? h("button", { class: "btn small danger", type: "button", onclick: async () => {
           if (!(await confirm(t("delete_file_q"), { danger: true, okText: t("delete") }))) return;
           try { await api.del(`/api/files/${f.id}`); rerender(); } catch (er) { toast(errText(er), "bad"); }
-        } }, t("delete")) : null))))))) : h("div", { class: "empty" }, t("no_results")),
+        } }, t("delete")) : null)))),
+    archivedList(fs.filter((f) => f.archived_at))))) : h("div", { class: "empty" }, t("no_results")),
     upload,
     mayUpload ? h("div", { style: { marginTop: "14px" } }, h("h3", null, t("photo_personal")),
       h("div", { class: "row" },

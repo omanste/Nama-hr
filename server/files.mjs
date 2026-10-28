@@ -23,6 +23,7 @@ const DOCS = [...IMAGES, "application/pdf"];
 export const DOC_TYPES = ["civil_id", "passport", "visa", "resume", "certificate", "course", "contract", "medical", "consent", "other"];
 // what staff may upload to their own profile (a copy of their contract too); payout consents stay with HR. Only HR deletes.
 const READABLE = ["civil_id", "passport", "visa"];
+export const RENEWABLE = ["civil_id", "passport", "visa"];
 const pick = (e) => ({ civil_id: e.civil_id, civil_id_expiry: e.civil_id_expiry, passport_no: e.passport_no, passport_expiry: e.passport_expiry, visa_expiry: e.visa_expiry,
   dob: e.dob, gender: e.gender, nationality: e.nationality, name_en: e.name_en, name_ar: e.name_ar });
 export const SELF_DOC_TYPES = ["civil_id", "passport", "visa", "resume", "certificate", "course", "contract", "medical", "other"];
@@ -132,6 +133,10 @@ export function registerFiles(api, ctx) {
     const ownDoc = own && (kind === "photo" || SELF_DOC_TYPES.includes(req.query.get("doc_type") || "other"));
     if (!can(req.sess, "employee.edit") && !ownDoc) throw forbidden();
     if (!emp) throw new HttpError(404, "not_found", "Employee not found");
+    // renewing an ID, passport or visa: the new one takes the old one's place and the old one is archived
+    const old = req.query.get("replaces") ? db.prepare("SELECT * FROM files WHERE id=?").get(Number(req.query.get("replaces"))) : null;
+    if (req.query.get("replaces") && (!old || old.employee_id !== emp.id || old.kind !== "doc" || old.archived_at || !RENEWABLE.includes(old.doc_type)
+      || (req.query.get("doc_type") || old.doc_type) !== old.doc_type)) throw new HttpError(400, "invalid", "This document can't be renewed");
     const file = await storeUpload(ctx, req, { employeeId: emp.id, kind });
     tx(db, () => {
       if (kind === "photo") {
@@ -139,6 +144,10 @@ export function registerFiles(api, ctx) {
         recordSelfChange(ctx, req.sess, emp, { photo_file_id: emp.photo_file_id }, { photo_file_id: file.id }, "photo");
       }
       audit(db, req.sess.user.id, "file.upload", "employee", emp.id, null, file);
+      if (old) {
+        db.prepare("UPDATE files SET archived_at=?, replaced_by=? WHERE id=?").run(nowIso(), file.id, old.id);
+        audit(db, req.sess.user.id, "file.renew", "employee", emp.id, { file_id: old.id, expiry: old.expiry }, { file_id: file.id });
+      }
     });
     // ID card or passport: read it on our own server. The document is the source of truth, so what was read with its check
     // digits (the machine-readable lines) replaces the profile's values at once — the English name too; anything read only from
@@ -197,6 +206,7 @@ export function registerFiles(api, ctx) {
       const m = db.prepare("SELECT * FROM voice_messages WHERE id=?").get(f.voice_id);
       if (!m || !canReadVoice(req.sess, m)) throw forbidden();
     } else if (!approverOfRequest && !canViewEmployee(db, req.sess, emp)) throw forbidden();
+    if (f.archived_at && !["hr", "admin"].includes(req.sess.user.role)) throw new HttpError(404, "not_found", "File not found"); // an old, replaced copy
     return f;
   }
 
@@ -236,7 +246,7 @@ export function registerFiles(api, ctx) {
   async function runBatch(sess) {
     const people = db.prepare("SELECT id, emp_no, name_ar, name_en FROM employees ORDER BY name_ar").all();
     // the latest few of each (the front and the back of an ID are often two files), oldest first so the newest has the last word
-    const latest = db.prepare(`SELECT * FROM (SELECT * FROM files WHERE employee_id=? AND kind='doc' AND doc_type=? AND request_id IS NULL AND voice_id IS NULL
+    const latest = db.prepare(`SELECT * FROM (SELECT * FROM files WHERE employee_id=? AND kind='doc' AND doc_type=? AND request_id IS NULL AND voice_id IS NULL AND archived_at IS NULL
       ORDER BY uploaded_at DESC, id DESC LIMIT ?) ORDER BY uploaded_at, id`);
     const work = people.map((p) => ({ p, docs: [...latest.all(p.id, "passport", 2), ...latest.all(p.id, "civil_id", 3)] }));
     batch.total = work.reduce((n, w) => n + w.docs.length, 0);
@@ -287,6 +297,7 @@ export function registerFiles(api, ctx) {
     tx(db, () => {
       db.prepare("UPDATE employees SET photo_file_id=NULL WHERE photo_file_id=?").run(f.id);
       db.prepare("DELETE FROM files WHERE id=?").run(f.id);
+      db.prepare("UPDATE files SET archived_at=NULL, replaced_by=NULL WHERE replaced_by=?").run(f.id); // the copy it replaced is current again
       audit(db, req.sess.user.id, "file.delete", "employee", f.employee_id, f, null);
     });
     fs.rmSync(path.join(ctx.dataDir, "uploads", String(f.id)), { force: true });
