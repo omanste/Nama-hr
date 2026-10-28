@@ -118,7 +118,7 @@ const expiryBadge = (iso) => {
 function pickButtons(onFile, { scanLabel = t("scan_camera"), fileLabel = t("upload_file") } = {}) {
   const picker = (attrs) => h("input", { type: "file", hidden: true, ...attrs, onchange: (ev) => { const f = ev.target.files[0]; ev.target.value = ""; onFile(f); } });
   return h("div", { class: "row" },
-    h("label", { class: "btn" }, "📷 ", scanLabel, picker({ accept: "image/*", capture: "environment" })),
+    h("label", { class: "btn scan-btn" }, "📷 ", scanLabel, picker({ accept: "image/*", capture: "environment" })),
     h("label", { class: "btn" }, "📎 ", fileLabel, picker({ accept: DOC_ACCEPT })));
 }
 
@@ -219,9 +219,14 @@ function documents(p, e, can, mayUpload, setPhoto) {
   // the civil ID copy lives here (not under Personal): start on it until one is uploaded
   const type = select("doc_type", types.map((d) => [d, t("dt_" + d)]), docs.some((f) => f.doc_type === "civil_id") ? "passport" : "civil_id");
   const expiry = h("input", { type: "date", name: "expiry" });
+  const picks = pickButtons((f) => uploadDoc(e, f, type.value, expiry.value, can.edit()));
+  // an ID or passport is uploaded as a file (a clear scan or PDF reads better than a phone photo)
+  const scan = picks.querySelector(".scan-btn");
+  const onType = () => { scan.hidden = ["civil_id", "passport"].includes(type.value); };
+  type.addEventListener("change", onType); onType();
   const upload = mayUpload ? h("div", { class: "fields", style: { marginTop: "14px" } },
     field(t("doc_type"), type), field(t("doc_expiry"), expiry),
-    h("div", { class: "field", style: { alignSelf: "end" } }, pickButtons((f) => uploadDoc(e, f, type.value, expiry.value, can.edit())))) : null;
+    h("div", { class: "field", style: { alignSelf: "end" } }, picks)) : null;
   return h("section", { class: "card" }, h("h2", null, t("sec_documents")),
     docs.length ? h("div", { class: "list" }, docs.map((f) => h("div", { class: "item doc-item" },
       h("div", { class: "grow" }, h("div", { class: "title" }, h("a", { href: `/api/files/${f.id}`, target: "_blank", rel: "noopener", onclick: (ev) => { ev.preventDefault(); viewFile(f); } }, f.name)),

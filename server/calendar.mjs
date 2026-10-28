@@ -77,16 +77,22 @@ export function registerCalendar(api, ctx) {
       WHERE r.status IN ('pending','approved') AND r.type NOT IN ('comp_day','correction','mission') AND r.start_date<=? AND r.end_date>=? ${where.length ? "AND " + where.join(" AND ") : ""}
       ORDER BY r.start_date, e.name_ar`).all(last, first, ...args);
     const holidays = getSetting(db, "official_holidays", []).filter((x) => x.date >= first && x.date <= last);
-    const events = db.prepare("SELECT * FROM calendar_events WHERE start_date<=? AND end_date>=? ORDER BY start_date").all(last, first);
+    // everything shared with the company, plus my own personal events
+    const events = db.prepare(`SELECT c.*, c.created_by=? mine, e.name_ar by_ar, e.name_en by_en FROM calendar_events c LEFT JOIN users u ON u.id=c.created_by LEFT JOIN employees e ON e.id=u.employee_id
+      WHERE c.start_date<=? AND c.end_date>=? AND (c.visibility='company' OR c.created_by=?) ORDER BY c.start_date`).all(sess.user.id, last, first, sess.user.id);
     send(req, res, 200, { month, items, holidays, events, birthdays: birthdaysBetween(db, first, last), canEdit: editors.includes(sess.user.role), blockable: BLOCKABLE });
   });
 
   // add to the calendar: an official holiday (counts in leave), a blocked period, or a company occasion
   api.post("/api/calendar/entries", async (req, res) => {
-    needEditor(req.sess);
     const b = await readJson(req);
     const kind = b.kind, start = b.start, end = b.end || b.start, name = String(b.name || "").trim().slice(0, 100);
     if (!["holiday", "blocked", "event", "national", "religious"].includes(kind)) throw bad("kind", "Choose what to add");
+    // everyone may add an event — personal, or shared with all staff; holidays, blocked days and occasions stay with HR/Admin
+    const editor = editors.includes(req.sess.user.role);
+    if (kind !== "event") needEditor(req.sess);
+    const visibility = kind === "event" ? (b.visibility === "personal" ? "personal" : b.visibility === "company" || editor ? "company" : null) : "company";
+    if (!visibility) throw bad("visibility", "Choose personal or shared with all staff");
     if (!isIsoDate(start)) throw bad("start", "A valid date is required");
     if (!isIsoDate(end) || end < start) throw bad("end", "The end date is before the start");
     if (addDays(start, 92) < end) throw bad("end", "At most 3 months at a time");
@@ -101,13 +107,14 @@ export function registerCalendar(api, ctx) {
         setSetting(db, "official_holidays", list);
         out = { kind, start, end, name };
       } else {
-        const r = db.prepare("INSERT INTO calendar_events(kind,start_date,end_date,name,created_by,created_at) VALUES(?,?,?,?,?,?)").run(kind, start, end, name, req.sess.user.id, nowIso());
+        const r = db.prepare("INSERT INTO calendar_events(kind,start_date,end_date,name,created_by,created_at,visibility) VALUES(?,?,?,?,?,?,?)").run(kind, start, end, name, req.sess.user.id, nowIso(), visibility);
         out = db.prepare("SELECT * FROM calendar_events WHERE id=?").get(r.lastInsertRowid);
       }
       audit(db, req.sess.user.id, `calendar.add_${kind}`, "calendar", out.id || start, null, out);
     });
     // a blocked period or company occasion is news for everyone
-    if (kind === "blocked" || kind === "event") {
+    // HR/Admin's blocked days and company events are news for everyone (staff's own shared events just appear on the calendar)
+    if (editor && (kind === "blocked" || (kind === "event" && visibility === "company"))) {
       const users = db.prepare("SELECT id FROM users WHERE active=1").all().map((r) => r.id);
       const when = start === end ? start.split("-").reverse().join("/") : `${start.split("-").reverse().join("/")} – ${end.split("-").reverse().join("/")}`;
       notify(ctx, users, kind === "blocked"
@@ -134,9 +141,9 @@ export function registerCalendar(api, ctx) {
   });
 
   api.delete("/api/calendar/entries/:id", (req, res) => {
-    needEditor(req.sess);
     const e = db.prepare("SELECT * FROM calendar_events WHERE id=?").get(Number(req.params.id));
-    if (!e) throw new HttpError(404, "not_found", "Not found");
+    if (!e || (e.visibility === "personal" && e.created_by !== req.sess.user.id)) throw new HttpError(404, "not_found", "Not found");
+    if (e.created_by !== req.sess.user.id) needEditor(req.sess); // my own events; HR/Admin any shared one
     tx(db, () => { db.prepare("DELETE FROM calendar_events WHERE id=?").run(e.id); audit(db, req.sess.user.id, "calendar.delete", "calendar", e.id, e, null); });
     send(req, res, 200, { ok: true });
   });

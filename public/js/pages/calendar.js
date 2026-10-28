@@ -55,7 +55,7 @@ export async function render(el, _p, { query }) {
         x.blocked.map((e) => h("span", { class: "tag blk" }, "⛔ ", tx(e.name))),
         x.national.map((e) => h("span", { class: "tag nat" }, tx(e.name))),
         x.religious.map((e) => h("span", { class: "tag rel" }, tx(e.name))),
-        x.events.map((e) => h("span", { class: "tag ev" }, "★ ", tx(e.name))),
+        x.events.map((e) => h("span", { class: `tag ev${e.visibility === "personal" ? " mine" : ""}` }, e.visibility === "personal" ? "🔒 " : "★ ", tx(e.name))),
         x.birthdays.map((b) => h("span", { class: "tag bd" }, "🎂 ", nm(b))),
         leaves.slice(0, 3).map((r) => h("span", { class: `tag lv ${r.status}` }, nm(r))),
         leaves.length > 3 ? h("span", { class: "tag more" }, `+${leaves.length - 3}`) : null,
@@ -78,8 +78,10 @@ export async function render(el, _p, { query }) {
         del(async () => { if (await confirm(t("delete_q"), { danger: true })) { try { await api.del(`/api/calendar/entries/${e.id}`); toast(t("saved")); rerender(); } catch (er) { toast(errText(er), "bad"); } } }))),
       ...x.blocked.map((e) => h("div", { class: "item" }, h("span", { class: "badge b-rejected" }, t("cal_blocked")), h("div", { class: "grow" }, tx(e.name), h("div", { class: "meta" }, `${dmy(e.start_date)} – ${dmy(e.end_date)} · ${t("cal_blocked_hint")}`)),
         del(async () => { if (await confirm(t("delete_q"), { danger: true })) { try { await api.del(`/api/calendar/entries/${e.id}`); toast(t("saved")); rerender(); } catch (er) { toast(errText(er), "bad"); } } }))),
-      ...x.events.map((e) => h("div", { class: "item" }, h("span", { class: "badge b-pending" }, t("cal_event")), h("div", { class: "grow" }, tx(e.name), h("div", { class: "meta" }, e.start_date === e.end_date ? dmy(e.start_date) : `${dmy(e.start_date)} – ${dmy(e.end_date)}`)),
-        del(async () => { if (await confirm(t("delete_q"), { danger: true })) { try { await api.del(`/api/calendar/entries/${e.id}`); toast(t("saved")); rerender(); } catch (er) { toast(errText(er), "bad"); } } }))),
+      ...x.events.map((e) => h("div", { class: "item" }, h("span", { class: `badge ${e.visibility === "personal" ? "" : "b-pending"}` }, t(e.visibility === "personal" ? "cal_personal" : "cal_event")),
+        h("div", { class: "grow" }, tx(e.name), h("div", { class: "meta" }, e.start_date === e.end_date ? dmy(e.start_date) : `${dmy(e.start_date)} – ${dmy(e.end_date)}`,
+          e.visibility === "company" && e.by_ar !== null && !e.mine ? ` · ${t("cal_added_by", { name: nm({ name_ar: e.by_ar, name_en: e.by_en }) })}` : "")),
+        (e.mine || data.canEdit) && h("button", { class: "btn small danger", type: "button", onclick: async () => { if (await confirm(t("delete_q"), { danger: true })) { try { await api.del(`/api/calendar/entries/${e.id}`); toast(t("saved")); rerender(); } catch (er) { toast(errText(er), "bad"); } } } }, t("delete")))),
       ...x.birthdays.map((b) => h("div", { class: "item" }, h("span", { class: "badge" }, "🎂"), h("div", { class: "grow" }, t("cal_birthday_of", { name: nm(b) })))),
       ...x.off.map((r) => h("a", { class: "item", href: `#/leave/${r.id}` }, h("span", { class: `badge ${r.status === "approved" ? "b-approved" : "b-pending"}` }, t("rs_" + r.status)),
         h("div", { class: "grow" }, h("div", { class: "title" }, nm(r)), h("div", { class: "meta" }, t("lt_" + r.type), isPermission(r.type) ? ` · ${r.early_time}${r.end_time ? "–" + r.end_time : ""}` : r.start_date === r.end_date ? "" : ` · ${dmy(r.start_date)} – ${dmy(r.end_date)}`)))),
@@ -93,7 +95,7 @@ export async function render(el, _p, { query }) {
     [["hol", "holiday"], ["nat", "cal_national"], ["rel", "cal_religious"], ["blk", "cal_blocked"], ["ev", "cal_event"], ["bd", "cal_birthday"], ["lv", "cal_leave"], ["pm", "nav_permissions"]].map(([c, k]) => h("span", null, h("i", { class: `key ${c}` }), t(k))));
   el.append(pageHead(t("nav_calendar"),
       data.canEdit ? h("button", { class: "btn", type: "button", onclick: () => importDialog(y) }, "⬇ ", t("cal_import_oman")) : null,
-      data.canEdit ? h("button", { class: "btn primary", type: "button", onclick: () => addDialog(selected) }, "+ ", t("cal_add")) : null),
+      h("button", { class: "btn primary", type: "button", onclick: () => addDialog(selected, data.canEdit) }, "+ ", t(data.canEdit ? "cal_add" : "cal_add_event"))),
     h("div", { class: "toolbar cal-nav" },
       h("button", { class: "btn", type: "button", "aria-label": t("prev_month"), onclick: () => go(shift(month, -1)) }, getLang() === "ar" ? "→" : "←"),
       monthSel, yearSel,
@@ -103,21 +105,26 @@ export async function render(el, _p, { query }) {
     detail);
 }
 
-function addDialog(day) {
-  const kind = select("kind", [["blocked", t("cal_blocked")], ["event", t("cal_event")], ["national", t("cal_national")], ["religious", t("cal_religious")], ["holiday", t("holiday")]], "blocked");
+/** HR/Admin add any kind; everyone else adds an event — personal (only they see it) or shared with all staff. */
+function addDialog(day, editor) {
+  const kind = select("kind", editor ? [["blocked", t("cal_blocked")], ["event", t("cal_event")], ["national", t("cal_national")], ["religious", t("cal_religious")], ["holiday", t("holiday")]]
+    : [["event", t("cal_event")]], editor ? "blocked" : "event");
+  const vis = select("visibility", [["personal", t("cal_vis_personal")], ["company", t("cal_vis_company")]], editor ? "company" : "personal");
+  const visField = field(t("cal_visibility"), vis, { full: true });
   const from = h("input", { type: "date", value: day, required: true }), to = h("input", { type: "date", value: day });
   const name = h("input", { required: true, maxlength: 100, dir: "auto" });
   const hint = h("p", { class: "sub" });
-  const showHint = () => { hint.textContent = t("cal_hint_" + kind.value); };
+  const showHint = () => { hint.textContent = kind.value === "event" ? t(vis.value === "personal" ? "cal_hint_personal" : editor ? "cal_hint_event" : "cal_hint_shared") : t("cal_hint_" + kind.value); visField.hidden = kind.value !== "event"; };
+  vis.addEventListener("change", showHint);
   kind.addEventListener("change", showHint); showHint();
   const err = h("div", { class: "form-error" });
   const dlg = h("dialog", { class: "dialog" }, h("form", { class: "form", onsubmit: async (ev) => {
     ev.preventDefault();
-    try { await api.post("/api/calendar/entries", { kind: kind.value, start: from.value, end: to.value || from.value, name: name.value.trim() }); dlg.close(); toast(t("saved")); rerender(); }
+    try { await api.post("/api/calendar/entries", { kind: kind.value, start: from.value, end: to.value || from.value, name: name.value.trim(), visibility: vis.value }); dlg.close(); toast(t("saved")); rerender(); }
     catch (er) { err.textContent = errText(er); }
   } },
-    h("h2", null, t("cal_add")),
-    h("div", { class: "fields" }, field(t("kind"), kind, { full: true }), field(t("holiday_from"), from), field(t("holiday_to"), to, { hint: t("holiday_to_hint") }), field(t("cal_name"), name, { full: true })),
+    h("h2", null, t(editor ? "cal_add" : "cal_add_event")),
+    h("div", { class: "fields" }, editor ? field(t("kind"), kind, { full: true }) : null, visField, field(t("holiday_from"), from), field(t("holiday_to"), to, { hint: t("holiday_to_hint") }), field(t("cal_name"), name, { full: true })),
     hint, err,
     h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), h("button", { class: "btn primary", type: "submit" }, t("save")))));
   dlg.addEventListener("close", () => dlg.remove());

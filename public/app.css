@@ -395,3 +395,4 @@ dialog.dialog.viewer[open]{display:grid}
 i.nat{background:var(--brand)} i.rel{background:#8A6CC0}
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .tag.rel{background:#2E2440;color:#CDB8F0} }
 :root[data-theme="dark"] .tag.rel{background:#2E2440;color:#CDB8F0}
+.tag.ev.mine{background:var(--surface-2);color:var(--fg);border:1px dashed var(--line)}

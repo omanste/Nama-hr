@@ -80,3 +80,20 @@ test("Oman's national and religious occasions: imported for a year, once; nation
   assert.ok(nov.some((e) => e.kind === "national" && e.start_date === "2026-11-18"));
   assert.equal((await c.post("/api/calendar/entries", { kind: "religious", start: "2026-12-01", name: "Test" })).status, 201);
 });
+
+test("staff add their own events: personal (only they see it) or shared with everyone; only the owner or HR/Admin delete", async () => {
+  const p = await s.c.post("/api/calendar/entries", { kind: "event", visibility: "personal", start: "2027-01-05", name: "موعد طبيب" });
+  assert.equal(p.status, 201);
+  const sh = await s.c.post("/api/calendar/entries", { kind: "event", visibility: "company", start: "2027-01-07", name: "غداء الفريق" });
+  assert.equal(sh.status, 201);
+  assert.equal((await s.c.post("/api/calendar/entries", { kind: "event", start: "2027-01-08", name: "x" })).status, 400, "staff must choose");
+  assert.equal((await s.c.post("/api/calendar/entries", { kind: "national", start: "2027-01-08", name: "x" })).status, 403);
+  const mine = (await s.c.get("/api/calendar?month=2027-01")).data.events;
+  assert.deepEqual(mine.map((e) => [e.name, e.visibility, !!e.mine]).sort(), [["غداء الفريق", "company", true], ["موعد طبيب", "personal", true]]);
+  for (const c of [other.c, hr.c, admin]) assert.deepEqual((await c.get("/api/calendar?month=2027-01")).data.events.map((e) => e.name), ["غداء الفريق"]);
+  assert.equal((await other.c.del(`/api/calendar/entries/${sh.data.entry.id}`)).status, 403);
+  assert.equal((await hr.c.del(`/api/calendar/entries/${p.data.entry.id}`)).status, 404, "a personal event is invisible to others");
+  assert.equal((await s.c.del(`/api/calendar/entries/${p.data.entry.id}`)).status, 200);
+  assert.equal((await hr.c.del(`/api/calendar/entries/${sh.data.entry.id}`)).status, 200);
+  assert.equal((await s.c.get("/api/calendar?month=2027-01")).data.events.length, 0);
+});
