@@ -1,7 +1,7 @@
 import { api } from "../api.js";
 import { t, nm, getLang, tx, splitLangs, joinLangs } from "../i18n.js";
 import { BANKS, bankName, ibanText, validIban } from "../banks.js";
-import { GOVERNORATES, MUSCAT_AREAS, wilayatName, areaName, isWilayat, isArea } from "../places.js";
+import { GOVERNORATES, MUSCAT_GROUPS, wilayatName, areaName, isWilayat, isArea } from "../places.js";
 import { countryName } from "../countries.js";
 import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, errText, confirm, select, field, backLink, todayIso, isPermission, isAttendanceReq, durText } from "../ui.js";
 import { balanceHero, requestItem } from "./home.js";
@@ -431,7 +431,7 @@ function contactDialog(e) {
     address: inp("address", { placeholder: t("address_hint") }), emergency_name: inp("emergency_name"), emergency_relation: inp("emergency_relation"), emergency_phone: inp("emergency_phone", tel),
   };
   const perm = placePicker("perm_wilayat", GOVERNORATES.map(([gEn, gAr, ws]) => [ar ? gAr : gEn, ws.map(([en, a]) => [en, ar ? a : en])]), e.perm_wilayat, isWilayat);
-  const cur = placePicker("current_area", [[null, MUSCAT_AREAS.map(([en, a]) => [en, ar ? a : en]).sort((x, y) => x[1].localeCompare(y[1], ar ? "ar" : "en"))]], e.current_area, isArea);
+  const cur = placePicker("current_area", MUSCAT_GROUPS.map(([wEn, wAr, list]) => [ar ? wAr : wEn, list.map(([en, a]) => [en, ar ? a : en])]), e.current_area, isArea);
   const err = h("div", { class: "form-error" });
   const dlg = h("dialog", { class: "dialog wide" }, h("form", { class: "form", onsubmit: async (ev) => {
     ev.preventDefault();

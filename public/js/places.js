@@ -16,16 +16,23 @@ export const GOVERNORATES = [
   ["Al Wusta", "الوسطى", [["Haima", "هيماء"], ["Duqm", "الدقم"], ["Mahout", "محوت"], ["Al Jazer", "الجازر"]]],
 ];
 
-export const MUSCAT_AREAS = [
-  ["Al Khuwair", "الخوير"], ["Al Ghubrah", "الغبرة"], ["Al Azaiba", "العذيبة"], ["Bawshar", "بوشر"], ["Al Ansab", "الأنصب"], ["Ghala", "غلا"],
-  ["Madinat Al Sultan Qaboos", "مدينة السلطان قابوس"], ["Shatti Al Qurum", "شاطئ القرم"], ["Al Qurum", "القرم"], ["Al Sarooj", "السروج"],
-  ["Al Wattayah", "الوطية"], ["Ruwi", "روي"], ["Al Wadi Al Kabir", "الوادي الكبير"], ["Darsait", "دارسيت"], ["Al Hamriyah", "الحمرية"],
-  ["Muttrah", "مطرح"], ["Old Muscat", "مسقط القديمة"], ["Al Bustan", "البستان"], ["Sidab", "سداب"], ["Qantab", "قنتب"], ["Yiti", "يتي"],
-  ["Al Amerat", "العامرات"], ["Al Mahaj", "المحج"], ["Al Mawaleh", "الموالح"], ["Al Khoudh", "الخوض"], ["Al Hail", "الحيل"],
-  ["Al Maabilah", "المعبيلة"], ["Seeb", "السيب"], ["Al Mouj", "الموج"], ["Al Rusayl", "الرسيل"], ["Misfah", "مسفاة"],
-  ["Al Athaiba", "العذيبة الشمالية"], ["Bousher Heights", "مرتفعات بوشر"], ["Al Misfah Al Sharqiya", "المسفاة الشرقية"], ["Halban", "حلبان"],
-  ["Qurayyat", "قريات"], ["Al Seeb Souq", "سوق السيب"], ["Wadi Adai", "وادي عدي"], ["Al Khaboura (Muscat)", "الخابورة (مسقط)"],
+// Areas of Muscat Governorate, grouped by wilayat
+export const MUSCAT_GROUPS = [
+  ["Muscat", "مسقط", [["Old Muscat", "مسقط القديمة"], ["Al Bustan", "البستان"], ["Sidab", "سداب"], ["Qantab", "قنتب"], ["Al Jissah", "الجصة"], ["Yiti", "يتي"],
+    ["Al Khairan", "الخيران"], ["Haramel", "حرامل"], ["Al Sifah", "السيفة"]]],
+  ["Muttrah", "مطرح", [["Muttrah", "مطرح"], ["Ruwi", "روي"], ["Al Wadi Al Kabir", "الوادي الكبير"], ["Darsait", "دارسيت"], ["Al Hamriyah", "الحمرية"],
+    ["Al Wattayah", "الوطية"], ["Al Qurum", "القرم"], ["Mina Al Fahal", "ميناء الفحل"], ["Riyam", "ريام"], ["Kalbouh", "كلبوه"], ["Central Business District (CBD)", "منطقة الأعمال المركزية"]]],
+  ["Bawshar", "بوشر", [["Al Khuwair", "الخوير"], ["Al Ghubrah", "الغبرة"], ["Al Azaiba", "العذيبة"], ["Bawshar", "بوشر"], ["Bousher Heights", "مرتفعات بوشر"],
+    ["Al Ansab", "الأنصب"], ["Ghala", "غلا"], ["Madinat Al Sultan Qaboos", "مدينة السلطان قابوس"], ["Shatti Al Qurum", "شاطئ القرم"], ["Al Sarooj", "السروج"],
+    ["Misfah", "المسفاة"], ["Muscat Hills", "تلال مسقط"]]],
+  ["As Seeb", "السيب", [["Seeb", "السيب"], ["Al Seeb Souq", "سوق السيب"], ["Al Mawaleh", "الموالح"], ["Al Khoudh", "الخوض"], ["Al Hail", "الحيل"],
+    ["Al Maabilah", "المعبيلة"], ["Al Mouj", "الموج"], ["Airport Heights", "مرتفعات المطار"], ["Al Rusayl", "الرسيل"], ["Halban", "حلبان"],
+    ["Al Jifnain", "الجفنين"], ["Sur Al Hadid", "سور الحديد"], ["Wadi Al Lawami", "وادي اللوامي"], ["Al Khoudh Old", "الخوض القديمة"], ["Madinat Al Hail", "مدينة الحيل"]]],
+  ["Al Amerat", "العامرات", [["Al Amerat", "العامرات"], ["Al Mahaj", "المحج"], ["Wadi Adai", "وادي عدي"], ["Madinat Al Nahdha", "مدينة النهضة"], ["Al Hajir", "الحاجر"]]],
+  ["Qurayyat", "قريات", [["Qurayyat", "قريات"], ["Fins", "فنس"], ["Bimmah", "بمة"], ["Hayl Al Ghaf", "حيل الغاف"], ["Dhabab", "ضباب"]]],
 ];
+export const MUSCAT_AREAS = MUSCAT_GROUPS.flatMap(([, , list]) => list);
+
 
 const ALL_WILAYATS = GOVERNORATES.flatMap(([gEn, gAr, ws]) => ws.map(([en, ar]) => [en, ar, gEn, gAr]));
 const ar = () => getLang() === "ar";
