@@ -44,7 +44,7 @@ const ROUTES = [
   return { re, keys, page, opts };
 });
 
-const VIEW_ALL = ["hr", "accounts", "ceo", "chairman", "admin"];
+const VIEW_ALL = ["hr", "accounts", "ceo", "chairman", "consultant", "admin"];
 export const state = { me: null };
 export const can = {
   viewAll: () => VIEW_ALL.includes(state.me?.user.role),
@@ -67,10 +67,10 @@ function navItems() {
   if (me.isApprover && !can.viewAll()) items.push(["#/team", "team_requests", "list"]);
   if (can.viewAll()) items.push(["#/requests", "nav_requests", "list"]);
   if (can.viewAll() || me.isApprover) items.push(["#/reports", "nav_reports", "chart"]);
-  if (["hr", "admin", "ceo", "chairman", "accounts"].includes(me.user.role) || me.isApprover) items.push(["#/attendance/report", "nav_att_report", "chart", me.pendingHr]);
+  if (["hr", "admin", "ceo", "chairman", "consultant", "accounts"].includes(me.user.role) || me.isApprover) items.push(["#/attendance/report", "nav_att_report", "chart", me.pendingHr]);
   if (can.edit()) items.push(["#/profile-changes", "nav_profile_changes", "check", me.pendingProfileChanges], ["#/cap-reviews", "nav_cap_reviews", "clock", me.pendingCapReviews], ["#/import", "nav_import", "upload"]);
   if (can.admin()) items.push(["#/settings", "nav_settings", "gear"], ["#/users", "nav_users", "key"]);
-  if (can.viewAll()) items.push(["#/audit", "nav_audit", "clock"]);
+  if (can.viewAll() && me.user.role !== "consultant") items.push(["#/audit", "nav_audit", "clock"]);
   if (me.employee) items.push(["#/me", "nav_me", "user"]); // my profile is always the last entry
   return items;
 }

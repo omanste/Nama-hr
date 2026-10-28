@@ -181,7 +181,7 @@ export function attendanceReport(db, sess, from, to, today, deptId = 0) {
   const all = db.prepare("SELECT e.*, d.name_ar dept_ar, d.name_en dept_en FROM employees e LEFT JOIN departments d ON d.id=e.department_id WHERE e.status IN ('active','on_leave') ORDER BY e.name_ar").all()
     .filter((e) => (!deptId || e.department_id === deptId) && !ex.has(e.id));
   const named = new Set(teamOf(db, sess).map((e) => e.id));
-  const mineDepts = MANAGERS.includes(sess.user.role) || ["ceo", "chairman", "accounts"].includes(sess.user.role) ? null : approvedDepartments(db, sess.employee && sess.employee.id);
+  const mineDepts = MANAGERS.includes(sess.user.role) || ["ceo", "chairman", "consultant", "accounts"].includes(sess.user.role) ? null : approvedDepartments(db, sess.employee && sess.employee.id);
   const depts = new Map();
   const people = [];
   for (const e of all) {
@@ -324,7 +324,7 @@ export function registerAttendance(api, ctx) {
   api.get("/api/attendance/report", (req, res) => {
     const sess = req.sess;
     const mine = approvedDepartments(db, sess.employee && sess.employee.id);
-    if (!["hr", "admin", "ceo", "chairman", "accounts"].includes(sess.user.role) && !mine.length) throw forbidden();
+    if (!["hr", "admin", "ceo", "chairman", "consultant", "accounts"].includes(sess.user.role) && !mine.length) throw forbidden();
     const today = ctx.today();
     let [from, to] = lastWeek(today);
     if (req.query.get("from")) from = req.query.get("from");

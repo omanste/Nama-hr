@@ -2,15 +2,17 @@
 const ALL_VIEW = ["hr", "accounts", "ceo", "chairman", "admin"];
 /** Top management: may approve or reject any pending request in the company (never their own). */
 export const TOP = ["ceo", "chairman"];
+// a consultant (read-only, for a fixed period) sees staff, requests and reports — not the audit log
+const CONSULT_VIEW = [...ALL_VIEW, "consultant"];
 const MATRIX = {
-  "employee.viewAll": ALL_VIEW,
+  "employee.viewAll": CONSULT_VIEW,
   "employee.edit": ["hr", "admin"],
   "ledger.adjust": ["hr", "admin"],
   "import.run": ["hr", "admin"],
   "settings.edit": ["admin"],
   "users.manage": ["admin"],
   "audit.view": ALL_VIEW,
-  "requests.viewAll": ALL_VIEW,
+  "requests.viewAll": CONSULT_VIEW,
 };
 
 export function can(sess, action, target) {

@@ -12,7 +12,7 @@ export async function render(el, params, { me }) {
   const bubble = (who, mine, text, at) => h("div", { class: `bubble${mine ? " mine" : ""}` },
     h("div", { class: "bwho" }, who, " · ", h("span", { class: "muted" }, dateTime(at))), h("div", { dir: "auto", style: { whiteSpace: "pre-line" } }, text));
   const sender = nm(m) || m.emp_no;
-  const toText = m.to_kind === "hr" ? t("to_hr") : m.to_kind === "ceo" ? t("to_ceo") : t("to_manager");
+  const toText = m.to_kind === "hr" ? t("to_hr") : m.to_kind === "ceo" ? t("to_ceo") : m.to_kind === "chairman" ? t("to_chairman") : t("to_manager");
   const reply = h("textarea", { rows: 3, maxlength: 5000, "aria-label": t("voice_reply") });
   const err = h("div", { class: "form-error" });
   const statusSel = d.isRecipient ? select("status", [["in_review", t("vs_in_review")], ["answered", t("vs_answered")], ["closed", t("vs_closed")]], m.status === "new" ? "in_review" : m.status) : null;

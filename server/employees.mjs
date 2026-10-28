@@ -16,6 +16,10 @@ import { recordSelfChange, pendingChangesOf } from "./profile-changes.mjs";
 
 const CONTACT = ["mobile", "personal_phone", "personal_email", "perm_wilayat", "current_area", "address", "emergency_name", "emergency_relation", "emergency_phone"];
 const BANK = ["bank_name", "bank_account", "bank_iban"];
+/** A consultant sees how the company is organised, not people's private papers: these stay out of what they're sent. */
+const PRIVATE = ["civil_id", "civil_id_expiry", "passport_no", "passport_expiry", "visa_expiry", "dob", "personal_email", "personal_phone", "address",
+  "perm_wilayat", "current_area", "emergency_name", "emergency_relation", "emergency_phone", ...BANK];
+export const isConsultant = (sess) => sess.user.role === "consultant";
 /** Who sees bank details: the person, HR, Admin and Accounts (salary transfer). */
 const seesBank = (sess, emp) => ["hr", "admin", "accounts"].includes(sess.user.role) || (sess.employee && sess.employee.id === emp.id);
 /** Oman IBAN: OM + 2 check digits + 3-digit bank code + 16 characters, checked with mod 97. */
@@ -100,8 +104,11 @@ export const maySelfShift = (db, emp) => getSetting(db, "shift_self_select", tru
 
 export function profile(db, sess, emp, today) {
   // archived copies (a renewed ID, passport or visa) only for HR and Admin
-  const files = db.prepare(`SELECT id,kind,doc_type,name,mime,size,expiry,note,uploaded_at,archived_at,replaced_by FROM files WHERE employee_id=? AND request_id IS NULL AND voice_id IS NULL
+  const mine = sess.employee && sess.employee.id === emp.id;
+  // archived copies (a renewed ID, passport or visa) only for HR and Admin; a consultant sees nobody's documents but their own
+  const files = isConsultant(sess) && !mine ? [] : db.prepare(`SELECT id,kind,doc_type,name,mime,size,expiry,note,uploaded_at,archived_at,replaced_by FROM files WHERE employee_id=? AND request_id IS NULL AND voice_id IS NULL
     ${["hr", "admin"].includes(sess.user.role) ? "" : "AND archived_at IS NULL"} ORDER BY uploaded_at DESC`).all(emp.id);
+  if (isConsultant(sess) && !mine) { emp = { ...emp }; for (const k of PRIVATE) delete emp[k]; }
   const requests = db.prepare("SELECT * FROM leave_requests WHERE employee_id=? ORDER BY start_date DESC, id DESC").all(emp.id);
   const dept = emp.department_id ? db.prepare("SELECT * FROM departments WHERE id=?").get(emp.department_id) : null;
   const manager = emp.manager_employee_id ? db.prepare("SELECT id,emp_no,name_ar,name_en FROM employees WHERE id=?").get(emp.manager_employee_id) : null;
@@ -109,7 +116,6 @@ export function profile(db, sess, emp, today) {
   // bank details only for the person, HR, Admin and Accounts; what they changed themselves and HR hasn't verified yet
   const bank = seesBank(sess, emp);
   if (!bank) { emp = { ...emp }; for (const k of BANK) delete emp[k]; }
-  const mine = sess.employee && sess.employee.id === emp.id;
   const out = { employee: emp, department: dept, seesBank: bank,
     pendingChanges: mine || ["hr", "admin"].includes(sess.user.role) ? pendingChangesOf(db, emp.id) : undefined, manager, files, requests, leave: leaveSummary(db, emp, today), permissions: permissionSummary(db, emp.id, today),
     shiftSelf: !!(sess.employee && sess.employee.id === emp.id) && maySelfShift(db, emp), login: can(sess, "employee.viewAll") ? user : undefined };
@@ -150,7 +156,7 @@ export function registerEmployees(api, ctx) {
         (SELECT coalesce(sum(minutes),0) FROM leave_requests r WHERE r.employee_id=e.id AND r.type='annual' AND r.status='approved' AND r.start_date>=? AND r.start_date<=?) annual_taken_2y
       FROM employees e ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY e.name_ar COLLATE NOCASE, e.name_en`).all(twoYearsAgo, today, ...args);
     // Art. 81: at least 30 days of annual leave every 2 years
-    for (const e of items) e.under_30_in_2y = !!e.join_date && e.join_date <= twoYearsAgo && e.annual_taken_2y < 30 * DAY;
+    for (const e of items) { e.under_30_in_2y = !!e.join_date && e.join_date <= twoYearsAgo && e.annual_taken_2y < 30 * DAY; if (isConsultant(sess)) delete e.civil_id_expiry; }
     send(req, res, 200, { items });
   });
 
@@ -349,7 +355,7 @@ export function registerEmployees(api, ctx) {
   });
 }
 
-export const ROLES = ["staff", "manager", "hr", "accounts", "ceo", "chairman", "admin"];
+export const ROLES = ["staff", "manager", "hr", "accounts", "ceo", "chairman", "consultant", "admin"];
 export function createUser(db, sess, { username, role, employee_id }) {
   username = String(username || "").trim().toLowerCase();
   if (!/^[a-z0-9._-]{2,40}$/.test(username)) throw bad("username", "Username may use letters, digits, dot, dash and underscore");

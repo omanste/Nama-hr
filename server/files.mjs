@@ -207,6 +207,7 @@ export function registerFiles(api, ctx) {
       if (!m || !canReadVoice(req.sess, m)) throw forbidden();
     } else if (!approverOfRequest && !canViewEmployee(db, req.sess, emp)) throw forbidden();
     if (f.archived_at && !["hr", "admin"].includes(req.sess.user.role)) throw new HttpError(404, "not_found", "File not found"); // an old, replaced copy
+    if (req.sess.user.role === "consultant" && f.employee_id !== req.sess.user.employee_id && !f.request_id && !f.voice_id) throw forbidden(); // a consultant sees no one's papers
     return f;
   }
 

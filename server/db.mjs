@@ -131,6 +131,11 @@ const MIGRATIONS = [
   (db) => rebuildWithCheck(db, "users", "CHECK(role IN ('staff','manager','hr','accounts','ceo','admin'))", "CHECK(role IN ('staff','manager','hr','accounts','ceo','chairman','admin'))"),
   // 24: a request that needs the CEO's final approval after the manager's: who approved it first
   `ALTER TABLE leave_requests ADD COLUMN first_approved_by INTEGER; ALTER TABLE leave_requests ADD COLUMN first_approved_at TEXT;`,
+  // 25: a read-only "consultant" login (ends with the contract), and Employee Voice messages to the Chairman
+  (db) => {
+    rebuildWithCheck(db, "users", "CHECK(role IN ('staff','manager','hr','accounts','ceo','chairman','admin'))", "CHECK(role IN ('staff','manager','hr','accounts','ceo','chairman','consultant','admin'))");
+    rebuildWithCheck(db, "voice_messages", "CHECK(to_kind IN ('manager','hr','ceo'))", "CHECK(to_kind IN ('manager','hr','ceo','chairman'))");
+  },
 ];
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */

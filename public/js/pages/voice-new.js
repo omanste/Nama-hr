@@ -23,7 +23,7 @@ export async function render(el, _p, { me, query }) {
   const file = h("input", { type: "file", name: "file", accept: "application/pdf,image/png,image/jpeg,image/webp" });
   const hint = h("div", { class: "note", style: { marginTop: "10px" } });
   const submit = h("button", { class: "btn primary", type: "submit" }, t("voice_send"));
-  const label = (r) => (r.kind === "hr" ? t("to_hr") : r.kind === "ceo" ? t("to_ceo") : t("to_manager")) + (r.kind !== "hr" && (r.name_ar || r.name_en) ? ` · ${nm(r)}` : "");
+  const label = (r) => (r.kind === "hr" ? t("to_hr") : r.kind === "ceo" ? t("to_ceo") : r.kind === "chairman" ? t("to_chairman") : t("to_manager")) + (r.kind !== "hr" && (r.name_ar || r.name_en) ? ` · ${nm(r)}` : "");
   function draw() {
     catBox.replaceChildren(...categories.map((c) => h("button", { type: "button", "aria-pressed": String(c === category), onclick: () => { category = c; draw(); } }, t("vc_" + c))));
     toBox.replaceChildren(...recipients.map((r) => h("label", { class: "read-row" }, h("input", { type: "radio", name: "to", value: r.kind, checked: r.kind === to, onchange: () => { to = r.kind; draw(); } }),

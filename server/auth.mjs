@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { rerouteFallbacks } from "./requests.mjs";
 import { voiceInboxCount } from "./voice.mjs";
 import { nowIso, tx, getSetting } from "./db.mjs";
+import { todayMuscat } from "./leave.mjs";
 import { send, fail, readJson, HttpError } from "./http.mjs";
 import { audit } from "./audit.mjs";
 import { isApprover } from "./perm.mjs";
@@ -32,8 +33,11 @@ export function setPassword(db, userId, pw, mustChange) {
 const usable = (db, u) => {
   if (!u || !u.active) return false;
   if (!u.employee_id) return true;
-  const e = db.prepare("SELECT status FROM employees WHERE id=?").get(u.employee_id);
-  return !!e && !["resigned", "terminated", "disabled"].includes(e.status);
+  const e = db.prepare("SELECT status, contract_end FROM employees WHERE id=?").get(u.employee_id);
+  if (!e || ["resigned", "terminated", "disabled"].includes(e.status)) return false;
+  // a consultant's access ends with their contract (the day after the contract end date)
+  if (u.role === "consultant" && e.contract_end && todayMuscat() > e.contract_end) return false;
+  return true;
 };
 
 const DUMMY = (() => { const h = hashPassword(crypto.randomBytes(12).toString("hex")); return { pw_hash: h.hash, pw_salt: h.salt, pw_iter: h.iter }; })();

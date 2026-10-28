@@ -6,7 +6,7 @@ import { h, clear, select, pageHead, empty, dateTime } from "../ui.js";
 const CATS = ["suggestion", "question", "complaint", "note", "other"];
 const STATUSES = ["new", "in_review", "answered", "closed"];
 export const voiceBadge = (s) => h("span", { class: `badge v-${s}` }, t("vs_" + s));
-const recipientText = (m) => (m.to_kind === "hr" ? t("to_hr") : m.to_kind === "ceo" ? t("to_ceo") : t("to_manager")) + (m.to_kind !== "hr" && (m.to_name_ar || m.to_name_en) ? ` · ${nm({ name_ar: m.to_name_ar, name_en: m.to_name_en })}` : "");
+const recipientText = (m) => (m.to_kind === "hr" ? t("to_hr") : m.to_kind === "ceo" ? t("to_ceo") : m.to_kind === "chairman" ? t("to_chairman") : t("to_manager")) + (m.to_kind !== "hr" && (m.to_name_ar || m.to_name_en) ? ` · ${nm({ name_ar: m.to_name_ar, name_en: m.to_name_en })}` : "");
 
 export async function render(el, _p, { me, query }) {
   // inbox only for people who receive messages (or Admin, who can read all)

@@ -92,3 +92,35 @@ test("monthly summary on the 1st, to the CEO and the Chairman only, once a month
   for (const c of [ceo.c, chair.c]) assert.ok((await c.get("/api/notifications")).data.items.some((n) => /Summary for 10\/2026/.test(n.title_en)));
   assert.ok(!(await staff.c.get("/api/notifications")).data.items.some((n) => /Summary for/.test(n.title_en)));
 });
+
+test("Employee Voice: staff can write to the Chairman; only he (and the sender) reads it", async () => {
+  const to = (await staff.c.get("/api/voice/recipients")).data.items.map((x) => x.kind);
+  assert.ok(to.includes("chairman") && to.includes("ceo"));
+  const m = await staff.c.post("/api/voice", { category: "suggestion", to: "chairman", subject: "اقتراح", body: "نص" });
+  assert.equal(m.status, 201);
+  const id = (m.data.message || m.data.item || m.data).id;
+  assert.equal((await chair.c.get(`/api/voice/${id}`)).status, 200);
+  assert.equal((await ceo.c.get(`/api/voice/${id}`)).status, 403);
+});
+
+test("a consultant: sees staff, requests and reports — not documents, IDs, bank or the audit log; access ends with the contract", async () => {
+  const office = (await admin.get("/api/departments")).data.items.find((d) => d.name_en === "CEO Office");
+  const con = await makePerson(t.base, admin, { emp_no: "CON1", name_ar: "مستشار", join_date: "2026-10-01", department_id: office.id, contract_type: "Limited", contract_end: "2099-12-31" }, "staff");
+  assert.equal((await admin.put(`/api/users/${con.user.id}`, { role: "consultant" })).status, 200);
+  await admin.put(`/api/employees/${staff.emp.id}`, { civil_id: "11223344", dob: "1990-01-01" });
+  const doc = (await hr.c.upload(`/api/employees/${staff.emp.id}/files?kind=doc&doc_type=passport&name=p.pdf`, Buffer.from("%PDF-1.4"), "application/pdf")).data.file;
+  assert.equal((await con.c.get("/api/employees")).status, 200);
+  const p = (await con.c.get(`/api/employees/${staff.emp.id}`)).data;
+  assert.equal(p.employee.civil_id, undefined); assert.equal(p.employee.dob, undefined); assert.deepEqual(p.files, []);
+  assert.ok(p.employee.job_title !== undefined || p.employee.name_ar);
+  assert.equal((await con.c.get(`/api/files/${doc.id}`)).status, 403);
+  assert.equal((await con.c.get("/api/requests?scope=all")).status, 200);
+  assert.equal((await con.c.get("/api/attendance/report?from=2026-10-18&to=2026-10-24")).status, 200);
+  assert.equal((await con.c.get("/api/audit")).status, 403);
+  assert.equal((await con.c.put(`/api/employees/${staff.emp.id}`, { name_ar: "x" })).status, 403);
+  const r = await staff.c.post("/api/requests", { type: "annual", start: "2027-02-07", end: "2027-02-07" });
+  assert.equal((await con.c.post(`/api/requests/${r.data.request.id}/approve`, {})).status, 403, "view only");
+  // the day after the contract ends, the login stops working
+  await admin.put(`/api/employees/${con.emp.id}`, { contract_end: "2020-01-31" });
+  assert.equal((await con.c.get("/api/me")).status, 401);
+});

@@ -20,6 +20,11 @@ function ceoEmployee(db) {
   const u = db.prepare("SELECT employee_id FROM users WHERE role='ceo' AND active=1 AND employee_id IS NOT NULL ORDER BY id").get();
   return activeEmp(db, u && u.employee_id) || activeEmp(db, getSetting(db, "managers_approver_employee_id", null));
 }
+/** The Chairman: the person with the Chairman login, else the one named in Settings › Top management. */
+function chairmanEmployee(db) {
+  const u = db.prepare("SELECT employee_id FROM users WHERE role='chairman' AND active=1 AND employee_id IS NOT NULL ORDER BY id").get();
+  return activeEmp(db, u && u.employee_id) || activeEmp(db, getSetting(db, "chairman_employee_id", null));
+}
 /** The sender's manager: their direct manager, else their department's approver (never themself). */
 function managerEmployee(db, emp) {
   if (!emp) return null;
@@ -72,6 +77,8 @@ export function registerVoice(api, ctx) {
     if (hrUsers(db).some((id) => id !== sess.user.id)) out.push({ kind: "hr" }); else missing.push("hr");
     const ceo = ceoEmployee(db);
     if (ceo && ceo !== own) out.push({ kind: "ceo", ...name(ceo) }); else if (!ceo) missing.push("ceo");
+    const chair = chairmanEmployee(db);
+    if (chair && chair !== own) out.push({ kind: "chairman", ...name(chair) });
     send(req, res, 200, { items: out, missing, categories: CATEGORIES });
   });
 
@@ -87,6 +94,7 @@ export function registerVoice(api, ctx) {
     let toEmp = null;
     if (to === "manager") toEmp = managerEmployee(db, sess.employee);
     else if (to === "ceo") toEmp = ceoEmployee(db);
+    else if (to === "chairman") toEmp = chairmanEmployee(db);
     else if (to !== "hr") throw bad("to", "Choose who receives it");
     if (to !== "hr" && (!toEmp || toEmp === sess.employee.id)) throw bad("to", "Nobody can receive this yet — choose another recipient");
     const toUser = to === "hr" ? null : userOfEmployee(db, toEmp);

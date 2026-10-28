@@ -30,7 +30,7 @@ const D = {
   no_results: ["لا توجد نتائج", "Nothing here yet"], forbidden: ["ليست لديك صلاحية", "You do not have permission"], not_found: ["غير موجود", "Not found"],
   // roles & statuses
   role_staff: ["موظف", "Staff"], role_hr: ["مدير الموارد البشرية", "HR Manager"], role_accounts: ["الحسابات", "Accounts"],
-  role_ceo: ["الرئيس التنفيذي", "CEO"], role_chairman: ["رئيس مجلس الإدارة", "Chairman"],
+  role_ceo: ["الرئيس التنفيذي", "CEO"], role_chairman: ["رئيس مجلس الإدارة", "Chairman"], role_consultant: ["مستشار (اطلاع فقط)", "Consultant (view only)"],
   first_approved: ["وافق المدير — القرار النهائي لك", "Manager approved — final decision is yours"],
   top_mgmt: ["الإدارة العليا", "Top management"],
   top_mgmt_hint: ["يرى الرئيس التنفيذي ورئيس مجلس الإدارة كل شيء ويمكنهما الموافقة على أي طلب أو رفضه، دون تعديل البيانات. لا يخضعان للائحة البصمة. يُنشأ «مكتب الرئيس التنفيذي» و«مكتب رئيس مجلس الإدارة» لمن يتبعهما مباشرة.", "The CEO and the Chairman see everything and can approve or reject any request, without editing data. They're outside the fingerprint policy. A \"CEO Office\" and a \"Chairman's Office\" department are made for the people who report to them directly."],
@@ -265,7 +265,7 @@ const D = {
   voice_sent_empty: ["لم ترسل أي رسالة بعد", "You haven't sent any messages yet"], voice_inbox_empty: ["لا توجد رسائل", "No messages"],
   vc_suggestion: ["اقتراح / تطوير", "Suggestion / improvement"], vc_question: ["استفسار / توضيح", "Question / clarification"], vc_complaint: ["شكوى", "Complaint"], vc_note: ["ملاحظة", "Note"], vc_other: ["أخرى", "Other"],
   vs_new: ["جديدة", "New"], vs_in_review: ["قيد المراجعة", "In review"], vs_answered: ["تم الرد", "Answered"], vs_closed: ["مغلقة", "Closed"],
-  voice_to: ["إلى", "To"], voice_from: ["من", "From"], to_manager: ["مديري المباشر", "My manager"], to_hr: ["الموارد البشرية", "HR"], to_ceo: ["الرئيس التنفيذي", "The CEO"],
+  voice_to: ["إلى", "To"], voice_from: ["من", "From"], to_manager: ["مديري المباشر", "My manager"], to_chairman: ["رئيس مجلس الإدارة", "The Chairman"], to_hr: ["الموارد البشرية", "HR"], to_ceo: ["الرئيس التنفيذي", "The CEO"],
   to_manager_hint: ["لأمور العمل اليومية في قسمك", "For day-to-day work in your department"], to_hr_hint: ["يراها فريق الموارد البشرية", "Seen by the HR team"], to_ceo_hint: ["تصل إلى الرئيس التنفيذي فقط", "Reaches the CEO only"],
   voice_private: ["لا يرى رسالتك إلا من ترسلها إليه.", "Only the person you send it to can read your message."],
   voice_complaint_hint: ["إذا كانت الشكوى تخص مديرك فأرسلها إلى الموارد البشرية أو الرئيس التنفيذي.", "If the complaint is about your manager, send it to HR or the CEO instead."],

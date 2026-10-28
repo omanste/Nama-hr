@@ -4,7 +4,7 @@ import { h, field, select, toast, errText, pageHead, dateTime, confirm } from ".
 import { render as rerender, state } from "../app.js";
 import { showTempPassword } from "./profile.js";
 
-const ROLES = ["staff", "manager", "hr", "accounts", "ceo", "chairman", "admin"];
+const ROLES = ["staff", "manager", "hr", "accounts", "ceo", "chairman", "consultant", "admin"];
 
 export async function render(el, _p, { can }) {
   if (!can.admin()) throw { status: 403 };
