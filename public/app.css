@@ -373,3 +373,8 @@ td.pc-new{font-weight:600}
 /* a group inside a card (e.g. Address, Emergency contact inside Contact) */
 .sub-box{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
 .sub-box h3{margin:0 0 6px;font-size:14px;color:var(--muted)}
+/* a document: name and dates, then its buttons on their own line (wrapping) */
+.item.doc-item{flex-wrap:wrap}
+.item.doc-item .grow{flex:1 1 100%;min-width:0}
+.item.doc-item .grow .title a{overflow-wrap:anywhere}
+.doc-actions{flex-wrap:wrap;gap:6px}

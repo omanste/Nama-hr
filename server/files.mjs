@@ -19,7 +19,7 @@ const IMAGES = ["image/jpeg", "image/png", "image/webp"];
 const DOCS = [...IMAGES, "application/pdf"];
 export const DOC_TYPES = ["civil_id", "passport", "contract", "visa", "certificate", "medical", "consent", "other"];
 // what staff may upload to their own profile; contracts and payout consents stay with HR
-const READABLE = ["civil_id", "passport"];
+const READABLE = ["civil_id", "passport", "visa"];
 const pick = (e) => ({ civil_id: e.civil_id, civil_id_expiry: e.civil_id_expiry, dob: e.dob, gender: e.gender, nationality: e.nationality, name_en: e.name_en });
 export const SELF_DOC_TYPES = ["civil_id", "passport", "visa", "certificate", "medical", "other"];
 
@@ -104,6 +104,23 @@ export function registerFiles(api, ctx) {
     });
     try { runExpiryCheck(ctx, ctx.today()); } catch (e) { console.error(e); }
     send(req, res, 200, { employee: getEmployee(db, emp.id) });
+  });
+
+  // set or correct a document's expiry date (what drives the 30-day reminders): the person for their own papers, HR for anyone
+  api.put("/api/files/:id", async (req, res) => {
+    const f = db.prepare("SELECT * FROM files WHERE id=?").get(Number(req.params.id));
+    if (!f || f.kind !== "doc" || f.request_id || f.voice_id) throw new HttpError(404, "not_found", "File not found");
+    const own = f.employee_id === req.sess.user.employee_id && SELF_DOC_TYPES.includes(f.doc_type || "other");
+    if (!can(req.sess, "employee.edit") && !own) throw forbidden();
+    const b = await readJson(req);
+    const expiry = b.expiry || null;
+    if (expiry !== null && !isIsoDate(expiry)) throw Object.assign(new HttpError(400, "invalid", "Choose a valid date"), { field: "expiry" });
+    tx(db, () => {
+      db.prepare("UPDATE files SET expiry=? WHERE id=?").run(expiry, f.id);
+      audit(db, req.sess.user.id, "file.expiry", "employee", f.employee_id, { file_id: f.id, expiry: f.expiry }, { file_id: f.id, expiry });
+    });
+    try { runExpiryCheck(ctx, ctx.today()); } catch (e) { console.error(e); }
+    send(req, res, 200, { file: db.prepare("SELECT id,employee_id,kind,doc_type,name,mime,size,expiry,note,uploaded_at FROM files WHERE id=?").get(f.id) });
   });
 
   api.get("/api/files/:id", (req, res) => {

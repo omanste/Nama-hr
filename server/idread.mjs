@@ -53,14 +53,15 @@ function mrzLines(text) {
   return text.toUpperCase().split(/\r?\n/).map((l) => l.replace(/\s+/g, "").replace(/[«‹(\[{]/g, "<").replace(/[^A-Z0-9<]/g, "")).filter((l) => l.length >= 28 && /<</.test(l));
 }
 
-/** TD1 (ID cards, 3×30) or TD3 (passports, 2×44). Fields only count when their check digit matches. */
+/** TD1 (ID cards, 3×30), TD3 (passports, 2×44) or a visa (MRV-A 2×44 / MRV-B 2×36, first letter V).
+ * Fields only count when their check digit matches. */
 export function parseMrz(text) {
   const L = mrzLines(text);
   const out = {};
-  const td3 = L.findIndex((l, i) => /^P[A-Z<]/.test(l) && L[i + 1] && L[i + 1].length >= 42);
+  const td3 = L.findIndex((l, i) => /^[PV][A-Z<]/.test(l) && L[i + 1] && L[i + 1].length >= (l[0] === "V" ? 34 : 42));
   if (td3 >= 0) {
     const l1 = L[td3].padEnd(44, "<").slice(0, 44), l2 = L[td3 + 1].padEnd(44, "<").slice(0, 44);
-    out.kind = "passport";
+    out.kind = l1[0] === "V" ? "visa" : "passport";
     const [sur, given = ""] = l1.slice(5).split("<<");
     out.name_en = words(`${given}<${sur}`);
     const no = l2.slice(0, 9);
@@ -69,6 +70,7 @@ export function parseMrz(text) {
     const dob = fixDigits(l2.slice(13, 19)); if (check(dob) === fixDigits(l2[19])) out.dob = yymmdd(dob, false);
     out.gender = { M: "male", F: "female" }[l2[20]];
     const exp = fixDigits(l2.slice(21, 27)); if (check(exp) === fixDigits(l2[27])) out.expiry = yymmdd(exp, true);
+    if (out.kind === "visa") { if (out.passport_no) out.visa_no = out.passport_no; delete out.passport_no; } // a visa's number isn't the passport's
     return clean(out);
   }
   const i = L.findIndex((l) => /^[IAC][A-Z<]/.test(l) && l.length >= 28);
@@ -97,7 +99,8 @@ export function parseFront(text) {
   const out = {};
   const civil = /civil\s*(?:no|number|n0)\.?\s*[:\-]?\s*(\d[\d\s]{6,10}\d)/i.exec(text);
   if (civil) out.civil_id = civil[1].replace(/\s/g, "");
-  out.expiry = dmyIso(after(text, "expiry\\s*date")) || dmyIso(after(text, "date\\s*of\\s*expiry")) || undefined;
+  out.expiry = dmyIso(after(text, "expiry\\s*date")) || dmyIso(after(text, "date\\s*of\\s*expiry")) || dmyIso(after(text, "valid\\s*(?:until|till|to)"))
+    || dmyIso(after(text, "exp(?:iry|\\.)?\\s*(?:date)?")) || undefined;
   out.dob = dmyIso(after(text, "date\\s*of\\s*birth")) || dmyIso(after(text, "birth\\s*date")) || undefined;
   const sex = /\bsex\b[^\n]{0,6}\b([MF])\b/i.exec(text) || /\b(male|female)\b/i.exec(text);
   if (sex) out.gender = /^f/i.test(sex[1]) ? "female" : "male";

@@ -15,6 +15,12 @@ test("reader: check-digit verified ID lines and printed front labels", () => {
   assert.equal(f.civil_id, "98765432"); assert.equal(f.dob, "1990-04-03"); assert.equal(f.expiry, "2028-05-12"); assert.equal(f.gender, "female");
 });
 
+test("reader: a visa's machine-readable lines (expiry, check digits) and printed \"valid until\"", () => {
+  const v = parseMrz("VOOMNTEST<<SAMPLE<PERSON<<<<<<<<<<<<<<<<<<<<\nV123456781IND9004034M2709156<<<<<<<<<<<<<<<<");
+  assert.equal(v.kind, "visa"); assert.equal(v.expiry, "2027-09-15"); assert.equal(v.visa_no, "V12345678"); assert.equal(v.passport_no, undefined);
+  assert.equal(parseFront("RESIDENCE VISA\nValid until: 15/09/2027").expiry, "2027-09-15");
+});
+
 let t, admin, hr, staff, other;
 before(async () => {
   t = await boot({ FAKE_TODAY: "2026-10-26", OCR: "on" });
@@ -70,4 +76,17 @@ test("documents near expiry alert HR and the person at 30 days, 7 days and on ex
   // a renewed copy stops the alerts for the old one
   await hr.c.upload(`/api/employees/${other.emp.id}/files?kind=doc&doc_type=visa&name=visa2.pdf&expiry=2028-11-20`, pdf, "application/pdf");
   assert.ok(!(await hr.c.get("/api/expiring")).data.items.some((x) => x.what === "visa"));
+});
+
+test("a document's expiry date can be set or corrected (own papers or HR), and then reminds", async () => {
+  const up = await staff.c.upload(`/api/employees/${staff.emp.id}/files?kind=doc&doc_type=visa&name=visa.pdf`, Buffer.from("%PDF-1.4"), "application/pdf");
+  assert.equal(up.status, 201); assert.equal(up.data.file.expiry, null, "a PDF isn't read");
+  const id = up.data.file.id;
+  assert.equal((await other.c.put(`/api/files/${id}`, { expiry: "2026-11-10" })).status, 403);
+  assert.equal((await staff.c.put(`/api/files/${id}`, { expiry: "10/11/2026" })).status, 400);
+  assert.equal((await staff.c.put(`/api/files/${id}`, { expiry: "2026-11-10" })).data.file.expiry, "2026-11-10");
+  const exp = (await hr.c.get("/api/expiring")).data.items;
+  assert.ok(exp.some((x) => x.what === "visa" && x.employee.id === staff.emp.id && x.expiry === "2026-11-10"));
+  assert.ok((await staff.c.get("/api/notifications")).data.items.some((n) => /Visa|التأشيرة/.test(n.body_en + n.body_ar + n.title_en + n.title_ar)));
+  assert.equal((await hr.c.put(`/api/files/${id}`, { expiry: "2028-01-01" })).status, 200);
 });

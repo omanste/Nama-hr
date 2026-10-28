@@ -326,6 +326,10 @@ const D = {
   // profile updates by staff, bank details, photo from an ID
   f_personal_email: ["البريد الشخصي", "Personal e-mail"], f_personal_phone: ["رقم التواصل الشخصي", "Personal contact number"],
   f_perm_wilayat: ["العنوان الدائم (الولاية)", "Permanent address (wilayat)"], f_current_area: ["العنوان الحالي (المنطقة في مسقط)", "Current address (area in Muscat)"],
+  expiry_read: ["تم الحفظ — قُرئ تاريخ الانتهاء: {d}", "Saved — expiry date read: {d}"],
+  expiry_missing: ["لم نتمكن من قراءة تاريخ الانتهاء. أدخله لتصلك تذكرة قبل انتهائه بـ30 يوماً.", "We couldn't read the expiry date. Enter it so you get a reminder 30 days before it expires."],
+  expiry_hint: ["نذكّرك أنت والموارد البشرية قبل الانتهاء بـ30 يوماً و7 أيام.", "You and HR are reminded 30 days and 7 days before it expires."],
+  expiry_add: ["إضافة تاريخ الانتهاء", "Add expiry date"], expiry_change: ["تعديل تاريخ الانتهاء", "Change expiry date"], later: ["لاحقاً", "Later"],
   sec_address: ["العنوان", "Address"], emergency_person: ["الاسم", "Name"], sec_emergency: ["جهة الاتصال للطوارئ", "Emergency contact"],
   place_other: ["أخرى…", "Other…"], place_other_hint: ["اكتب المكان", "Type the place"],
   address_hint: ["مثال: سكة 1234، مبنى 56، شقة 7", "e.g. Way 1234, Building 56, Flat 7"],

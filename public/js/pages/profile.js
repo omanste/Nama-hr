@@ -16,14 +16,36 @@ async function uploadDoc(e, f, docType, expiry, canEditAll) {
   if (!f) return;
   const qs = new URLSearchParams({ kind: "doc", doc_type: docType, name: f.name || `${docType}.jpg` });
   if (expiry) qs.set("expiry", expiry);
-  const reading = ["civil_id", "passport"].includes(docType) && /^image\//.test(f.type);
+  const reading = EXPIRING.includes(docType) && /^image\//.test(f.type);
   if (reading) toast(t("reading_card"));
   try {
     const r = await api.upload(`/api/employees/${e.id}/files?${qs}`, f);
-    toast(t("saved"));
+    toast(r.read && r.read.expiry && !expiry ? t("expiry_read", { d: dmy(r.file.expiry) }) : t("saved"));
     if (r.read) await readDialog(e, r, docType, canEditAll);
+    // no expiry typed or read: ask for it, or there's nothing to remind about
+    if (EXPIRING.includes(docType) && !r.file.expiry) await expiryDialog(r.file, true);
     rerender();
   } catch (er) { toast(errText(er), "bad"); }
+}
+/** Documents that expire and get reminders 30 days before. */
+const EXPIRING = ["civil_id", "passport", "visa"];
+/** Set or correct a document's expiry date (it drives the reminders). */
+function expiryDialog(f, missing = false) {
+  return new Promise((resolve) => {
+    const input = h("input", { type: "date", value: f.expiry || "", required: true });
+    const err = h("div", { class: "form-error" });
+    const dlg = h("dialog", { class: "dialog" }, h("form", { class: "form", onsubmit: async (ev) => {
+      ev.preventDefault();
+      if (!input.value) { err.textContent = t("required"); return; }
+      try { await api.put(`/api/files/${f.id}`, { expiry: input.value }); toast(t("saved")); dlg.close(); } catch (er) { err.textContent = errText(er); }
+    } },
+      h("h2", null, t("doc_expiry"), " · ", t("dt_" + (f.doc_type || "other"))),
+      h("p", { class: "sub" }, t(missing ? "expiry_missing" : "expiry_hint")),
+      field(t("doc_expiry"), input), err,
+      h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t(missing ? "later" : "cancel")), h("button", { class: "btn primary", type: "submit" }, t("save")))));
+    dlg.addEventListener("close", () => { dlg.remove(); resolve(); });
+    document.body.append(dlg); dlg.showModal(); input.focus();
+  });
 }
 
 /** What the reader found on the card, next to what the profile has now; the person ticks what to update. */
@@ -179,15 +201,19 @@ function documents(p, e, can, mayUpload, setPhoto) {
     field(t("doc_type"), type), field(t("doc_expiry"), expiry),
     h("div", { class: "field", style: { alignSelf: "end" } }, pickButtons((f) => uploadDoc(e, f, type.value, expiry.value, can.edit())))) : null;
   return h("section", { class: "card" }, h("h2", null, t("sec_documents")),
-    docs.length ? h("div", { class: "list" }, docs.map((f) => h("div", { class: "item" },
+    docs.length ? h("div", { class: "list" }, docs.map((f) => h("div", { class: "item doc-item" },
       h("div", { class: "grow" }, h("div", { class: "title" }, h("a", { href: `/api/files/${f.id}`, target: "_blank", rel: "noopener" }, f.name)),
         h("div", { class: "meta" }, t("dt_" + (f.doc_type || "other")), f.expiry ? ` · ${t("doc_expiry")}: ${dmy(f.expiry)}` : "", ` · ${dateTime(f.uploaded_at)} `, expiryBadge(f.expiry))),
-      mayUpload && ["civil_id", "passport"].includes(f.doc_type) && f.mime.startsWith("image/") ? h("button", { class: "btn small", type: "button", onclick: () => cropDialog(e, f.id) }, "👤 ", t("photo_use")) : null,
-      h("a", { class: "btn small", href: `/api/files/${f.id}?download=1` }, t("download")),
-      can.edit() ? h("button", { class: "btn small danger", type: "button", onclick: async () => {
-        if (!(await confirm(t("delete_file_q"), { danger: true, okText: t("delete") }))) return;
-        try { await api.del(`/api/files/${f.id}`); rerender(); } catch (er) { toast(errText(er), "bad"); }
-      } }, t("delete")) : null))) : h("div", { class: "empty" }, t("no_results")),
+      // actions on their own line under the name, so a phone never gets wider than the screen
+      h("div", { class: "row doc-actions" },
+        mayUpload && ["civil_id", "passport"].includes(f.doc_type) && f.mime.startsWith("image/") ? h("button", { class: "btn small", type: "button", onclick: () => cropDialog(e, f.id) }, "👤 ", t("photo_use")) : null,
+        (can.edit() || (mayUpload && SELF_DOC_TYPES.includes(f.doc_type || "other"))) && (f.expiry || EXPIRING.includes(f.doc_type))
+          ? h("button", { class: "btn small", type: "button", onclick: async () => { await expiryDialog(f); rerender(); } }, "📅 ", t(f.expiry ? "expiry_change" : "expiry_add")) : null,
+        h("a", { class: "btn small", href: `/api/files/${f.id}?download=1` }, t("download")),
+        can.edit() ? h("button", { class: "btn small danger", type: "button", onclick: async () => {
+          if (!(await confirm(t("delete_file_q"), { danger: true, okText: t("delete") }))) return;
+          try { await api.del(`/api/files/${f.id}`); rerender(); } catch (er) { toast(errText(er), "bad"); }
+        } }, t("delete")) : null)))) : h("div", { class: "empty" }, t("no_results")),
     upload,
     mayUpload ? h("div", { style: { marginTop: "14px" } }, h("h3", null, t("photo_personal")),
       h("div", { class: "row" },
