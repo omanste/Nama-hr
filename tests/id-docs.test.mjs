@@ -3,7 +3,8 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { boot, adminClient, makePerson } from "./helpers.mjs";
-import { parseMrz, parseFront, parseArabicName } from "../server/idread.mjs";
+import { parseMrz, parseFront, parseArabicName, fullPrintedName, arabicNameFrom } from "../server/idread.mjs";
+import { toArabicName, completeFamily } from "../server/names-ar.mjs";
 import { runExpiryCheck } from "../server/jobs.mjs";
 
 test("reader: check-digit verified ID lines and printed front labels", () => {
@@ -31,6 +32,23 @@ test("reader: the Arabic name after \"الاسم\" — a clean 2–7-word name, 
   assert.equal(parseArabicName("الاسم: عينة"), undefined, "one word isn't a full name");
   assert.equal(parseArabicName("الاسم: تاريخ الميلاد"), undefined, "a label, not a name");
   assert.equal(parseArabicName("عينة شخص الاختبار"), undefined, "no label: not guessed");
+});
+
+test("reader: a name longer than the 30-letter line — the full printed name, or the known family name it starts", () => {
+  const cut = "IDOMNA12345678498765432<<<<<<<\n9004034F2805128OMN<<<<<<<<<<<4\nSHAIKHA<SALIM<KHALFAN<<AL<HINA";
+  assert.equal(parseMrz(cut).name_en, "Shaikha Salim Khalfan Al Hina"); assert.equal(parseMrz(cut).name_cut, true);
+  assert.equal(fullPrintedName(`Name: SHAIKHA SALIM KHALFAN AL HINAI\n${cut}`, "Shaikha Salim Khalfan Al Hina"), "Shaikha Salim Khalfan Al Hinai");
+  assert.equal(fullPrintedName("SULTANATE OF OMAN", "Shaikha Salim Khalfan Al Hina"), null);
+  assert.equal(completeFamily("Hina"), "hinai"); assert.equal(completeFamily("Jabr"), "jabri"); assert.equal(completeFamily("Al"), null);
+});
+
+test("Arabic name: the matching line on the card, else the English spelled in Arabic (known names only)", () => {
+  assert.equal(toArabicName("Shaikha Salim Khalfan Al Hinai"), "شيخة سالم خلفان الهنائي");
+  assert.equal(toArabicName("Mohammed Bin Rashid Al Harthi"), "محمد بن راشد الحارثي");
+  assert.equal(toArabicName("Abdul Aziz Hamed Al Busaidi"), "عبدالعزيز حامد البوسعيدي");
+  assert.equal(toArabicName("Sample Person Altest"), null, "an unknown word: nothing guessed");
+  assert.equal(arabicNameFrom("سلطنة عمان\nشيخة سالم خلفان الهنائي\nالرقم المدني", "Shaikha Salim Khalfan Al Hinai"), "شيخة سالم خلفان الهنائي", "no label: the line that matches");
+  assert.equal(arabicNameFrom("سلطنة عمان\nالبطاقة الشخصية", "Shaikha Salim Khalfan Al Hinai"), undefined);
 });
 
 test("reader: an Omani passport's personal-number field gives the civil ID (check digit verified)", () => {
@@ -174,4 +192,19 @@ test("HR updates every profile from its uploaded ID in one go, and sees old → 
   assert.equal(e.name_en, "Sample Person Altest"); assert.equal(e.name_ar, "عينة شخص الاختبار");
   // kept for later
   assert.equal((await admin.get("/api/profiles/reread-ids")).data.batch.results.length, b.results.length);
+});
+
+test("a card with a long name and no Arabic: the full English name, and the Arabic one completed from it", async () => {
+  const jpg = fs.readFileSync(new URL("./fixtures/fake-id-long.jpg", import.meta.url));
+  const a = await makePerson(t.base, admin, { emp_no: "LN1", name_ar: "شيخة سالم الهنائي", join_date: "2022-01-01" }); // a shorter Arabic name
+  const up = await hr.c.upload(`/api/employees/${a.emp.id}/files?kind=doc&doc_type=civil_id&name=id.jpg`, jpg, "image/jpeg");
+  assert.equal(up.status, 201);
+  let e = (await hr.c.get(`/api/employees/${a.emp.id}`)).data.employee;
+  assert.equal(e.name_en, "Shaikha Salim Khalfan Al Hinai");
+  assert.equal(e.name_ar, "شيخة سالم خلفان الهنائي");
+  // an Arabic name spelled differently by a person is kept (the English spelled in Arabic is only a fallback)
+  const b = await makePerson(t.base, admin, { emp_no: "LN2", name_ar: "شيخه سليم الهنائي", join_date: "2022-01-01" });
+  await hr.c.upload(`/api/employees/${b.emp.id}/files?kind=doc&doc_type=civil_id&name=id.jpg`, jpg, "image/jpeg");
+  e = (await hr.c.get(`/api/employees/${b.emp.id}`)).data.employee;
+  assert.equal(e.name_ar, "شيخه سليم الهنائي"); assert.equal(e.name_en, "Shaikha Salim Khalfan Al Hinai");
 });

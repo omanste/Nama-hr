@@ -7,6 +7,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { toArabicName, completeFamily, arKey } from "./names-ar.mjs";
 
 const require = createRequire(import.meta.url);
 const workers = {}; // one per language: "eng" (labels, "<<<" lines) and "ara" (the Arabic name on the front)
@@ -100,6 +101,8 @@ export function parseMrz(text) {
     if (l3.replace(/</g, "")) {
       if (letters(l1.slice(2, 5)) === "OMN") out.name_en = words(l3);
       else { const [sur, given = ""] = l3.split("<<"); out.name_en = words(`${given}<${sur}`); }
+      // the line holds 30 letters: a long name fills it to the end and loses its last letters ("AL<JABR" for Al Jabri)
+      const raw = L[i + 2] || ""; if (raw.length >= 30 && raw[29] !== "<") out.name_cut = true;
     }
   }
   return clean(out);
@@ -144,6 +147,32 @@ export function parseArabicName(text) {
 function clean(o) { for (const k of Object.keys(o)) if (o[k] === undefined || o[k] === null || o[k] === "") delete o[k]; return o; }
 const ok = (d) => !d || /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d));
 
+/** The name printed in full on the card (the "<<<" line may cut it): a line of plain words that starts with the same letters. */
+export function fullPrintedName(text, short) {
+  const key = (x) => String(x).toUpperCase().replace(/[^A-Z]/g, "");
+  const k = key(short); if (k.length < 6) return null;
+  let best = null;
+  for (const line of String(text || "").split(/\r?\n/)) {
+    if (line.includes("<")) continue;
+    const ws = line.replace(/^\s*(?:full\s*)?name\s*[:\-.]?\s*/i, "").replace(/[^A-Za-z' -]/g, " ").split(/\s+/).filter(Boolean);
+    const cand = ws.join(" ");
+    if (ws.length >= 2 && ws.length <= 8 && key(cand).startsWith(k) && key(cand).length > k.length && (!best || cand.length > best.length)) best = cand;
+  }
+  return best ? best.split(" ").map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase()).join(" ") : null;
+}
+/** The Arabic name: after "الاسم", or else the line whose words match the English name spelled in Arabic. */
+export function arabicNameFrom(text, nameEn) {
+  const labelled = parseArabicName(text);
+  if (labelled) return labelled;
+  const guess = toArabicName(nameEn); if (!guess) return undefined;
+  const first = arKey(guess.split(" ")[0]), last = arKey(guess.split(" ").at(-1));
+  for (const line of String(text || "").split(/\r?\n/)) {
+    const ws = line.replace(/[\u064B-\u0652\u0640]/g, "").replace(/[^\u0621-\u064A\s]/g, " ").split(/\s+/).filter(Boolean);
+    if (ws.length >= 2 && ws.length <= 7 && arKey(ws[0]) === first && arKey(ws.at(-1)) === last && !ws.some((w) => NOT_NAME.test(w))) return ws.join(" ");
+  }
+  return undefined;
+}
+
 /** Read a photo; returns {found:{…}, text} — found keys: civil_id, dob, gender, nationality, name_en, name_ar, expiry, passport_no, kind, verified[].
  * arabic=true also reads the Arabic text for the name (an ID card or passport; a second, slower pass). */
 export async function readDocument(buffer, { arabic = false } = {}) {
@@ -152,12 +181,25 @@ export async function readDocument(buffer, { arabic = false } = {}) {
   // no usable "<<<" lines on the first pass: read again with only the letters those lines use
   if (!mrz.dob && !mrz.expiry) { const t2 = await ocr(buffer, { mrz: true }); const m2 = parseMrz(t2); if (Object.keys(m2).length > Object.keys(mrz).length) mrz = m2; }
   const front = parseFront(text);
-  if (arabic) { try { const ar = parseArabicName(await ocr(buffer, { lang: "ara" })); if (ar) front.name_ar = ar; } catch (e) { console.error(`ID reader (Arabic): ${e.message}`); } }
+  fixName(mrz, text);
+  if (arabic) { try { const ar = arabicNameFrom(await ocr(buffer, { lang: "ara" }), mrz.name_en); if (ar) front.name_ar = ar; } catch (e) { console.error(`ID reader (Arabic): ${e.message}`); } }
   const found = { ...front, ...mrz }; // MRZ wins: it is check-digit verified
   // which values the card's own check digits confirm (the rest need a closer look)
   found.verified = Object.keys(mrz).filter((k) => k !== "kind");
   for (const k of ["dob", "expiry"]) if (!ok(found[k])) delete found[k];
   return { found, text };
+}
+
+/** A name the "<<<" line cut short: the full one printed on the card, or the one known family name it starts. */
+function fixName(mrz, text) {
+  if (!mrz.name_en) return;
+  const full = fullPrintedName(text, mrz.name_en);
+  if (full) mrz.name_en = full;
+  else if (mrz.name_cut) {
+    const ws = mrz.name_en.split(" "), done = completeFamily(ws.at(-1));
+    if (done) mrz.name_en = [...ws.slice(0, -1), done[0].toUpperCase() + done.slice(1)].join(" ");
+  }
+  delete mrz.name_cut;
 }
 
 const run = promisify(execFile);
@@ -172,7 +214,8 @@ export async function readPdf(buffer, readImage = readDocument, opts = {}) {
     try { text = (await run("pdftotext", ["-f", "1", "-l", "3", file, "-"], { timeout: 20000, maxBuffer: 4 << 20 })).stdout; }
     catch (e) { if (e.code === "ENOENT") return null; } // no poppler on this server: nothing to read with
     const mrz = parseMrz(text), front = parseFront(text);
-    const ar = parseArabicName(text); if (ar) front.name_ar = ar;
+    fixName(mrz, text);
+    const ar = arabicNameFrom(text, mrz.name_en); if (ar) front.name_ar = ar;
     if (mrz.expiry || mrz.dob || front.expiry) {
       const found = { ...front, ...mrz };
       found.verified = Object.keys(mrz).filter((k) => k !== "kind");

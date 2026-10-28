@@ -11,6 +11,7 @@ import { isIsoDate } from "./leave.mjs";
 import { getEmployee } from "./employees.mjs";
 import { deputyOf } from "./requests.mjs";
 import { readDocument, readPdf } from "./idread.mjs";
+import { toArabicName, arKey } from "./names-ar.mjs";
 import { canReadVoice } from "./voice.mjs";
 import { runExpiryCheck } from "./jobs.mjs";
 import { recordSelfChange } from "./profile-changes.mjs";
@@ -87,6 +88,15 @@ export function registerFiles(api, ctx) {
       return read;
     } catch (e) { console.error(`reading document ${file.id} failed: ${e.message}`); return null; }
   }
+  /** No Arabic name on the card (or not readable): the English one spelled in Arabic, when every word is a known name — used
+   * only to fill an empty Arabic name or complete a shorter one (جواهر سالم الجابري → جواهر سالم خلفان الجابري), never to
+   * replace a different spelling someone typed. */
+  function arabicFallback(emp, read) {
+    if (read.name_ar || !read.name_en) return;
+    const ar = toArabicName(read.name_en); if (!ar) return;
+    const have = arKey(emp.name_ar).split(" ").filter(Boolean), want = arKey(ar).split(" ");
+    if (!have.length || (have.length < want.length && have.every((w) => want.includes(w)))) { read.name_ar = ar; read.name_ar_from = "english"; }
+  }
   /** Which read values go on the profile without asking: the ones the "<<<" lines' check digits confirm, the Arabic name
    * (the reader only returns a clean 2–7-word name), and anything for a field that is still empty. */
   const autoKeys = (emp, file, read) => {
@@ -137,6 +147,7 @@ export function registerFiles(api, ctx) {
     let read = null, applied = [];
     if (kind === "doc") read = await readStored(file);
     if (read) {
+      arabicFallback(emp, read);
       try { applied = applyRead(req.sess, emp, file, read, autoKeys(emp, file, read)); } catch (e) { console.error(`applying document ${file.id} failed: ${e.message}`); }
     }
     try { runExpiryCheck(ctx, ctx.today()); } catch (e) { console.error(e); }
@@ -238,6 +249,7 @@ export function registerFiles(api, ctx) {
         const item = { file_id: f.id, doc_type: f.doc_type, name: f.name, status: "not_read", changes: {} };
         if (read) {
           const before = getEmployee(db, p.id);
+          arabicFallback(before, read);
           let cols = [];
           try { cols = applyRead(sess, before, f, read, autoKeys(before, f, read)); } catch (e) { item.error = e.message; }
           const after = getEmployee(db, p.id);

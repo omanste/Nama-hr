@@ -1,5 +1,7 @@
 // Builds tests/fixtures/fake-id.jpg: a made-up Omani civil ID (no real person) — the front with the Arabic name after "الاسم",
 // the back with the "<<<" lines, the name in its usual order (given names, then the family name) as Omani cards write it.
+// Also fake-id-long.jpg: only the back of a card whose name is longer than the 30-letter "<<<" line (it ends "AL<HINA"),
+// with no Arabic on it — for the name completed from the known family names and the Arabic spelled from the English.
 // Run: node tests/fixtures/make-id-card.mjs (needs Playwright's Chromium)
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,4 +22,12 @@ SAMPLE&lt;PERSON&lt;&lt;ALTEST&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;</pre>
 </div></body></html>`;
 const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1000, height: 1380 } });
 await p.setContent(html); await p.screenshot({ path: path.join(here, "fake-id.jpg"), type: "jpeg", quality: 88 });
+await p.setViewportSize({ width: 1000, height: 680 });
+await p.setContent(`<html><body style="margin:0;background:#5a5047;display:grid;justify-content:center;padding:60px">
+<div style="${card};transform:rotate(1deg);display:flex;align-items:flex-end">
+  <pre style="font:34px/1.35 'DejaVu Sans Mono';letter-spacing:2px;margin:0">IDOMNA12345678498765432&lt;&lt;&lt;&lt;&lt;&lt;&lt;
+9004034F2805128OMN&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;4
+SHAIKHA&lt;SALIM&lt;KHALFAN&lt;&lt;AL&lt;HINA</pre>
+</div></body></html>`);
+await p.screenshot({ path: path.join(here, "fake-id-long.jpg"), type: "jpeg", quality: 88 });
 await b.close();
