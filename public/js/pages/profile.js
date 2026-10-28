@@ -162,7 +162,7 @@ export async function render(el, params, { me, can, opts }) {
         ["f_name_ar", e.name_ar], ["f_name_en", e.name_en], ["f_emp_no", e.emp_no], ["f_gender", e.gender ? t("g_" + e.gender) : ""], ["f_nationality", countryName(e.nationality, getLang())], ["f_dob", dmy(e.dob)],
         ["f_civil_id", e.civil_id], ["f_civil_id_expiry", e.civil_id_expiry ? h("span", null, dmy(e.civil_id_expiry), " ", expiryBadge(e.civil_id_expiry)) : null],
         ["f_passport_no", e.passport_no && h("span", { dir: "ltr" }, e.passport_no)], ["f_passport_expiry", e.passport_expiry ? h("span", null, dmy(e.passport_expiry), " ", expiryBadge(e.passport_expiry)) : null],
-        ["f_visa_expiry", e.visa_expiry ? h("span", null, dmy(e.visa_expiry), " ", expiryBadge(e.visa_expiry)) : null]]), civilIdCard(p, e, mayUpload, can)),
+        ["f_visa_expiry", e.visa_expiry ? h("span", null, dmy(e.visa_expiry), " ", expiryBadge(e.visa_expiry)) : null]])),
       h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_contact")), badgeIfPending(p, "contact"),
           mayUpload ? h("button", { class: "btn small", type: "button", onclick: () => contactDialog(e) }, t("edit")) : null),
         facts([
@@ -195,21 +195,11 @@ export async function render(el, params, { me, can, opts }) {
     h("section", { class: "card kpi-placeholder" }, h("h2", null, t("sec_kpi")), h("p", null, t("kpi_later"))));
 }
 
-/** Civil ID copy: front/back scans or a PDF, shown as thumbnails right under the ID number. */
-function civilIdCard(p, e, mayUpload, can) {
-  const ids = p.files.filter((f) => f.kind === "doc" && f.doc_type === "civil_id");
-  return h("div", { style: { marginTop: "14px" } },
-    h("h3", null, t("civil_id_copy")),
-    ids.length ? h("div", { class: "id-thumbs" }, ids.map((f) => h("a", { href: `/api/files/${f.id}`, target: "_blank", rel: "noopener", title: f.name, onclick: (ev) => { ev.preventDefault(); viewFile(f); } },
-      f.mime.startsWith("image/") ? h("img", { src: `/api/files/${f.id}`, alt: t("dt_civil_id"), loading: "lazy" }) : h("span", { class: "pdf" }, "PDF")))) : h("p", { class: "sub" }, t("civil_id_missing")),
-    mayUpload && ids.some((f) => f.mime.startsWith("image/")) ? h("button", { class: "btn small", type: "button", style: { marginTop: "8px" }, onclick: () => cropDialog(e, ids.find((f) => f.mime.startsWith("image/")).id) }, "👤 ", t("photo_from_id")) : null,
-    mayUpload ? h("div", { style: { marginTop: "8px" } }, pickButtons((f) => uploadDoc(e, f, "civil_id", null, can.edit())), h("p", { class: "sub", style: { margin: "6px 0 0" } }, t("scan_tip"))) : null);
-}
-
 function documents(p, e, can, mayUpload, setPhoto) {
   const docs = p.files.filter((f) => f.kind === "doc");
   const types = can.edit() ? DOC_TYPES : SELF_DOC_TYPES;
-  const type = select("doc_type", types.map((d) => [d, t("dt_" + d)]), "passport");
+  // the civil ID copy lives here (not under Personal): start on it until one is uploaded
+  const type = select("doc_type", types.map((d) => [d, t("dt_" + d)]), docs.some((f) => f.doc_type === "civil_id") ? "passport" : "civil_id");
   const expiry = h("input", { type: "date", name: "expiry" });
   const upload = mayUpload ? h("div", { class: "fields", style: { marginTop: "14px" } },
     field(t("doc_type"), type), field(t("doc_expiry"), expiry),
