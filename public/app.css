@@ -420,3 +420,11 @@ dialog.dialog form > .row.end:last-child{position:sticky;bottom:-20px;z-index:1;
 .doc-group h3{display:flex;align-items:center;gap:8px;margin:0 0 6px;font-size:15px}
 .badge.one-lang{margin-inline-start:8px;font-size:11px;padding:1px 8px;vertical-align:middle}
 .rr-changes{display:grid;gap:4px}
+/* sortable table headings */
+.th-sort{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font:inherit;color:inherit;white-space:nowrap}
+.th-sort:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:4px}
+.th-sort .arrow{font-size:10px;color:var(--muted)}
+th[aria-sort="ascending"] .arrow,th[aria-sort="descending"] .arrow{color:var(--brand)}
+.sort-mobile{display:contents}
+@media (min-width:900px){.sort-mobile{display:none}}
+.sort-mobile > select{flex:1 1 160px;min-width:0}

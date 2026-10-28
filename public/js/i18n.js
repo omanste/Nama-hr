@@ -347,6 +347,8 @@ const D = {
   cal_import_hol_hint: ["حسب المرسوم السلطاني 88/2022: ذكرى التولي، الإسراء والمعراج، عيد الفطر (29 رمضان – 3 شوال)، عيد الأضحى (9–13 ذو الحجة)، رأس السنة الهجرية، المولد النبوي، والعيد الوطني. عدّلها في الإعدادات عند إعلان الحكومة.", "Per Royal Decree 88/2022: Accession Day, Isra and Mi'raj, Eid al-Fitr (29 Ramadan – 3 Shawwal), Eid al-Adha (9–13 Dhu al-Hijjah), Hijri New Year, the Prophet's Birthday and National Day. Adjust them in Settings when the government announces them."],
   cal_imported_hol: ["{n} يوم عطلة", "{n} holiday days"],
   cal_imported: ["أُضيفت {n} مناسبة لعام {y}", "Added {n} occasions for {y}"],
+  sort_by: ["ترتيب", "Sort"], sort_asc: ["(أ–ي)", "(A–Z)"], sort_desc: ["(ي–أ)", "(Z–A)"], sort_old: ["(الأقدم أولاً)", "(oldest first)"], sort_new: ["(الأحدث أولاً)", "(newest first)"],
+  sort_low: ["(الأقل أولاً)", "(lowest first)"], sort_high: ["(الأكثر أولاً)", "(highest first)"],
   rr_title: ["تحديث الملفات من البطاقات المرفوعة", "Update profiles from uploaded IDs"], rr_start: ["تحديث الآن", "Update now"],
   rr_hint: ["يعيد قراءة آخر بطاقة مدنية وجواز سفر مرفوعين لكل موظف، ويحدّث البيانات الشخصية منها (الاسم بالعربية والإنجليزية، الرقم المدني، تاريخ الميلاد، الجنس، الجنسية، رقم الجواز وتواريخ الانتهاء).", "Reads each person's latest uploaded civil ID and passport again and updates their personal details from them (Arabic and English name, civil number, date of birth, gender, nationality, passport number and expiry dates)."],
   rr_confirm: ["تحديث البيانات الشخصية لكل الموظفين من بطاقاتهم وجوازاتهم المرفوعة؟ ستظهر النتيجة هنا (القيمة السابقة والجديدة).", "Update every person's personal details from their uploaded ID and passport? The result (old and new values) shows here."],
