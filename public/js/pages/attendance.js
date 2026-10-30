@@ -78,7 +78,7 @@ export async function render(el, _p, { me, query, can }) {
   el.append(
     pageHead(own ? t("my_attendance") : t("att_of", { name: nm(d.employee) }),
       own ? h("a", { class: "btn", href: "#/attendance/correction" }, t("lt_correction")) : null,
-      own ? h("a", { class: "btn primary", href: "#/attendance/mission" }, t("lt_mission")) : null,
+      // the external work task is asked for from Permissions and the home page, not here
       !own && (can.viewAll() || me.isApprover) ? h("a", { class: "btn", href: `#/staff/${empId}` }, t("open_profile")) : null),
     h("div", { class: "toolbar cal-nav" },
       h("button", { class: "btn", type: "button", "aria-label": t("prev_month"), onclick: () => go(shiftMonth(month, -1)) }, getLang() === "ar" ? "→" : "←"),
