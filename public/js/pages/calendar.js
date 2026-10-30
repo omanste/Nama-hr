@@ -40,7 +40,9 @@ export async function render(el, _p, { query }) {
   const grid = h("div", { class: "cal-grid", role: "grid" });
   const detail = h("section", { class: "card", "aria-live": "polite" });
   function drawGrid() {
-    const wk = [0, 1, 2, 3, 4, 5, 6].map((i) => new Intl.DateTimeFormat(loc(), { weekday: "short", timeZone: "UTC" }).format(new Date(Date.UTC(2023, 0, 1 + i))));
+    // the day names, and a one-letter form for narrow phones (the full names don't fit 7 columns there)
+    const dayName = (i, weekday) => new Intl.DateTimeFormat(loc(), { weekday, timeZone: "UTC" }).format(new Date(Date.UTC(2023, 0, 1 + i)));
+    const wk = [0, 1, 2, 3, 4, 5, 6].map((i) => [dayName(i, "short"), dayName(i, "narrow")]);
     const cells = [];
     for (let i = 0; i < firstDow; i++) cells.push(h("div", { class: "cal-cell empty", "aria-hidden": "true" }));
     for (let d = 1; d <= daysIn; d++) {
@@ -66,7 +68,7 @@ export async function render(el, _p, { query }) {
           x.religious.length ? h("i", { class: "rel" }) : null, x.events.length ? h("i", { class: "ev" }) : null,
           x.birthdays.length ? h("i", { class: "bd" }) : null, leaves.length ? h("i", { class: "lv" }) : null, perms.length ? h("i", { class: "pm" }) : null)));
     }
-    grid.replaceChildren(...wk.map((w) => h("div", { class: "cal-wk", role: "columnheader" }, w)), ...cells);
+    grid.replaceChildren(...wk.map(([w, n]) => h("div", { class: "cal-wk", role: "columnheader", title: w }, h("span", { class: "wk-long" }, w), h("span", { class: "wk-short", "aria-hidden": "true" }, n))), ...cells);
   }
   function drawDetail() {
     const x = onDay(selected);

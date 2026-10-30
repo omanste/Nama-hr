@@ -4,8 +4,8 @@
   --bg:#F2F5F3; --surface:#FFFFFF; --surface-2:#E8EFEC; --line:#D3DDD9; --fg:#122421; --muted:#5A6B67;
   --brand:#154540; --brand-fg:#FFFFFF; --gold:#A8843A; --gold-soft:#F5EDD9;
   --ok:#1F7A4D; --ok-soft:#DDF1E5; --warn:#A86500; --warn-soft:#FBEBCF; --bad:#B42318; --bad-soft:#FBE1DE; --info:#2C5C8A; --info-soft:#DDE8F3;
-  --font-display:"Readex Pro","IBM Plex Sans Arabic",system-ui,sans-serif;
-  --font-body:"IBM Plex Sans Arabic","Segoe UI",system-ui,sans-serif;
+  --font-display:"Noto Kufi Arabic","IBM Plex Sans Arabic",system-ui,sans-serif;
+  --font-body:"Noto Kufi Arabic","IBM Plex Sans Arabic","Segoe UI",system-ui,sans-serif;
   --radius:12px; --side:232px; --bottom:64px;
   color-scheme:light;
 }
@@ -436,3 +436,6 @@ th[aria-sort="ascending"] .arrow,th[aria-sort="descending"] .arrow{color:var(--b
 /* the profile photo opens full size */
 .avatar-zoom{all:unset;cursor:zoom-in;border-radius:50%;display:inline-flex}
 .avatar-zoom:focus-visible{outline:2px solid var(--brand);outline-offset:3px}
+/* calendar day names: one letter on narrow phones */
+.cal-wk .wk-short{display:none}
+@media (max-width:400px){.cal-wk .wk-long{display:none}.cal-wk .wk-short{display:inline}}
