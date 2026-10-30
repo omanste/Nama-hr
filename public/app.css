@@ -433,3 +433,6 @@ th[aria-sort="ascending"] .arrow,th[aria-sort="descending"] .arrow{color:var(--b
 .doc-archive{margin-top:8px}
 .doc-archive summary{cursor:pointer;color:var(--muted);font-size:13px;padding:4px 0}
 .item.doc-item.archived{opacity:.75;background:var(--surface-2)}
+/* the profile photo opens full size */
+.avatar-zoom{all:unset;cursor:zoom-in;border-radius:50%;display:inline-flex}
+.avatar-zoom:focus-visible{outline:2px solid var(--brand);outline-offset:3px}

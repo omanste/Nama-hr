@@ -256,6 +256,7 @@ const D = {
   only_used: ["إظهار من استخدم فقط", "Only people who used it"], approved_only: ["المعتمد فقط", "Approved only"], perm_none: ["لا توجد استئذانات في هذه الفترة", "No permissions in this period"],
   download_excel: ["تنزيل Excel", "Download Excel"], work_day_start: ["بداية الدوام", "Start of working day"],
   // own photo and contact
+  photo_view: ["عرض الصورة", "View photo"],
   photo_camera: ["التقاط صورة", "Take photo"], photo_upload: ["رفع صورة", "Upload photo"],
   email_by_hr: ["البريد الإلكتروني للعمل يضيفه قسم الموارد البشرية أو المسؤول.", "The work e-mail is added by HR or Admin."],
   // Staff Voice

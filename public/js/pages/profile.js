@@ -136,12 +136,17 @@ export async function render(el, params, { me, can, opts }) {
     try { await api.upload(`/api/employees/${e.id}/files?kind=photo&name=${encodeURIComponent(f.name || "photo.jpg")}`, f); toast(t("saved")); rerender(); } catch (er) { toast(errText(er), "bad"); }
   };
   const photoPicker = (attrs) => h("input", { type: "file", hidden: true, accept: "image/png,image/jpeg,image/webp", ...attrs, onchange: (ev) => { const f = ev.target.files[0]; ev.target.value = ""; setPhoto(f); } });
+  // the photo opens full size (with Download) when there is one
+  const face = e.photo_file_id
+    ? h("button", { class: "avatar-zoom", type: "button", title: t("photo_view"), "aria-label": t("photo_view"),
+        onclick: () => viewFile({ id: e.photo_file_id, name: `${e.emp_no || "photo"} · ${nm(e)}`, mime: "image/jpeg" }) }, avatar(e, 72))
+    : avatar(e, 72);
   const photo = mayUpload
-    ? h("div", { class: "photo-box" }, avatar(e, 72),
+    ? h("div", { class: "photo-box" }, face,
         h("div", { class: "row photo-actions" },
           h("label", { class: "btn small", title: t("photo_camera") }, "📷 ", t("photo_camera"), photoPicker({ accept: "image/*", capture: "user" })),
           h("label", { class: "btn small", title: t("photo_upload") }, "🖼️ ", t("photo_upload"), photoPicker({}))))
-    : avatar(e, 72);
+    : face;
 
   el.append(
     opts.me ? null : backLink("#/staff"),
