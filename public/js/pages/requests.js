@@ -26,7 +26,8 @@ function summary(items, perm, emp) {
     h("div", { class: "card-head" }, h("h2", null, t(perm ? "sec_permissions" : "leave_taken")),
       perm ? h("span", { class: "badge" }, t("perm_policy_badge")) : null),
     h("dl", { class: "facts" },
-      order.map((k) => { const rs = done.filter((r) => r.type === k); return h("div", null, h("dt", null, t("lt_" + k)), h("dd", { class: "num" }, perm ? t("times_hours", { n: num(rs.length), h: num(rs.reduce((a, r) => a + r.minutes, 0) / 60) }) : `${t("times_n", { n: num(rs.length) })} · ${amount(rs.reduce((a, r) => a + r.minutes, 0))}`)); }),
+      // emergency leave is no longer offered: listed only for someone who has some on record
+      order.filter((k) => k !== "emergency" || items.some((r) => r.type === k)).map((k) => { const rs = done.filter((r) => r.type === k); return h("div", null, h("dt", null, t("lt_" + k)), h("dd", { class: "num" }, perm ? t("times_hours", { n: num(rs.length), h: num(rs.reduce((a, r) => a + r.minutes, 0) / 60) }) : `${t("times_n", { n: num(rs.length) })} · ${amount(rs.reduce((a, r) => a + r.minutes, 0))}`)); }),
       h("div", null, h("dt", null, h("b", null, t("total"))), h("dd", { class: "num" }, h("b", null, `${t("times_n", { n: num(done.length) })} · ${amount(total)}`)))),
     h("p", { class: "sub", style: { margin: "10px 0 0" } }, t("approved_only"), pending ? ` · ${t("pending_n", { n: num(pending) })}` : ""));
 }

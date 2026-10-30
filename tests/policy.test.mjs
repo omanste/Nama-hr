@@ -32,14 +32,10 @@ test("official holidays inside annual leave are not deducted", async () => {
   await s.c.post(`/api/requests/${r.data.request.id}/cancel`, {});
 });
 
-test("emergency leave is deducted from annual leave (and follows the 6-month rule)", async () => {
-  const before = await remaining(s.emp.id);
+test("emergency leave is no longer offered: new requests are refused (annual leave instead)", async () => {
   const r = await s.c.post("/api/requests", { type: "emergency", start: "2026-12-01", end: "2026-12-02" });
-  assert.equal(r.status, 201);
-  assert.equal((await approve(r.data.request.id)).status, 200);
-  assert.equal(await remaining(s.emp.id), before - days(2));
-  assert.equal((await junior.c.post("/api/requests", { type: "emergency", start: "2026-11-01", end: "2026-11-01" })).data.error, "not_eligible_yet");
-  assert.equal((await s.c.post("/api/requests", { type: "emergency", start: "2027-01-01", end: "2027-01-30" })).data.error, "insufficient_balance");
+  assert.equal(r.status, 400); assert.equal(r.data.error, "retired");
+  assert.equal((await junior.c.post("/api/requests", { type: "emergency", start: "2026-11-01", end: "2026-11-01" })).data.error, "retired");
 });
 
 test("early leave: no free monthly hours and no automatic deduction; HR's \"from annual leave\" is undone by cancelling", async () => {

@@ -22,7 +22,7 @@ export async function render(el, _p, { can }) {
 
   const mgr = select("managers", people, settings.managers_approver_employee_id);
   const chair = select("chairman", people, settings.chairman_employee_id);
-  const FINAL = ["unpaid", "annual", "emergency", "hajj", "exam", "patient_care", "childcare", "comp_day"];
+  const FINAL = ["unpaid", "annual", "hajj", "exam", "patient_care", "childcare", "comp_day"];
   const finalBoxes = FINAL.map((k) => [k, h("input", { type: "checkbox", checked: (settings.ceo_final_types || []).includes(k) })]);
   const types = h("textarea", { rows: 4 }); types.value = settings.contract_types.join("\n");
   const HALF = []; for (let m = 10 * 60; m <= 20 * 60; m += 30) HALF.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${m % 60 ? "30" : "00"}`);

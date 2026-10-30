@@ -167,7 +167,9 @@ test("weekly report: by department without names for the CEO; HR and the manager
   assert.equal(sales.mission, 1);
   const h = (await hr.c.get(`/api/attendance/report?${q}`)).data;
   assert.ok(h.people.some((p) => p.employee.id === s.emp.id));
-  assert.equal(h.corrections, 1);
+  // HR's confirmation is stamped with the real clock, so count corrections settled up to today
+  const realToday = new Date().toISOString().slice(0, 10);
+  assert.equal((await hr.c.get(`/api/attendance/report?from=2026-10-25&to=${realToday > "2026-10-29" ? realToday : "2026-10-29"}`)).data.corrections, 1);
   const m = (await mgr.c.get(`/api/attendance/report?${q}`)).data;
   assert.ok(m.people.every((p) => [s.emp.id, other.emp.id].includes(p.employee.id)));
   assert.equal((await s.c.get(`/api/attendance/report?${q}`)).status, 403);

@@ -552,7 +552,7 @@ export function leaveSections(p, { own = false, limit = 0 } = {}) {
         L.eligibleFrom && L.eligibleFrom > todayIso() ? h("div", { class: "note" }, t("eligible_from", { d: dmy(L.eligibleFrom) })) : null,
         !e.join_date ? h("div", { class: "note" }, t("no_join_date")) : null),
       h("section", { class: "card" }, h("h2", null, t(own ? "my_leave" : "by_type")),
-        h("dl", { class: "facts" }, Object.entries(L.byType).map(([k, v]) => h("div", null, h("dt", null, t("lt_" + k)), h("dd", { class: "num" }, isPermission(k) ? t("hours", { n: num(v / 60) }) : daysText(v))))))),
+        h("dl", { class: "facts" }, Object.entries(L.byType).filter(([k, v]) => k !== "emergency" || v).map(([k, v]) => h("div", null, h("dt", null, t("lt_" + k)), h("dd", { class: "num" }, isPermission(k) ? t("hours", { n: num(v / 60) }) : daysText(v))))))),
 
     permissionCard(p.permissions),
     h("section", { class: "card" }, h("h2", null, t("sec_requests")),

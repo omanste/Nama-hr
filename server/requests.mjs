@@ -119,9 +119,13 @@ export function rerouteFallbacks(ctx) {
 }
 
 /** Validate a submission; returns {type, start_date, end_date, early_time, minutes}. */
+/** Leave types that can no longer be requested (kept for the requests already on record). */
+export const RETIRED = ["emergency"];
 export function validateRequest(db, emp, body, today) {
   const type = body.type;
   if (!TYPES[type]) throw err(400, "invalid", "Unknown leave type", "type");
+  // emergency leave is no longer offered (company decision): use annual leave; past requests stay on record
+  if (RETIRED.includes(type)) throw err(400, "retired", "This leave type is no longer offered — please request annual leave", "type");
   let start, end, time = null;
   if (TYPES[type].range) { start = body.start; end = body.end; }
   else { start = end = body.date; }
