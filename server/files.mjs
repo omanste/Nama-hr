@@ -149,14 +149,14 @@ export function registerFiles(api, ctx) {
         audit(db, req.sess.user.id, "file.renew", "employee", emp.id, { file_id: old.id, expiry: old.expiry }, { file_id: file.id });
       }
     });
-    // ID card or passport: read it on our own server. The document is the source of truth, so what was read with its check
-    // digits (the machine-readable lines) replaces the profile's values at once — the English name too; anything read only from
-    // the printed side fills empty fields and is offered for the rest. HR sees a person's own changes and can undo them.
+    // ID card or passport: read it on our own server and offer what was read (see below). HR sees a person's own changes.
     let read = null, applied = [];
+    // nothing is applied here: the person sees each value read next to the current one and ticks what to save (a scanner
+    // can misread), then /apply saves only those
     if (kind === "doc") read = await readStored(file);
     if (read) {
       arabicFallback(emp, read);
-      try { applied = applyRead(req.sess, emp, file, read, autoKeys(emp, file, read)); } catch (e) { console.error(`applying document ${file.id} failed: ${e.message}`); }
+      db.prepare("UPDATE files SET extracted=? WHERE id=?").run(JSON.stringify(read), file.id); // with the Arabic name, if spelled from the English
     }
     try { runExpiryCheck(ctx, ctx.today()); } catch (e) { console.error(e); }
     send(req, res, 201, { file, read, applied, current: read ? pick(getEmployee(db, emp.id)) : undefined });

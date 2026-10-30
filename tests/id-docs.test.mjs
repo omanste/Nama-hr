@@ -73,7 +73,7 @@ before(async () => {
 });
 after(async () => { await t.close(); });
 
-test("uploading an ID fills the personal details at once — replacing what was typed, the English name too; HR sees it to verify", async () => {
+test("uploading an ID shows what was read; only the ticked values are saved (replacing typed ones); HR sees it to verify", async () => {
   // details typed by hand before the card was uploaded
   await admin.put(`/api/employees/${staff.emp.id}`, { name_en: "Typed Name", name_ar: "اسم مكتوب", dob: "1985-01-01", gender: "female" });
   const jpg = fs.readFileSync(new URL("./fixtures/fake-id.jpg", import.meta.url));
@@ -82,10 +82,16 @@ test("uploading an ID fills the personal details at once — replacing what was 
   assert.equal(up.data.read.civil_id, "98765432");
   assert.ok(up.data.read.verified.includes("dob"));
   assert.equal(up.data.file.expiry, "2028-05-12"); // the copy keeps its expiry for alerts
-  assert.deepEqual([...up.data.applied].sort(), ["civil_id", "civil_id_expiry", "dob", "gender", "name_ar", "name_en", "nationality"]);
+  // nothing is saved yet: the person checks before → after first
+  assert.deepEqual(up.data.applied, []);
+  assert.equal((await staff.c.get(`/api/employees/${staff.emp.id}`)).data.employee.name_en, "Typed Name");
+  assert.equal(up.data.current.name_en, "Typed Name"); assert.equal(up.data.current.name_ar, "اسم مكتوب");
+  // they untick the gender (say the scanner got it wrong) and save the rest
+  assert.equal((await staff.c.post(`/api/files/${up.data.file.id}/apply`, { fields: ["civil_id", "expiry", "dob", "nationality", "name_en", "name_ar"] })).status, 200);
   const e = (await staff.c.get(`/api/employees/${staff.emp.id}`)).data.employee;
+  assert.equal(e.gender, "female", "unticked: kept");
   assert.equal(e.civil_id, "98765432"); assert.equal(e.civil_id_expiry, "2028-05-12"); assert.equal(e.dob, "1990-04-03");
-  assert.equal(e.gender, "male"); assert.equal(e.nationality, "OM"); assert.equal(e.name_en, "Sample Person Altest");
+  assert.equal(e.nationality, "OM"); assert.equal(e.name_en, "Sample Person Altest");
   assert.equal(e.name_ar, "عينة شخص الاختبار", "the Arabic name from the front of the card");
   // the name at the top and on the sign-in list follow the profile
   assert.equal((await staff.c.get("/api/me")).data.employee.name_en, "Sample Person Altest");
@@ -95,7 +101,7 @@ test("uploading an ID fills the personal details at once — replacing what was 
   assert.ok((await admin.get("/api/audit?entity=employee")).data.items.find((a) => a.action === "employee.update_from_id"));
   // uploading the same card again changes nothing
   const again = await staff.c.upload(`/api/employees/${staff.emp.id}/files?kind=doc&doc_type=civil_id&name=id-back.jpg`, jpg, "image/jpeg");
-  assert.deepEqual(again.data.applied, []);
+  assert.equal(again.data.current.name_en, "Sample Person Altest"); assert.deepEqual(again.data.applied, []);
   // someone else can't apply a read value to this profile
   assert.equal((await other.c.post(`/api/files/${up.data.file.id}/apply`, { fields: ["civil_id"] })).status, 403);
 });
@@ -148,7 +154,7 @@ test("a passport PDF (phone scan with a text layer) is read: number and expiry g
   assert.equal(up.data.read.passport_no, "T1234567"); assert.equal(up.data.read.expiry, "2031-01-30");
   assert.equal(up.data.read.civil_id, "98765432", "the civil number from the passport");
   assert.equal(up.data.file.expiry, "2031-01-30");
-  assert.ok(up.data.applied.includes("passport_no") && up.data.applied.includes("passport_expiry"), "applied on upload");
+  assert.equal((await staff.c.post(`/api/files/${up.data.file.id}/apply`, { fields: ["passport_no", "expiry"] })).status, 200);
   const e = (await staff.c.get(`/api/employees/${staff.emp.id}`)).data.employee;
   assert.equal(e.passport_no, "T1234567"); assert.equal(e.passport_expiry, "2031-01-30");
 });
@@ -199,12 +205,15 @@ test("a card with a long name and no Arabic: the full English name, and the Arab
   const a = await makePerson(t.base, admin, { emp_no: "LN1", name_ar: "شيخة سالم الهنائي", join_date: "2022-01-01" }); // a shorter Arabic name
   const up = await hr.c.upload(`/api/employees/${a.emp.id}/files?kind=doc&doc_type=civil_id&name=id.jpg`, jpg, "image/jpeg");
   assert.equal(up.status, 201);
+  await hr.c.post(`/api/files/${up.data.file.id}/apply`, { fields: ["civil_id", "expiry", "dob", "gender", "nationality", "name_en", "name_ar", "passport_no"] });
   let e = (await hr.c.get(`/api/employees/${a.emp.id}`)).data.employee;
   assert.equal(e.name_en, "Shaikha Salim Khalfan Al Hinai");
   assert.equal(e.name_ar, "شيخة سالم خلفان الهنائي");
   // an Arabic name spelled differently by a person is kept (the English spelled in Arabic is only a fallback)
   const b = await makePerson(t.base, admin, { emp_no: "LN2", name_ar: "شيخه سليم الهنائي", join_date: "2022-01-01" });
-  await hr.c.upload(`/api/employees/${b.emp.id}/files?kind=doc&doc_type=civil_id&name=id.jpg`, jpg, "image/jpeg");
+  const ub = await hr.c.upload(`/api/employees/${b.emp.id}/files?kind=doc&doc_type=civil_id&name=id.jpg`, jpg, "image/jpeg");
+  assert.equal(ub.data.read.name_ar, undefined, "no Arabic name offered");
+  await hr.c.post(`/api/files/${ub.data.file.id}/apply`, { fields: ["name_en", "name_ar"] });
   e = (await hr.c.get(`/api/employees/${b.emp.id}`)).data.employee;
   assert.equal(e.name_ar, "شيخه سليم الهنائي"); assert.equal(e.name_en, "Shaikha Salim Khalfan Al Hinai");
 });
@@ -228,6 +237,7 @@ test("the Arabic name on the front of a card laid out in columns (read broken ov
   const a = await makePerson(t.base, admin, { emp_no: "FR1", name_ar: "شيخة الحوقاني", join_date: "2022-01-01" });
   const up = await hr.c.upload(`/api/employees/${a.emp.id}/files?kind=doc&doc_type=civil_id&name=front.jpg`, jpg, "image/jpeg");
   assert.equal(up.data.read.name_ar, "شيخة إسحاق عبدالله الحوقاني");
+  await hr.c.post(`/api/files/${up.data.file.id}/apply`, { fields: ["name_ar"] });
   assert.equal((await hr.c.get(`/api/employees/${a.emp.id}`)).data.employee.name_ar, "شيخة إسحاق عبدالله الحوقاني");
 });
 
@@ -242,6 +252,7 @@ test("renewing an expired ID: the new one replaces it and updates Personal; the 
   assert.equal((await other.c.upload(`/api/employees/${other.emp.id}/files?kind=doc&doc_type=civil_id&replaces=${old.id}`, jpg, "image/jpeg")).status, 400);
   const up = await p.c.upload(`/api/employees/${p.emp.id}/files?kind=doc&doc_type=civil_id&name=new-id.jpg&replaces=${old.id}`, jpg, "image/jpeg");
   assert.equal(up.status, 201);
+  await p.c.post(`/api/files/${up.data.file.id}/apply`, { fields: ["civil_id", "expiry", "dob", "gender", "nationality", "name_en", "name_ar", "passport_no"] });
   const e = (await p.c.get(`/api/employees/${p.emp.id}`)).data;
   assert.equal(e.employee.name_en, "Sample Person Altest"); assert.equal(e.employee.civil_id_expiry, "2028-05-12"); // Personal updated from the new card
   // the person sees only the new one, and can't open the old one

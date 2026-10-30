@@ -76,8 +76,7 @@ async function readDialog(e, r, docType, canEditAll) {
   const FIELDS = [["civil_id", "f_civil_id", "civil_id"], ["passport_no", "f_passport_no", docType === "passport" ? "passport_no" : null],
     ["expiry", expCol ? "f_" + expCol : "doc_expiry", expCol],
     ["dob", "f_dob", "dob"], ["gender", "f_gender", "gender"], ["nationality", "f_nationality", "nationality"], ["name_en", "f_name_en", "name_en"], ["name_ar", "f_name_ar", "name_ar"]];
-  // the server already put what it read (check-digit verified, or into empty fields) on the profile; only a value read from
-  // the printed side that differs from what's there is left to confirm
+  // every value read that differs from the profile: before → after, ticked; untick what the scanner got wrong
   const ask = FIELDS.filter(([k, , col]) => found[k] !== undefined && col)
     .map(([k, label, col]) => ({ k, label, col, now: cur[col], same: String(cur[col] ?? "") === String(found[k]) }))
     .filter((x) => !x.same);
@@ -88,7 +87,8 @@ async function readDialog(e, r, docType, canEditAll) {
     const box = h("input", { type: "checkbox", name: x.k, checked: true });
     return { k: x.k, box, row: h("label", { class: "read-row" }, box,
       h("div", { class: "grow" }, h("div", { class: "sub" }, t(x.label)),
-        h("div", null, x.now ? h("span", { class: "pc-old-inline" }, show(x.k, x.now)) : null, x.now ? (getLang() === "ar" ? " ← " : " → ") : null, h("b", { dir: "auto" }, show(x.k, found[x.k])),
+        h("div", { class: "read-before-after" }, h("span", { class: "muted" }, t("pc_before"), ": "), h("span", { class: x.now ? "pc-old-inline" : "muted", dir: "auto" }, show(x.k, x.now)),
+          h("br"), h("span", { class: "muted" }, t("pc_after"), ": "), h("b", { dir: "auto" }, show(x.k, found[x.k])),
           verified.has(x.k) ? h("span", { class: "badge b-approved", style: { marginInlineStart: "8px" } }, "✓ ", t("read_verified")) : h("span", { class: "badge b-pending", style: { marginInlineStart: "8px" } }, t("read_check"))))) };
   });
   return new Promise((resolve) => {
@@ -97,11 +97,14 @@ async function readDialog(e, r, docType, canEditAll) {
       ev.preventDefault();
       const fields = rows.filter((x) => x.box.checked).map((x) => x.k);
       if (!fields.length) { dlg.close(); return; }
-      try { await api.post(`/api/files/${r.file.id}/apply`, { fields }); toast(t("saved")); dlg.close(); } catch (er) { err.textContent = errText(er); }
+      try { await api.post(`/api/files/${r.file.id}/apply`, { fields }); toast(t("read_filled", { n: fields.length })); await refreshMe(); dlg.close(); } catch (er) { err.textContent = errText(er); }
     } },
       h("h2", null, t("read_update_title")),
       filled.length ? h("div", { class: "note" }, t("read_filled", { n: filled.length })) : null,
       h("p", { class: "sub" }, t("read_update_intro")),
+      rows.length > 1 ? h("div", { class: "row", style: { gap: "8px" } },
+        h("button", { class: "btn small", type: "button", onclick: () => rows.forEach((x) => { x.box.checked = true; }) }, t("select_all")),
+        h("button", { class: "btn small", type: "button", onclick: () => rows.forEach((x) => { x.box.checked = false; }) }, t("select_none"))) : null,
       h("div", { class: "list" }, rows.map((x) => x.row)), err,
       h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("read_keep")), h("button", { class: "btn primary", type: "submit" }, t("read_apply")))));
     dlg.addEventListener("close", () => { dlg.remove(); resolve(); });
