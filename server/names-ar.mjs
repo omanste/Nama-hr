@@ -51,6 +51,9 @@ const GIVEN = {
   mohd: "محمد", mhd: "محمد", hamaed: "حمد", khalaf: "خلف", saud: "سعود", sauod: "سعود", sabt: "سبت", nasr: "نصر", mahfoodh: "محفوظ",
   mahfoud: "محفوظ", mahfudh: "محفوظ", sharaf: "شرف", abdulaleem: "عبدالعليم", sulaiyim: "سليم", salmeen: "سالمين",
   ghanim: "غانم", ghanem: "غانم", amour: "عامور", amur: "عامور", muslim: "مسلم", musallam: "مسلم", rashood: "رشود", dhiyab: "ذياب", diyab: "ذياب", murshid: "مرشد",
+  imam: "إمام", elsayed: "السيد", sayed: "سيد", mostafa: "مصطفى", moustafa: "مصطفى",
+  abdelrahman: "عبدالرحمن", abdelaziz: "عبدالعزيز", hany: "هاني", hani: "هاني", tamer: "تامر", sherif: "شريف", wael: "وائل", hesham: "هشام",
+  osama: "أسامة", usama: "أسامة", ashraf: "أشرف", magdy: "مجدي", hossam: "حسام", hussam: "حسام", essam: "عصام", emad: "عماد", ehab: "إيهاب",
   bin: "بن", ibn: "بن", bint: "بنت", binti: "بنت", abu: "أبو", umm: "أم",
 };
 // family and tribe names (without "Al"); "Al X" and a last word X become "الX"
@@ -116,6 +119,21 @@ export function completeArabicName(en, saved) {
     else return null;
   }
   return j === have.length && anchors > 0 ? out.join(" ") : null;
+}
+/** Is this word a name in the list (given or family)? */
+export const isKnownName = (w) => { const k = word(w); return !!k && !!(GIVEN[k] || FAMILY[k]); };
+/** A name word with one letter a scanner commonly confuses (L l 1 | ! T J i read for I): the known name it was meant to be. */
+export function fixConfusedLetters(w) {
+  const k = word(w);
+  if (!k || GIVEN[k] || FAMILY[k]) return w;
+  // one letter at a time (L for I, l, 1, |, T, J…), so a real L elsewhere in the name stays
+  const s = String(w);
+  for (let i = 0; i < s.length; i++) {
+    if (!/[lL1|!TJi]/.test(s[i])) continue;
+    const fixed = s.slice(0, i) + "I" + s.slice(i + 1), kf = word(fixed);
+    if (GIVEN[kf] || FAMILY[kf]) return fixed;
+  }
+  return w;
 }
 /** A family name the card cut short ("Jabr" from "JABRI", the "<<<" line is only 30 letters): the one family name it starts, if just one. */
 export function completeFamily(part) {

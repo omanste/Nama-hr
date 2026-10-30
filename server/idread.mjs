@@ -7,7 +7,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { nameParts, completeFamily, arKey } from "./names-ar.mjs";
+import { nameParts, completeFamily, arKey, fixConfusedLetters, isKnownName } from "./names-ar.mjs";
 
 const require = createRequire(import.meta.url);
 const workers = {}; // one per language: "eng" (labels, "<<<" lines) and "ara" (the Arabic name on the front)
@@ -68,7 +68,7 @@ export function parseMrz(text) {
   if (td3 >= 0) {
     const l1 = L[td3].padEnd(44, "<").slice(0, 44), l2 = L[td3 + 1].padEnd(44, "<").slice(0, 44);
     out.kind = l1[0] === "V" ? "visa" : "passport";
-    const [sur, given = ""] = l1.slice(5).split("<<");
+    const [sur, given = ""] = l1.slice(5).replace(/<{3,}.*$/, "").split("<<");
     out.name_en = words(`${given}<${sur}`);
     const no = l2.slice(0, 9);
     if (check(no) === fixDigits(l2[9])) out.passport_no = no.replace(/</g, "");
@@ -98,11 +98,13 @@ export function parseMrz(text) {
     const exp = fixDigits(l2.slice(8, 14)); if (check(exp) === fixDigits(l2[14])) out.expiry = yymmdd(exp, true);
     out.nationality = COUNTRY3[letters(l2.slice(15, 18))] || undefined;
     // the name: Omani cards write it in its usual order (given names, then the family name); others put the surname first
-    if (l3.replace(/</g, "")) {
-      if (letters(l1.slice(2, 5)) === "OMN") out.name_en = words(l3);
-      else { const [sur, given = ""] = l3.split("<<"); out.name_en = words(`${given}<${sur}`); }
+    // the name ends at the filler: anything after "<<<" is a phone scanner's noise (a "«" read as a letter), not a name
+    const nameLine = l3.replace(/<{3,}.*$/, "");
+    if (nameLine.replace(/</g, "")) {
+      if (letters(l1.slice(2, 5)) === "OMN") out.name_en = words(nameLine);
+      else { const [sur, given = ""] = nameLine.split("<<"); out.name_en = words(`${given}<${sur}`); }
       // the line holds 30 letters: a long name fills it to the end and loses its last letters ("AL<JABR" for Al Jabri)
-      const raw = L[i + 2] || ""; if (raw.length >= 30 && raw[29] !== "<") out.name_cut = true;
+      if (nameLine.length >= 30) out.name_cut = true;
     }
   }
   return clean(out);
@@ -172,13 +174,27 @@ export function fullPrintedName(text, short) {
   const key = (x) => String(x).toUpperCase().replace(/[^A-Z]/g, "");
   const k = key(short); if (k.length < 6) return null;
   let best = null;
+  const first = key(String(short).split(/\s+/)[0]), parts = String(short).trim().split(/\s+/).length;
   for (const line of String(text || "").split(/\r?\n/)) {
     if (line.includes("<")) continue;
+    const labelled = /^\s*(?:full\s*)?name\b/i.test(line);
     const ws = line.replace(/^\s*(?:full\s*)?name\s*[:\-.]?\s*/i, "").replace(/[^A-Za-z' -]/g, " ").split(/\s+/).filter(Boolean);
     const cand = ws.join(" ");
-    if (ws.length >= 2 && ws.length <= 8 && key(cand).startsWith(k) && key(cand).length > k.length && (!best || cand.length > best.length)) best = cand;
+    if (ws.length < 2 || ws.length > 8) continue;
+    // the same letters, longer (the line cut it short) — or the card's "Name" line with the same first name and more names
+    // (a phone scanner may misread the "<<<" line itself)
+    const ok = (key(cand).startsWith(k) && key(cand).length > k.length) || (labelled && key(ws[0]) === first && ws.length > parts);
+    if (ok && (!best || cand.length > best.length)) best = cand;
   }
-  return best ? best.toLowerCase().replace(/(^|[\s'-])([a-z])/g, (_, a, b) => a + b.toUpperCase()) : null; // "'abdallah Al-hoqani" → "'Abdallah Al-Hoqani"
+  if (!best) return null;
+  // a scanner sometimes drops a space ("SALIMEXAMPLE"): split a word that starts with one of the coded line's names
+  const given = String(short).split(/\s+/).map(key).filter((w) => w.length >= 2);
+  // (only on a whole known name: a coded name cut short — "ABDAL" — mustn't split "ABDALLAH")
+  best = best.split(" ").flatMap((w) => { const g = given.find((x) => isKnownName(x) && key(w).startsWith(x) && key(w).length - x.length >= 3 && !given.includes(key(w)) && !isKnownName(w)); return g ? [w.slice(0, g.length), w.slice(g.length)] : [w]; })
+    // one letter misread on the printed line ("ALl" for "ALI"): the coded line's spelling, which uses a font made for reading
+    .map((w) => { const g = given.find((x) => x.length === key(w).length && x.length >= 3 && [...x].filter((c, i) => c !== key(w)[i]).length === 1); return g || w; })
+    .map(fixConfusedLetters).join(" ");
+  return best.toLowerCase().replace(/(^|[\s'-])([a-z])/g, (_, a, b) => a + b.toUpperCase()); // "'abdallah Al-hoqani" → "'Abdallah Al-Hoqani"
 }
 /** The Arabic name: after "الاسم", or else the line whose words match the English name spelled in Arabic. */
 export function arabicNameFrom(text, nameEn) {
@@ -217,6 +233,7 @@ export async function readDocument(buffer, { arabic = false } = {}) {
   return { found, text };
 }
 
+const mrzName = (f) => f.mrz_name || null;
 /** A name the "<<<" line cut short: the full one printed on the card, or the one known family name it starts. */
 function fixName(mrz, text) {
   if (!mrz.name_en) return;
@@ -246,6 +263,27 @@ export async function readPdf(buffer, readImage = readDocument, opts = {}) {
     if (mrz.expiry || mrz.dob || front.expiry) {
       const found = { ...front, ...mrz };
       found.verified = Object.keys(mrz).filter((k) => k !== "kind");
+      // a phone scanner's text layer is English only and may garble the "<<<" lines: read the pages as pictures too —
+      // for a cleaner coded name, the full printed name and the Arabic name
+      if (opts.arabic) {
+        try {
+          await run("pdftoppm", ["-png", "-r", "600", "-f", "1", "-l", "2", file, path.join(dir, "a")], { timeout: 90000 });
+          let all = text;
+          for (const img of fs.readdirSync(dir).filter((f) => /^a.*\.png$/.test(f)).sort()) {
+            const buf = fs.readFileSync(path.join(dir, img));
+            const t = await ocr(buf); all += "\n" + t;
+            // the "<<<" lines read best on a pass that knows only their letters
+            const a2 = parseMrz(t), b2 = parseMrz(await ocr(buf, { mrz: true }));
+            const m2 = (b2.name_en || "").split(" ").length > (a2.name_en || "").split(" ").length ? b2 : a2;
+            if (m2.name_en && (!mrzName(found) || m2.name_en.split(" ").length > mrzName(found).split(" ").length)) found.mrz_name = m2.name_en;
+            if (!found.name_ar) found.name_ar = arabicNameFrom(await ocr(buf, { lang: "ara" }), found.name_en) || arabicNameFrom(await ocr(buf, { lang: "ara", sparse: true }), found.name_en);
+          }
+          const full = fullPrintedName(all, mrzName(found) || found.name_en || "");
+          if (full && full.split(" ").length >= (found.name_en || "").split(" ").length) found.name_en = full;
+          else if (found.mrz_name && found.mrz_name.split(" ").length > (found.name_en || "").split(" ").length) found.name_en = found.mrz_name;
+          delete found.mrz_name; if (!found.name_ar) delete found.name_ar;
+        } catch (e) { console.error(`ID reader (PDF pages): ${e.message}`); }
+      }
       return { found, text };
     }
     // a scan without a text layer: read its pages as pictures

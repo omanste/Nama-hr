@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { boot, adminClient, makePerson } from "./helpers.mjs";
 import { parseMrz, parseFront, parseArabicName, fullPrintedName, arabicNameFrom } from "../server/idread.mjs";
-import { toArabicName, completeFamily, completeArabicName } from "../server/names-ar.mjs";
+import { toArabicName, completeFamily, completeArabicName, fixConfusedLetters } from "../server/names-ar.mjs";
 import { runExpiryCheck } from "../server/jobs.mjs";
 
 test("reader: check-digit verified ID lines and printed front labels", () => {
@@ -268,4 +268,14 @@ test("renewing an expired ID: the new one replaces it and updates Personal; the 
   assert.equal((await p.c.upload(`/api/employees/${p.emp.id}/files?kind=doc&doc_type=civil_id&replaces=${old.id}`, jpg, "image/jpeg")).status, 400);
   assert.equal((await hr.c.del(`/api/files/${up.data.file.id}`)).status, 200);
   assert.ok((await p.c.get(`/api/employees/${p.emp.id}`)).data.files.some((f) => f.id === old.id));
+});
+
+test("phone scans: noise after the filler, a dropped space, a misread letter — the name still comes out right", () => {
+  // "«" and a stray letter after the "<<<" filler (a phone scanner's text layer) are not a name
+  assert.equal(parseMrz("IDOMNA12345678498765432<<<<<<<\n9004034M2805128OMN<<<<<<<<<<<4\nSAMPLE<PERSON<<<<«<<<«<<«<<<X").name_en, "Sample Person");
+  // the card's NAME line: same first name, more names; a dropped space split back with the coded names
+  assert.equal(fullPrintedName("NAME SAMPLE PERSON ALIEXAMPLE", "Sample Person Ali"), "Sample Person Ali Example");
+  // one confused letter (L for I) turned back into the known name — a real L elsewhere stays
+  assert.equal(fixConfusedLetters("ALL"), "ALI"); assert.equal(fixConfusedLetters("SALLM"), "SALIM"); assert.equal(fixConfusedLetters("SALIM"), "SALIM");
+  assert.equal(fullPrintedName("Name: SAMPLE PERSON ALL EXAMPLE", "Sample Person"), "Sample Person Ali Example");
 });
