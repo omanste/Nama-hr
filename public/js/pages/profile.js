@@ -195,7 +195,8 @@ export async function render(el, params, { me, can, opts }) {
       h("section", { class: "card", style: { gridColumn: "1 / -1" } }, h("h2", null, t("sec_contract")), facts([
         ["f_join_date", dmy(e.join_date)], ["probation_end", dmy(p.leave.probationEnd)], ["service_length", serviceLength(e.join_date)],
         ["f_contract_type", tx(e.contract_type)], ["f_contract_end", e.contract_end ? h("span", null, dmy(e.contract_end), " ", expiryBadge(e.contract_end)) : null]]),
-        p.login !== undefined ? h("div", { style: { marginTop: "14px" } }, h("h3", null, t("login_account")),
+        // the login account (and resetting its password) is managed from someone else's profile or Users — not shown in "My profile"
+        p.login !== undefined && !own && !opts.me ? h("div", { style: { marginTop: "14px" } }, h("h3", null, t("login_account")),
           p.login ? h("div", { class: "row", style: { justifyContent: "space-between" } },
               h("span", { class: "sub" }, `${p.login.username} · ${t("role_" + p.login.role)}${p.login.active ? "" : " · " + t("inactive")}`),
               (can.admin() || (can.edit() && ["staff", "manager", "accounts"].includes(p.login.role))) && p.login.id !== me.user.id
