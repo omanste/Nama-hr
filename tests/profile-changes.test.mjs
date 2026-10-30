@@ -99,3 +99,14 @@ test("ID details typed by hand (when a document couldn't be read) are saved and 
   const c = (await hr.c.get("/api/profile-changes")).data.items.find((x) => x.employee_id === s.emp.id && x.source === "identity");
   assert.deepEqual(c.changes.civil_id, [null, "12345678"]);
 });
+
+test("HR deletes an entry from the list: it's gone, the profile keeps its current values, the person can't delete their own", async () => {
+  const items = (await hr.c.get("/api/profile-changes?status=all")).data.items;
+  const c = items[0];
+  const before = (await hr.c.get(`/api/employees/${c.employee_id}`)).data.employee;
+  assert.equal((await s.c.del(`/api/profile-changes/${c.id}`)).status, 403);
+  assert.equal((await hr.c.del(`/api/profile-changes/${c.id}`)).status, 200);
+  assert.ok(!(await hr.c.get("/api/profile-changes?status=all")).data.items.some((x) => x.id === c.id));
+  assert.deepEqual((await hr.c.get(`/api/employees/${c.employee_id}`)).data.employee, before);
+  assert.equal((await hr.c.del(`/api/profile-changes/${c.id}`)).status, 404);
+});

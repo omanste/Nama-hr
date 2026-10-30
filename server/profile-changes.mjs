@@ -76,6 +76,18 @@ export function registerProfileChanges(api, ctx) {
       : { title_ar: "تحققت الموارد البشرية من تحديث ملفك", title_en: "HR verified your profile update", body_ar: ar, body_en: en, link: "#/me", inAppOnly: true });
     send(req, res, 200, { ok: true, restored: out.restored });
   }
+  // remove an entry from the list without changing the profile (a test entry, a duplicate) — HR/Admin, audited
+  api.delete("/api/profile-changes/:id", (req, res) => {
+    need(req.sess);
+    const c = db.prepare("SELECT * FROM profile_changes WHERE id=?").get(Number(req.params.id));
+    if (!c) throw new HttpError(404, "not_found", "Not found");
+    if (req.sess.employee && req.sess.employee.id === c.employee_id) throw new HttpError(403, "forbidden", "Someone else verifies changes to your own profile");
+    tx(db, () => {
+      db.prepare("DELETE FROM profile_changes WHERE id=?").run(c.id);
+      audit(db, req.sess.user.id, "profile_change.delete", "employee", c.employee_id, { ...c, changes: JSON.parse(c.changes) }, null);
+    });
+    send(req, res, 200, { ok: true });
+  });
   api.post("/api/profile-changes/:id/confirm", (req, res) => decide(req, res, "confirm"));
   api.post("/api/profile-changes/:id/revert", (req, res) => decide(req, res, "revert"));
 }

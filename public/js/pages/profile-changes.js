@@ -79,6 +79,11 @@ export async function render(el, _p, { me, query }) {
     try { await api.post(`/api/profile-changes/${c.id}/${action}`, { note }); toast(t("saved")); await refreshMe(); rerender(); } catch (e) { toast(errText(e), "bad"); }
   };
   const mine = (c) => me.employee && me.employee.id === c.employee_id;
+  // delete: the entry leaves the list, the profile stays as it is now (to put old values back, use Undo)
+  const del = (c) => async () => {
+    if (!(await confirm(t("pc_delete_q"), { okText: t("delete"), danger: true }))) return;
+    try { await api.del(`/api/profile-changes/${c.id}`); toast(t("saved")); await refreshMe(); rerender(); } catch (e) { toast(errText(e), "bad"); }
+  };
   el.append(pageHead(t("nav_profile_changes")),
     h("p", { class: "sub" }, t("pc_intro")),
     await rereadCard(),
@@ -92,7 +97,8 @@ export async function render(el, _p, { me, query }) {
       h("div", { class: "table-wrap keep-table" }, h("table", null,
         h("thead", null, h("tr", null, h("th", null, t("pc_field")), h("th", null, t("pc_before")), h("th", null, t("pc_after")))),
         h("tbody", null, Object.entries(c.changes).map(([k, [a, b]]) => h("tr", null, h("td", null, t("f_" + k)), h("td", { class: "pc-old" }, show(k, a)), h("td", { class: "pc-new" }, show(k, b))))))),
-      c.status === "pending" ? (mine(c) ? h("p", { class: "sub" }, t("pc_not_own")) : h("div", { class: "row end", style: { marginTop: "10px" } },
-        h("button", { class: "btn", type: "button", onclick: act(c, "revert") }, "↩ ", t("pc_undo")),
-        h("button", { class: "btn ok", type: "button", onclick: act(c, "confirm") }, "✓ ", t("pc_confirm")))) : null))) : empty(t("pc_none")));
+      mine(c) ? (c.status === "pending" ? h("p", { class: "sub" }, t("pc_not_own")) : null) : h("div", { class: "row end", style: { marginTop: "10px" } },
+        h("button", { class: "btn danger", type: "button", onclick: del(c) }, "🗑 ", t("delete")),
+        c.status === "pending" ? h("button", { class: "btn", type: "button", onclick: act(c, "revert") }, "↩ ", t("pc_undo")) : null,
+        c.status === "pending" ? h("button", { class: "btn ok", type: "button", onclick: act(c, "confirm") }, "✓ ", t("pc_confirm")) : null)))) : empty(t("pc_none")));
 }

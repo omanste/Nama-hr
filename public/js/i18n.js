@@ -392,6 +392,7 @@ const D = {
   pc_intro: ["ما عدّله الموظفون في ملفاتهم: القيمة السابقة والجديدة. «تأكيد» يعتمد التعديل، و«تراجع» يعيد القيمة السابقة ويُبلغ الموظف.", "What staff changed in their own profile, before and after. Confirm keeps it; Undo puts the old value back and tells the person."],
   pcs_pending: ["بانتظار التحقق", "Awaiting verification"], pcs_confirmed: ["مؤكد", "Confirmed"], pcs_reverted: ["تم التراجع", "Undone"],
   pc_field: ["الحقل", "Field"], pc_before: ["السابق", "Before"], pc_after: ["الجديد", "After"],
+  pc_delete_q: ["حذف هذا الطلب من القائمة؟ يبقى الملف كما هو الآن دون أي تغيير (لإعادة القيم السابقة استخدم «تراجع»).", "Delete this entry from the list? The profile stays as it is now (to put the old values back, use Undo)."],
   pc_confirm: ["تأكيد", "Confirm"], pc_undo: ["تراجع", "Undo"], pc_undo_q: ["إعادة القيم السابقة؟ سيُبلغ الموظف بالسبب.", "Put the old values back? The person is told why."],
   pc_undo_reason: ["السبب", "Reason"], pc_none: ["لا توجد تحديثات هنا.", "No updates here."], pc_not_own: ["يتحقق شخص آخر من تحديثات ملفك.", "Someone else verifies changes to your own profile."],
   photo_from_id: ["صورة الملف من البطاقة", "Profile photo from the ID"], photo_use: ["استخدام كصورة الملف", "Use as profile photo"], photo_keep: ["الإبقاء على الصورة الحالية", "Keep current photo"],
