@@ -301,3 +301,11 @@ test("Arabic name from cleaned copies of the card: two readings that agree win; 
   await arabicFromVariants(Buffer.from("img"), en, { photo: true, magick: async (a) => { args0 ||= a; return magick(a); }, read: reader([good, good]) });
   assert.ok(args0.includes("-auto-orient"));
 });
+
+test("nationality: every country's 3-letter code on the <<< lines, and the printed NATIONALITY line", () => {
+  const td1 = (nat) => parseMrz(`IDOMN12345678<4<<<<<<<<<<<<<<<\n9001011M3001011${nat}<<<<<<<<<<<0\nSAMPLE<<PERSON<<<<<<<<<<<<<<<<`).nationality;
+  assert.equal(td1("PSE"), "PS"); assert.equal(td1("LBY"), "LY"); assert.equal(td1("EGY"), "EG");
+  assert.equal(parseFront("NAME SAMPLE PERSON\nNATIONALITY PALESTINIAN\n").nationality, "PS");
+  assert.equal(parseFront("Nationality: Egyptian").nationality, "EG");
+  assert.equal(parseFront("NATIONALITY XQZWV").nationality, undefined, "an unknown word isn't taken");
+});

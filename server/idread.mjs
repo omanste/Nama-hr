@@ -7,6 +7,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { toCountryCode } from "../public/js/countries.js";
 import { nameParts, completeFamily, arKey, fixConfusedLetters, isKnownName } from "./names-ar.mjs";
 
 const require = createRequire(import.meta.url);
@@ -52,8 +53,19 @@ function yymmdd(s, future) {
 }
 const letters = (s) => s.replace(/0/g, "O").replace(/1/g, "I").replace(/5/g, "S").replace(/8/g, "B");
 const words = (s) => s.split("<").filter(Boolean).map((w) => w[0] + w.slice(1).toLowerCase()).join(" ");
-const COUNTRY3 = { OMN: "OM", ARE: "AE", SAU: "SA", KWT: "KW", QAT: "QA", BHR: "BH", YEM: "YE", EGY: "EG", JOR: "JO", SYR: "SY", LBN: "LB", IRQ: "IQ", SDN: "SD",
-  IND: "IN", PAK: "PK", BGD: "BD", LKA: "LK", NPL: "NP", PHL: "PH", IDN: "ID", GBR: "GB", USA: "US", TUR: "TR", IRN: "IR", KEN: "KE", UGA: "UG", ETH: "ET", MAR: "MA", TUN: "TN" };
+// ICAO 9303 nationality codes (ISO 3166 alpha-3, plus the few ICAO-only ones) → the alpha-2 codes nationality is stored as
+const COUNTRY3 = Object.fromEntries(("OMN:OM ARE:AE SAU:SA KWT:KW QAT:QA BHR:BH YEM:YE EGY:EG JOR:JO SYR:SY LBN:LB IRQ:IQ PSE:PS SDN:SD LBY:LY TUN:TN " +
+  "DZA:DZ MAR:MA MRT:MR SOM:SO DJI:DJ COM:KM IND:IN PAK:PK BGD:BD LKA:LK NPL:NP PHL:PH IDN:ID MYS:MY AFG:AF IRN:IR TUR:TR " +
+  "GBR:GB GBD:GB GBN:GB GBO:GB GBS:GB GBP:GB USA:US CAN:CA AUS:AU NZL:NZ IRL:IE FRA:FR DEU:DE D:DE ITA:IT ESP:ES PRT:PT NLD:NL BEL:BE " +
+  "CHE:CH AUT:AT SWE:SE NOR:NO DNK:DK FIN:FI POL:PL CZE:CZ SVK:SK HUN:HU ROU:RO BGR:BG GRC:GR CYP:CY MLT:MT HRV:HR SVN:SI SRB:RS " +
+  "BIH:BA MNE:ME MKD:MK ALB:AL RKS:XK UNK:XK UKR:UA BLR:BY RUS:RU MDA:MD LTU:LT LVA:LV EST:EE ISL:IS LUX:LU LIE:LI MCO:MC AND:AD " +
+  "SMR:SM VAT:VA GEO:GE ARM:AM AZE:AZ KAZ:KZ UZB:UZ TKM:TM KGZ:KG TJK:TJ MNG:MN CHN:CN JPN:JP KOR:KR PRK:KP TWN:TW HKG:HK MAC:MO " +
+  "VNM:VN THA:TH KHM:KH LAO:LA MMR:MM SGP:SG BRN:BN TLS:TL BTN:BT MDV:MV NGA:NG GHA:GH KEN:KE ETH:ET ERI:ER TZA:TZ UGA:UG RWA:RW " +
+  "BDI:BI ZAF:ZA ZWE:ZW ZMB:ZM MWI:MW MOZ:MZ AGO:AO NAM:NA BWA:BW LSO:LS SWZ:SZ MDG:MG MUS:MU SYC:SC CMR:CM CAF:CF TCD:TD NER:NE " +
+  "MLI:ML BFA:BF SEN:SN GMB:GM GIN:GN GNB:GW SLE:SL LBR:LR CIV:CI TGO:TG BEN:BJ CPV:CV STP:ST GNQ:GQ GAB:GA COG:CG COD:CD SSD:SS " +
+  "MEX:MX GTM:GT BLZ:BZ SLV:SV HND:HN NIC:NI CRI:CR PAN:PA CUB:CU JAM:JM HTI:HT DOM:DO BHS:BS BRB:BB TTO:TT GRD:GD LCA:LC VCT:VC " +
+  "DMA:DM ATG:AG KNA:KN BRA:BR ARG:AR CHL:CL PER:PE COL:CO VEN:VE ECU:EC BOL:BO PRY:PY URY:UY GUY:GY SUR:SR FJI:FJ PNG:PG SLB:SB " +
+  "VUT:VU WSM:WS TON:TO KIR:KI TUV:TV NRU:NR PLW:PW FSM:FM MHL:MH").split(" ").map((p) => p.split(":")));
 
 function mrzLines(text) {
   return text.toUpperCase().split(/\r?\n/).map((l) => l.replace(/\s+/g, "").replace(/[«‹(\[{]/g, "<").replace(/[^A-Z0-9<]/g, "")).filter((l) => l.length >= 28 && /<</.test(l));
@@ -125,6 +137,9 @@ export function parseFront(text) {
   out.dob = dmyIso(after(text, "date\\s*of\\s*birth")) || dmyIso(after(text, "birth\\s*date")) || undefined;
   const sex = /\bsex\b[^\n]{0,6}\b([MF])\b/i.exec(text) || /\b(male|female)\b/i.exec(text);
   if (sex) out.gender = /^f/i.test(sex[1]) ? "female" : "male";
+  // the printed "NATIONALITY PALESTINIAN" line (the "<<<" lines' code wins when it was read)
+  const nat = /nationality\s*[:\-.]?\s*([A-Za-z]{4,}(?:\s[A-Za-z]{4,})?)/i.exec(text);
+  if (nat) { const c = toCountryCode(nat[1]) || toCountryCode(nat[1].split(" ")[0]); if (/^[A-Z]{2}$/.test(c || "")) out.nationality = c; }
   if (/sultanate\s+of\s+oman/i.test(text) && /civil/i.test(text)) out.kind = "id";
   return clean(out);
 }
