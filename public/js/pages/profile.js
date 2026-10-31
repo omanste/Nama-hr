@@ -190,7 +190,7 @@ export async function render(el, params, { me, can, opts }) {
     h("div", { class: "grid cols2" },
       h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_personal")), badgeIfPending(p, "identity"),
           can.edit() ? editLink(e, "personal", !!opts.me) : mayUpload ? h("button", { class: "btn small", type: "button", onclick: () => identityDialog(e) }, t("edit_id_details")) : null), facts([
-        ["f_name_ar", e.name_ar], ["f_name_en", e.name_en], ["f_emp_no", e.emp_no], ["f_gender", e.gender ? t("g_" + e.gender) : ""], ["f_nationality", countryName(e.nationality, getLang())], ["f_dob", dmy(e.dob)],
+        ["f_name_ar", e.name_ar], ["f_name_en", e.name_en], ["f_emp_no", e.emp_no], ["f_gender", e.gender ? t("g_" + e.gender) : ""], ["f_nationality", countryName(e.nationality, getLang())], ["f_dob", dmy(e.dob)], ["age", ageText(e.dob)],
         ["f_civil_id", e.civil_id], ["f_civil_id_expiry", e.civil_id_expiry ? h("span", null, dmy(e.civil_id_expiry), " ", expiryBadge(e.civil_id_expiry)) : null],
         ["f_passport_no", e.passport_no && h("span", { dir: "ltr" }, e.passport_no)], ["f_passport_expiry", e.passport_expiry ? h("span", null, dmy(e.passport_expiry), " ", expiryBadge(e.passport_expiry)) : null],
         ["f_visa_expiry", e.visa_expiry ? h("span", null, dmy(e.visa_expiry), " ", expiryBadge(e.visa_expiry)) : null]])),
@@ -594,6 +594,14 @@ export function leaveSections(p, { own = false, limit = 0 } = {}) {
 }
 
 /** Time since joining, e.g. "1 year and 6 months" (whole months, as of today). */
+/** Age in whole years from the date of birth (Muscat date), worked out each time the page opens. */
+function ageText(dob) {
+  if (!dob) return null;
+  const [y1, m1, d1] = dob.split("-").map(Number), [y2, m2, d2] = todayIso().split("-").map(Number);
+  const years = y2 - y1 - (m2 < m1 || (m2 === m1 && d2 < d1) ? 1 : 0);
+  if (years < 0 || years > 120) return null;
+  return t(years === 1 ? "one_year" : years === 2 ? "two_years" : years <= 10 ? "n_years" : "n_years_11", { n: num(years) });
+}
 function serviceLength(join) {
   if (!join) return null;
   const [y1, m1, d1] = join.split("-").map(Number), [y2, m2, d2] = todayIso().split("-").map(Number);
