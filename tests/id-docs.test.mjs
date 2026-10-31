@@ -3,7 +3,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { boot, adminClient, makePerson } from "./helpers.mjs";
-import { parseMrz, parseFront, parseArabicName, fullPrintedName, arabicNameFrom } from "../server/idread.mjs";
+import { parseMrz, parseFront, parseArabicName, fullPrintedName, arabicNameFrom, arabicFromVariants } from "../server/idread.mjs";
 import { toArabicName, completeFamily, completeArabicName, fixConfusedLetters } from "../server/names-ar.mjs";
 import { runExpiryCheck } from "../server/jobs.mjs";
 
@@ -278,4 +278,26 @@ test("phone scans: noise after the filler, a dropped space, a misread letter —
   // one confused letter (L for I) turned back into the known name — a real L elsewhere stays
   assert.equal(fixConfusedLetters("ALL"), "ALI"); assert.equal(fixConfusedLetters("SALLM"), "SALIM"); assert.equal(fixConfusedLetters("SALIM"), "SALIM");
   assert.equal(fullPrintedName("Name: SAMPLE PERSON ALL EXAMPLE", "Sample Person"), "Sample Person Ali Example");
+});
+
+test("Arabic name from cleaned copies of the card: two readings that agree win; no ImageMagick → skipped", async () => {
+  const en = "Shaikha Salim Khalfan Al Hinai", good = "الاسم شيخة سالم خلفان الهنائي", typo = "الاسم شيخة سالم خلفان الهتائي";
+  const magick = async (args) => { fs.writeFileSync(args.at(-1), "x"); return true; }; // stands in for ImageMagick
+  const reader = (texts) => { let i = 0; return async () => texts[i++] ?? ""; };
+  // noise, a misread, then the right one twice: the agreed reading
+  assert.equal(await arabicFromVariants(Buffer.from("img"), en, { magick, read: reader(["ضجيج", typo, good, good]) }), "شيخة سالم خلفان الهنائي");
+  // the first two already agree: no more copies are read
+  let calls = 0;
+  assert.equal(await arabicFromVariants(Buffer.from("img"), en, { magick: async (a) => { calls++; return magick(a); }, read: reader([good, good, typo]) }), "شيخة سالم خلفان الهنائي");
+  assert.equal(calls, 2);
+  // none agree: one with as many parts as the English name and the same first name
+  assert.equal(await arabicFromVariants(Buffer.from("img"), en, { magick, read: reader(["", typo, "", "", ""]) }), "شيخة سالم خلفان الهتائي");
+  // nothing name-like at all
+  assert.equal(await arabicFromVariants(Buffer.from("img"), en, { magick, read: reader([]) }), undefined);
+  // no ImageMagick on the server
+  assert.equal(await arabicFromVariants(Buffer.from("img"), en, { magick: async () => false, read: reader([good]) }), undefined);
+  // a photo is turned upright first
+  let args0;
+  await arabicFromVariants(Buffer.from("img"), en, { photo: true, magick: async (a) => { args0 ||= a; return magick(a); }, read: reader([good, good]) });
+  assert.ok(args0.includes("-auto-orient"));
 });

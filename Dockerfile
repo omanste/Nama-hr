@@ -1,8 +1,9 @@
 # Nama HR Portal — runs entirely on Nama's own server (Dokploy). Designed by Eng. Hassan Al Riyami.
 FROM node:24-alpine
 WORKDIR /app
-# pdftotext / pdftoppm: read passports, IDs and visas uploaded as PDF (text layer, else the page as a picture)
-RUN apk add --no-cache poppler-utils
+# pdftotext / pdftoppm: read passports, IDs and visas uploaded as PDF (text layer, else the page as a picture);
+# imagemagick: cleaned copies of a card (grey, more contrast) so the Arabic name reads through the security background
+RUN apk add --no-cache poppler-utils imagemagick
 ENV NODE_ENV=production
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force

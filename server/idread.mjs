@@ -209,6 +209,48 @@ export function arabicNameFrom(text, nameEn) {
   return undefined;
 }
 
+// ---------- cleaned copies for the Arabic name ----------
+/* A card's security background (the fine blue pattern) can swamp the Arabic letters: Tesseract then reads only noise. Grey
+ * copies with the contrast pushed (the pattern fades, the black print stays), most of them cut to the lower-right part of
+ * the card where the labels and their values are printed, read far better. One setting alone is fragile, so a few are read
+ * and the name two of them agree on is taken. Needs ImageMagick (magick / convert); without it this step is skipped. */
+const VARIANTS = [
+  ["-gravity", "SouthEast", "-crop", "70%x55%+0+0", "+repage", "-colorspace", "Gray", "-level", "25%,65%"],
+  ["-gravity", "SouthEast", "-crop", "70%x55%+0+0", "+repage", "-colorspace", "Gray", "-level", "20%,70%"],
+  ["-gravity", "SouthEast", "-crop", "70%x55%+0+0", "+repage", "-colorspace", "Gray", "-level", "30%,60%"],
+  ["-gravity", "SouthEast", "-crop", "70%x55%+0+0", "+repage", "-colorspace", "Gray", "-resize", "75%", "-level", "25%,65%"],
+  ["-colorspace", "Gray", "-resize", "150%", "-level", "25%,65%"],
+];
+let magickCmd; // which ImageMagick command this server has: "magick" (v7), "convert" (v6), or null
+async function imageMagick(args) {
+  for (const cmd of magickCmd === undefined ? ["magick", "convert"] : magickCmd ? [magickCmd] : []) {
+    try { await run(cmd, args, { timeout: 60000 }); magickCmd = cmd; return true; }
+    catch (e) { if (e.code !== "ENOENT") throw e; }
+  }
+  magickCmd = null; return false;
+}
+/** The Arabic name read from cleaned copies of the picture (see above), or undefined. photo=true first turns a phone photo
+ * upright (its orientation setting). read/magick can be replaced in tests. */
+export async function arabicFromVariants(buffer, nameEn, { photo = false, read = (b) => ocr(b, { lang: "ara" }), magick = imageMagick } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nama-ar-"));
+  try {
+    const src = path.join(dir, "in"); fs.writeFileSync(src, buffer);
+    const parts = nameParts(nameEn), first = parts[0] && parts[0].ar ? arKey(parts[0].ar) : null;
+    const seen = [];
+    for (let i = 0; i < VARIANTS.length; i++) {
+      const out = path.join(dir, `v${i}.png`);
+      if (!(await magick([src, ...(photo ? ["-auto-orient"] : []), ...VARIANTS[i], out]))) return undefined; // no ImageMagick here
+      const name = arabicNameFrom(await read(fs.readFileSync(out)), nameEn);
+      if (!name) continue;
+      if (seen.some((n) => arKey(n) === arKey(name))) return name; // two readings agree
+      seen.push(name);
+    }
+    // no two agree: one with the English name's number of parts and the same first name, else nothing
+    return seen.find((n) => { const ws = n.split(" "); return ws.length === parts.length && (!first || arKey(ws[0]) === first); });
+  } catch (e) { console.error(`ID reader (cleaned copies): ${e.message}`); return undefined; }
+  finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+
 /** Read a photo; returns {found:{…}, text} — found keys: civil_id, dob, gender, nationality, name_en, name_ar, expiry, passport_no, kind, verified[].
  * arabic=true also reads the Arabic text for the name (an ID card or passport; a second, slower pass). */
 export async function readDocument(buffer, { arabic = false } = {}) {
@@ -223,6 +265,7 @@ export async function readDocument(buffer, { arabic = false } = {}) {
       // the front of the card: the usual reading, then — if the name wasn't found — one that looks for scattered text (card layouts)
       let ar = arabicNameFrom(await ocr(buffer, { lang: "ara" }), mrz.name_en);
       if (!ar) ar = arabicNameFrom(await ocr(buffer, { lang: "ara", sparse: true }), mrz.name_en);
+      if (!ar && mrz.name_en) ar = await arabicFromVariants(buffer, mrz.name_en, { photo: true });
       if (ar) front.name_ar = ar;
     } catch (e) { console.error(`ID reader (Arabic): ${e.message}`); }
   }
@@ -276,7 +319,8 @@ export async function readPdf(buffer, readImage = readDocument, opts = {}) {
             const a2 = parseMrz(t), b2 = parseMrz(await ocr(buf, { mrz: true }));
             const m2 = (b2.name_en || "").split(" ").length > (a2.name_en || "").split(" ").length ? b2 : a2;
             if (m2.name_en && (!mrzName(found) || m2.name_en.split(" ").length > mrzName(found).split(" ").length)) found.mrz_name = m2.name_en;
-            if (!found.name_ar) found.name_ar = arabicNameFrom(await ocr(buf, { lang: "ara" }), found.name_en) || arabicNameFrom(await ocr(buf, { lang: "ara", sparse: true }), found.name_en);
+            if (!found.name_ar) found.name_ar = arabicNameFrom(await ocr(buf, { lang: "ara" }), found.name_en) || arabicNameFrom(await ocr(buf, { lang: "ara", sparse: true }), found.name_en)
+              || (found.name_en ? await arabicFromVariants(buf, found.name_en) : undefined);
           }
           const full = fullPrintedName(all, mrzName(found) || found.name_en || "");
           if (full && full.split(" ").length >= (found.name_en || "").split(" ").length) found.name_en = full;
