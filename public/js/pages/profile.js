@@ -3,7 +3,7 @@ import { t, nm, getLang, tx, splitLangs, joinLangs } from "../i18n.js";
 import { BANKS, bankName, ibanText, validIban } from "../banks.js";
 import { GOVERNORATES, MUSCAT_GROUPS, wilayatName, areaName, isWilayat, isArea } from "../places.js";
 import { countryName } from "../countries.js";
-import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, errText, confirm, select, field, backLink, todayIso, isPermission, isAttendanceReq, durText, viewFile } from "../ui.js";
+import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, errText, confirm, select, field, backLink, todayIso, isPermission, isAttendanceReq, durText, viewFile, busy } from "../ui.js";
 import { balanceHero, requestItem } from "./home.js";
 import { render as rerender, refreshMe } from "../app.js";
 
@@ -18,9 +18,12 @@ async function uploadDoc(e, f, docType, expiry, canEditAll, replaces = null) {
   if (expiry) qs.set("expiry", expiry);
   if (replaces) qs.set("replaces", replaces); // renewing: the old copy is archived
   const reading = EXPIRING.includes(docType) && (/^image\//.test(f.type) || f.type === "application/pdf");
-  if (reading) toast(t("reading_card"));
+  const wait = busy(t(reading ? "reading_card" : "uploading"), reading
+    ? [[0, t("busy_upload")], [4, t("busy_read_en")], [15, t("busy_read_ar")], [45, t("busy_long")]]
+    : [[0, t("busy_upload")]]);
   try {
-    const r = await api.upload(`/api/employees/${e.id}/files?${qs}`, f);
+    let r;
+    try { r = await api.upload(`/api/employees/${e.id}/files?${qs}`, f); } finally { wait.close(); }
     toast(r.read && r.read.expiry && !expiry ? t("expiry_read", { d: dmy(r.file.expiry) }) : t("saved"));
     if (r.read) await readDialog(e, r, docType, canEditAll);
     // an ID whose number couldn't be read: ask for it (HR verifies); the expiry typed there also goes on the document

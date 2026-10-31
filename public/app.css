@@ -453,3 +453,13 @@ th[aria-sort="ascending"] .arrow,th[aria-sort="descending"] .arrow{color:var(--b
 .att-table tr.ci-row td{padding-top:0;border-top:0;font-size:13px}
 .ci-day{display:flex;flex-wrap:wrap;gap:4px 16px}
 .signins summary{cursor:pointer;list-style:revert}
+/* busy window (reading a scanned card) */
+dialog.dialog.busy{text-align:center;display:grid;justify-items:center;gap:6px;max-width:min(380px,calc(100vw - 24px))}
+dialog.dialog.busy h2{margin:6px 0 0;font-size:1.1rem}
+.busy-step{margin:0;min-height:2.8em}
+.busy-time{margin:0;font-size:.85rem}
+.busy-secs{font-variant-numeric:tabular-nums}
+.busy-spin{width:42px;height:42px;border-radius:50%;border:4px solid var(--line,#dde5e2);border-top-color:var(--brand,#0f6b5c);animation:busy-spin .9s linear infinite}
+@keyframes busy-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.busy-spin{animation-duration:2.4s}}
+dialog.dialog.busy:focus,dialog.dialog.busy:focus-visible{outline:none}

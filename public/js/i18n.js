@@ -229,7 +229,12 @@ const D = {
   sign_in_username: ["الدخول باسم المستخدم (المسؤول)", "Sign in with username (admin)"], sign_in_staff_list: ["الدخول من قائمة الموظفين", "Sign in from the staff list"],
   both_lang_hint: ["لعرضها باللغتين اكتب: English | عربي", "To show it in both languages write: English | عربي"],
   // reading ID cards and passports
-  reading_card: ["جارٍ قراءة البيانات من الصورة…", "Reading the card…"], read_title: ["البيانات المقروءة من المستند", "Details read from the document"],
+  reading_card: ["جارٍ قراءة المستند…", "Reading the document…"], uploading: ["جارٍ رفع الملف…", "Uploading the file…"],
+  busy_upload: ["يتم رفع الملف إلى الخادم…", "Sending the file to the server…"],
+  busy_read_en: ["قراءة الرقم المدني والتواريخ والاسم الإنجليزي…", "Reading the civil number, dates and English name…"],
+  busy_read_ar: ["قراءة الاسم العربي من وجه البطاقة… قد يستغرق ذلك حتى دقيقة.", "Reading the Arabic name from the front of the card… this can take up to a minute."],
+  busy_long: ["ما زالت القراءة جارية، شكراً على صبرك. لا تغلق الصفحة.", "Still reading, thank you for waiting. Please don't close the page."],
+  busy_elapsed: ["الوقت المنقضي:", "Time so far:"], busy_sec: ["ثانية", "s"], read_title: ["البيانات المقروءة من المستند", "Details read from the document"],
   read_intro: ["راجع القيم واختر ما تريد تحديثه في الملف. لن يتغير شيء دون تأكيدك.", "Check the values and tick what to update in the profile. Nothing changes until you confirm."],
   read_verified: ["مؤكد من البطاقة", "Confirmed by the card"], read_check: ["تحقّق منه", "Please check"], read_now: ["في الملف الآن", "Now in profile"],
   read_same: ["مطابق", "Same"], read_saved_on_copy: ["حُفظ مع نسخة المستند للتنبيه قبل الانتهاء", "Saved with the copy for expiry alerts"],

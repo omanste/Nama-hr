@@ -62,6 +62,22 @@ export function toast(msg, kind = "ok") {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove("show"), 3200);
 }
+/** A window that stays open while something slow runs (reading a scanned card can take a minute): a spinner, what is
+ * happening, a hint that changes as time passes, and the seconds so far. It can't be closed by hand; call close() when done. */
+export function busy(title, steps) {
+  const step = h("p", { class: "sub busy-step" }, steps[0][1]), secs = h("span", { class: "busy-secs" }, "0");
+  const dlg = h("dialog", { class: "dialog busy", "aria-busy": "true" },
+    h("div", { class: "busy-spin", "aria-hidden": "true" }), h("h2", null, title), step,
+    h("p", { class: "sub busy-time" }, t("busy_elapsed"), " ", secs, " ", t("busy_sec")));
+  dlg.addEventListener("cancel", (e) => e.preventDefault()); // Esc doesn't hide it while the work goes on
+  document.body.append(dlg); dlg.showModal();
+  const t0 = Date.now();
+  const timer = setInterval(() => {
+    const s = Math.floor((Date.now() - t0) / 1000); secs.textContent = String(s);
+    const cur = steps.filter(([at]) => s >= at).at(-1); if (cur && step.textContent !== cur[1]) step.textContent = cur[1];
+  }, 1000);
+  return { close() { clearInterval(timer); dlg.close(); dlg.remove(); } };
+}
 /** Localised text for an API error: by error code when we have one, else the server's message. */
 export const errText = (e) => {
   if (!e) return t("error");
