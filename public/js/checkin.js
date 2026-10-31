@@ -19,7 +19,8 @@ export async function checkinCard() {
   if (!st.enabled) return null;
   const last = st.items[st.items.length - 1];
   const line = (c) => h("div", { class: "ci-line" }, h("b", null, t(c.kind === "in" ? "ci_in_at" : "ci_out_at", { time: c.at.slice(11, 16) })), " · ",
-    c.outside ? h("span", { class: "bad-text" }, t("ci_outside")) : h("span", null, "📍 ", siteName(c.site)));
+    c.outside ? h("span", { class: "bad-text" }, t("ci_outside")) : h("span", null, "📍 ", siteName(c.site)),
+    c.approval ? h("span", { class: `badge ${c.approval === "approved" ? "b-approved" : c.approval === "rejected" ? "b-rejected" : "b-pending"}`, title: c.decision_note || "", style: { marginInlineStart: "6px" } }, t("ci_appr_" + c.approval)) : null);
   const next = st.next;
   return h("section", { class: `card checkin-card ${next === "out" ? "is-in" : ""}` },
     h("div", { class: "card-head" }, h("h2", null, t("ci_title")), last ? h("span", { class: `badge ${last.kind === "in" ? "b-approved" : ""}` }, t(last.kind === "in" ? "ci_state_in" : "ci_state_out")) : null),

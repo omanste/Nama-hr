@@ -586,14 +586,26 @@ export function leaveSections(p, { own = false, limit = 0 } = {}) {
         L.eligibleFrom && L.eligibleFrom > todayIso() ? h("div", { class: "note" }, t("eligible_from", { d: dmy(L.eligibleFrom) })) : null,
         !e.join_date ? h("div", { class: "note" }, t("no_join_date")) : null),
       h("section", { class: "card" }, h("h2", null, t(own ? "my_leave" : "by_type")),
-        h("dl", { class: "facts" }, Object.entries(L.byType).filter(([k, v]) => k !== "emergency" || v).map(([k, v]) => h("div", null, h("dt", null, t("lt_" + k)), h("dd", { class: "num" }, isPermission(k) ? t("hours", { n: num(v / 60) }) : daysText(v))))))),
+        leaveByType(L.byType))),
 
     permissionCard(p.permissions),
     h("section", { class: "card" }, h("h2", null, t("sec_requests")),
       p.requests.length ? h("div", { class: "list" }, p.requests.filter((r) => !isAttendanceReq(r.type)).map((r) => requestItem(r))) : empty())];
 }
 
-/** Time since joining, e.g. "1 year and 6 months" (whole months, as of today). */
+/** Leave taken this year by type: the main types and any used are shown; the unused rest open with "Show all" (a phone
+ * would otherwise scroll through a dozen "0 days"). Two columns on narrow screens. */
+const MAIN_TYPES = ["annual", "sick", "early_leave"];
+function leaveByType(byType) {
+  const rows = Object.entries(byType).filter(([k, v]) => k !== "emergency" || v);
+  const item = ([k, v]) => h("div", null, h("dt", null, t("lt_" + k)), h("dd", { class: "num" }, isPermission(k) ? t("hours", { n: num(v / 60) }) : daysText(v)));
+  const shown = rows.filter(([k, v]) => v || MAIN_TYPES.includes(k)), rest = rows.filter((r) => !shown.includes(r));
+  const list = h("dl", { class: "facts by-type" }, shown.map(item));
+  if (!rest.length) return list;
+  const more = h("button", { class: "linkish", type: "button", "aria-expanded": "false", onclick: () => { rest.forEach((r) => list.append(item(r))); more.remove(); } },
+    t("show_all_types", { n: num(rest.length) }));
+  return h("div", null, list, h("div", { style: { marginTop: "10px" } }, more));
+}
 /** Age in whole years from the date of birth (Muscat date), worked out each time the page opens. */
 function ageText(dob) {
   if (!dob) return null;
@@ -602,6 +614,7 @@ function ageText(dob) {
   if (years < 0 || years > 120) return null;
   return t(years === 1 ? "one_year" : years === 2 ? "two_years" : years <= 10 ? "n_years" : "n_years_11", { n: num(years) });
 }
+/** Time since joining, e.g. "1 year and 6 months" (whole months, as of today). */
 function serviceLength(join) {
   if (!join) return null;
   const [y1, m1, d1] = join.split("-").map(Number), [y2, m2, d2] = todayIso().split("-").map(Number);

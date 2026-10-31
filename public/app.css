@@ -463,3 +463,10 @@ dialog.dialog.busy h2{margin:6px 0 0;font-size:1.1rem}
 @keyframes busy-spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.busy-spin{animation-duration:2.4s}}
 dialog.dialog.busy:focus,dialog.dialog.busy:focus-visible{outline:none}
+/* phones: checkboxes/radios big enough to tap; summary tiles and leave types two per row on small screens */
+input[type="checkbox"],input[type="radio"]{width:20px;height:20px;flex:none;margin:0}
+@media (max-width:360px){
+  .tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .tiles .tile{padding:10px 12px} .tiles .tile .n{font-size:22px}
+}
+@media (max-width:560px){ dl.facts.by-type{grid-template-columns:repeat(2,minmax(0,1fr))} }

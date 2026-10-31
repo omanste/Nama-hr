@@ -77,7 +77,7 @@ test("check-out outside every site needs a reason and the manager's approval; it
   assert.ok((await mgr.c.get("/api/notifications")).data.items.some((n) => /outside the work sites awaiting your approval/.test(n.title_en)));
   // waiting: the check-out doesn't count yet (the arrival does)
   let day = (await s.c.get(`/api/attendance/employee/${s.emp.id}?month=2026-11`)).data.days.find((x) => x.date === "2026-11-02");
-  assert.equal(day.status, "missing"); assert.equal(day.checkins[1].approval, "pending");
+  assert.equal(day.status, "pending", "waiting for the manager, not a missing punch"); assert.equal(day.missing, "out"); assert.equal(day.checkins[1].approval, "pending");
   // who may decide: the manager (or HR/Admin), not a colleague, not the person
   const pend = (await mgr.c.get("/api/attendance/checkins/pending")).data.items;
   assert.equal(pend.length, 1); assert.equal(pend[0].nearest.name_en, "Head office");

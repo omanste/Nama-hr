@@ -61,7 +61,8 @@ export function computeDay(c) {
   // arriving within the grace minutes isn't late; after them, lateness counts from the shift start (09:20 → 20 minutes)
   if (inn !== null) d.late = inn <= c.shift.start + (c.grace || 0) ? 0 : uncovered(c.shift.start, Math.min(inn, c.shift.end), ok);
   if (out !== null) d.early = uncovered(Math.max(out, c.shift.start), c.shift.end, ok);
-  if (inn === null || out === null) return { ...d, status: "missing", missing: inn === null ? "in" : "out" };
+  // the other punch is an outside-the-sites check-in waiting for the manager: "pending", not "missing"
+  if (inn === null || out === null) return { ...d, status: c.waitingCheckin ? "pending" : "missing", missing: inn === null ? "in" : "out" };
   return { ...d, status: "present" };
 }
 
@@ -110,6 +111,7 @@ export function employeeDays(db, emp, from, to, today) {
     const day = computeDay({
       shift, covered, grace, rest: isRestDay(date), holiday: holidays.has(date), leave: leaveReq ? leaveReq.type : null,
       pending: on.some((r) => r.status === "pending" && r.type !== "comp_day") || waiting.has(date),
+      waitingCheckin: waiting.has(date),
       punches: punches.get(date) || [],
       excused: approved.filter((r) => PERMISSION_TYPES.includes(r.type)).map((r) => permissionSpan(r.type, { time: r.early_time, endTime: r.end_time, dayStart: shift.start, dayEnd: shift.end })),
       missions: approved.filter((r) => r.type === "mission").map((r) => [clockMin(r.early_time), clockMin(r.end_time)]),

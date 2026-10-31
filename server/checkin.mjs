@@ -110,7 +110,7 @@ export async function resolveMapLink(text, fetchImpl = fetch) {
 export function registerCheckin(api, ctx) {
   const { db } = ctx;
   const sitesNow = () => getSetting(db, "att_sites", []);
-  const today = (sess) => db.prepare("SELECT c.id, c.kind, c.at, c.site_id, c.outside, c.reason FROM att_checkins c WHERE c.employee_id=? AND substr(c.at,1,10)=? ORDER BY c.at, c.id")
+  const today = (sess) => db.prepare("SELECT c.id, c.kind, c.at, c.site_id, c.outside, c.reason, c.approval, c.decision_note FROM att_checkins c WHERE c.employee_id=? AND substr(c.at,1,10)=? ORDER BY c.at, c.id")
     .all(sess.employee.id, ctx.today());
 
   // the home page card: may I check in, have I accepted the notice, what did I record today
