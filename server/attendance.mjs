@@ -82,15 +82,16 @@ export function employeeDays(db, emp, from, to, today) {
   const online = db.prepare("SELECT * FROM att_checkins WHERE employee_id=? AND at>=? AND at<? ORDER BY at, id").all(emp.id, from, addDays(to, 1));
   const firstOnline = (db.prepare("SELECT min(substr(at,1,10)) d FROM att_checkins WHERE employee_id=?").get(emp.id) || {}).d || null;
   const sites = new Map(getSetting(db, "att_sites", []).map((s) => [s.id, s]));
-  const byDay = new Map();
+  const byDay = new Map(), waiting = new Set();
   for (const c of online) {
     const k = c.at.slice(0, 10);
-    if (!punches.has(k)) punches.set(k, []);
-    punches.get(k).push(toMin(c.at));
+    // outside the work sites it counts once the manager approves it; waiting, the day reads "pending", not "absent"
+    if (c.approval === "pending") waiting.add(k);
+    if (c.approval !== "pending" && c.approval !== "rejected") { if (!punches.has(k)) punches.set(k, []); punches.get(k).push(toMin(c.at)); }
     if (!byDay.has(k)) byDay.set(k, []);
     const s = c.site_id && sites.get(c.site_id);
     byDay.get(k).push({ id: c.id, kind: c.kind, time: c.at.slice(11, 16), outside: !!c.outside, reason: c.reason, site_ar: s ? s.name_ar : null, site_en: s ? s.name_en : null,
-      photo_file_id: c.photo_file_id, lat: c.lat, lng: c.lng, accuracy: c.accuracy_m });
+      photo_file_id: c.photo_file_id, lat: c.lat, lng: c.lng, accuracy: c.accuracy_m, approval: c.approval, decision_note: c.decision_note });
   }
   const grace = Number(getSetting(db, "late_grace_min", 15)) || 0;
   const reqs = db.prepare("SELECT * FROM leave_requests WHERE employee_id=? AND status IN ('pending','approved') AND start_date<=? AND end_date>=?").all(emp.id, to, from);
@@ -108,7 +109,7 @@ export function employeeDays(db, emp, from, to, today) {
     const covered = (machine || viaPortal) && date <= today && (!emp.join_date || date >= emp.join_date);
     const day = computeDay({
       shift, covered, grace, rest: isRestDay(date), holiday: holidays.has(date), leave: leaveReq ? leaveReq.type : null,
-      pending: on.some((r) => r.status === "pending" && r.type !== "comp_day"),
+      pending: on.some((r) => r.status === "pending" && r.type !== "comp_day") || waiting.has(date),
       punches: punches.get(date) || [],
       excused: approved.filter((r) => PERMISSION_TYPES.includes(r.type)).map((r) => permissionSpan(r.type, { time: r.early_time, endTime: r.end_time, dayStart: shift.start, dayEnd: shift.end })),
       missions: approved.filter((r) => r.type === "mission").map((r) => [clockMin(r.early_time), clockMin(r.end_time)]),

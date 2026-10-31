@@ -89,7 +89,7 @@ function cookie(req, token, maxAgeSec) {
 export const publicUser = (u) => ({ id: u.id, username: u.username, role: u.role, lang: u.lang, mustChange: !!u.must_change, employeeId: u.employee_id });
 
 const PUBLIC = new Set(["/api/health", "/api/login", "/api/login-options"]);
-const ALLOWED_WHILE_MUST_CHANGE = new Set(["/api/me", "/api/me/password", "/api/me/lang", "/api/logout"]);
+const ALLOWED_WHILE_MUST_CHANGE = new Set(["/api/me", "/api/me/password", "/api/me/lang", "/api/me/login-location", "/api/logout"]);
 
 export function registerAuth(api, ctx) {
   const { db, env } = ctx;
@@ -156,9 +156,27 @@ export function registerAuth(api, ctx) {
     db.prepare("INSERT INTO sessions(token,user_id,created_at,last_seen_at,ip,ua) VALUES(?,?,?,?,?,?)")
       .run(token, user.id, Date.now(), Date.now(), ipOf(req), String(req.headers["user-agent"] || "").slice(0, 200));
     db.prepare("UPDATE users SET last_login_at=? WHERE id=?").run(nowIso(), user.id);
+    // every sign-in is logged (time, network address, device); the browser adds its location right after (/api/me/login-location)
+    db.prepare("INSERT INTO login_log(user_id,employee_id,at,ip,user_agent) VALUES(?,?,?,?,?)").run(user.id, user.employee_id || null, nowIso(), ipOf(req), String(req.headers["user-agent"] || "").slice(0, 200));
     db.prepare("DELETE FROM sessions WHERE last_seen_at<?").run(Date.now() - ctx.sessionMs);
     res.setHeader("Set-Cookie", cookie(req, token, Math.round(ctx.sessionMs / 1000)));
     send(req, res, 200, { user: publicUser(user), mustChange: !!user.must_change });
+  });
+
+  // the location of this sign-in (sent by the browser right after it, if the person allows it): onto the latest sign-in of the last 15 minutes
+  api.post("/api/me/login-location", async (req, res) => {
+    const b = await readJson(req);
+    const lat = Number(b.lat), lng = Number(b.lng), acc = Number(b.acc);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) throw Object.assign(new HttpError(400, "invalid", "A valid location is needed"), { field: "lat" });
+    const row = db.prepare("SELECT id FROM login_log WHERE user_id=? AND located_at IS NULL AND at>=? ORDER BY id DESC LIMIT 1").get(req.sess.user.id, new Date(Date.now() - 15 * 60e3).toISOString());
+    if (row) db.prepare("UPDATE login_log SET lat=?, lng=?, accuracy_m=?, located_at=? WHERE id=?").run(lat, lng, Number.isFinite(acc) ? Math.round(acc) : null, nowIso(), row.id);
+    send(req, res, 200, { ok: !!row });
+  });
+  // a person's recent sign-ins (time, device, network address, location) — HR and Admin
+  api.get("/api/employees/:id/logins", (req, res) => {
+    if (!["hr", "admin"].includes(req.sess.user.role)) throw new HttpError(403, "forbidden", "You do not have permission for this");
+    const items = db.prepare("SELECT at, ip, user_agent, lat, lng, accuracy_m FROM login_log WHERE employee_id=? ORDER BY id DESC LIMIT 30").all(Number(req.params.id));
+    send(req, res, 200, { items });
   });
 
   api.post("/api/logout", (req, res) => {
@@ -174,6 +192,11 @@ export function registerAuth(api, ctx) {
       ? db.prepare("SELECT count(*) n FROM leave_requests WHERE status='pending' AND employee_id<>?").get(own).n
       : db.prepare(`SELECT count(*) n FROM leave_requests WHERE status='pending' AND employee_id<>? AND (approver_user_id=?
           OR approver_user_id IN (SELECT approver_user_id FROM approver_cover WHERE deputy_user_id=? AND start_date<=? AND end_date>=?))`).get(own, s.user.id, s.user.id, today, today).n;
+    // check-ins outside the work sites waiting for this person (their team; HR/Admin: everyone's), counted with approvals
+    const myDepts = s.employee ? db.prepare("SELECT id FROM departments WHERE approver_employee_id=? AND active=1").all(s.employee.id).map((d) => d.id) : [];
+    const pendingCheckins = db.prepare(`SELECT count(*) n FROM att_checkins c JOIN employees e ON e.id=c.employee_id WHERE c.approval='pending' AND c.employee_id<>?
+      ${["hr", "admin"].includes(s.user.role) ? "" : `AND (e.manager_employee_id=? ${myDepts.length ? `OR e.department_id IN (${myDepts.join(",")})` : ""})`}`)
+      .get(...(["hr", "admin"].includes(s.user.role) ? [own] : [own, own])).n;
     const pendingCapReviews = ["hr", "admin"].includes(s.user.role) ? db.prepare("SELECT count(*) n FROM cap_reviews WHERE status='pending'").get().n : 0;
     // HR: approved permissions to classify and fingerprint corrections to confirm (attendance policy §5, §8)
     const pendingHr = ["hr", "admin"].includes(s.user.role) ? db.prepare("SELECT count(*) n FROM leave_requests WHERE status='approved' AND hr_class IS NULL AND type IN ('early','late','break','correction')").get().n : 0;
@@ -184,7 +207,7 @@ export function registerAuth(api, ctx) {
     const top = [getSetting(db, "managers_approver_employee_id", null), getSetting(db, "chairman_employee_id", null)].filter(Boolean).map(Number);
     const noLeave = s.user.role === "chairman" || (!!s.employee && Number(getSetting(db, "chairman_employee_id", null)) === s.employee.id);
     const attendanceExempt = !!s.employee && top.includes(s.employee.id);
-    send(req, res, 200, { user: publicUser(s.user), employee: s.employee, isApprover: s.isApprover, pendingApprovals, pendingCapReviews, pendingHr, pendingProfileChanges, hasTeam, voiceInbox: voiceInboxCount(db, s), env: ctx.appEnv, noLeave, attendanceExempt });
+    send(req, res, 200, { user: publicUser(s.user), employee: s.employee, isApprover: s.isApprover, pendingApprovals: pendingApprovals + pendingCheckins, pendingCheckins, pendingCapReviews, pendingHr, pendingProfileChanges, hasTeam, voiceInbox: voiceInboxCount(db, s), env: ctx.appEnv, noLeave, attendanceExempt });
   });
 
   api.post("/api/me/password", async (req, res) => {

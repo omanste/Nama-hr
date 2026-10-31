@@ -34,6 +34,7 @@ export function summaryTiles(s) {
 const checkinChip = (c) => h("div", { class: `ci-chip ${c.outside ? "outside" : ""}` },
   h("b", null, c.kind === "in" ? "⏱ " : "🏁 ", c.time), " ",
   c.outside ? h("span", { class: "bad-text", title: c.reason || "" }, t("ci_outside"), c.reason ? ` — ${c.reason}` : "") : h("span", null, "📍 ", getLang() === "en" ? c.site_en || c.site_ar : c.site_ar || c.site_en),
+  c.approval ? h("span", { class: `badge ${c.approval === "approved" ? "b-approved" : c.approval === "rejected" ? "b-rejected" : "b-pending"}`, title: c.decision_note || "" }, t("ci_appr_" + c.approval)) : null,
   c.photo_file_id ? h("button", { class: "linkish", type: "button", title: t("ci_photo"), "aria-label": t("ci_photo"), onclick: () => viewFile({ id: c.photo_file_id, name: `${t("ci_photo")} · ${c.time}`, mime: "image/jpeg" }) }, "📷") : null,
   c.lat !== null && c.lat !== undefined ? h("a", { href: `https://maps.google.com/?q=${c.lat},${c.lng}`, target: "_blank", rel: "noopener", title: t("ci_map") + (c.accuracy ? ` (±${c.accuracy} m)` : "") }, "🗺") : null);
 

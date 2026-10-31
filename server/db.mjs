@@ -155,6 +155,12 @@ const MIGRATIONS = [
    CREATE INDEX ac_emp_at ON att_checkins(employee_id, at);
    ALTER TABLE employees ADD COLUMN att_mode TEXT NOT NULL DEFAULT 'both' CHECK(att_mode IN ('machine','online','both'));
    ALTER TABLE users ADD COLUMN checkin_consent_at TEXT;`,
+  // 29: a check-in outside the work sites waits for the manager's approval; the location of each sign-in (the session)
+  `ALTER TABLE att_checkins ADD COLUMN approval TEXT CHECK(approval IN ('pending','approved','rejected'));
+   ALTER TABLE att_checkins ADD COLUMN decided_by INTEGER; ALTER TABLE att_checkins ADD COLUMN decided_at TEXT; ALTER TABLE att_checkins ADD COLUMN decision_note TEXT;
+   CREATE TABLE login_log(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, employee_id INTEGER, at TEXT NOT NULL, ip TEXT, user_agent TEXT,
+     lat REAL, lng REAL, accuracy_m REAL, located_at TEXT);
+   CREATE INDEX ll_emp_at ON login_log(employee_id, at);`,
 ];
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */

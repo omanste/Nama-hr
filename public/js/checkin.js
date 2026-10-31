@@ -47,7 +47,7 @@ async function send(kind, pos, photo, reason) {
   if (reason) qs.set("reason", reason);
   try {
     const r = await api.upload(`/api/attendance/checkin?${qs}`, photo);
-    toast(t(kind === "in" ? "ci_done_in" : "ci_done_out", { time: r.checkin.at.slice(11, 16) }) + (r.checkin.site ? ` · ${siteName(r.checkin.site)}` : ` · ${t("ci_outside")}`));
+    toast(r.checkin.site ? `${t(kind === "in" ? "ci_done_in" : "ci_done_out", { time: r.checkin.at.slice(11, 16) })} · ${siteName(r.checkin.site)}` : t("ci_outside_needs_ok"));
     rerender();
   } catch (e) {
     // outside every work site: ask why, then send again with the same photo and location

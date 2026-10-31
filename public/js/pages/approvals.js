@@ -1,11 +1,34 @@
 import { api } from "../api.js";
-import { t, nm } from "../i18n.js";
-import { h, when, amountText, daysText, pageHead, empty, select, field, dmy, toast, errText, todayIso } from "../ui.js";
+import { t, nm, getLang } from "../i18n.js";
+import { h, when, amountText, daysText, pageHead, empty, select, field, dmy, toast, errText, todayIso, confirm, viewFile, avatar } from "../ui.js";
 import { render as rerender } from "../app.js";
 import { decide } from "./request.js";
 
 // leaves that need a supporting document before approval (Art. 47, 84)
 const PROOF = new Set(["sick", "bereavement", "marriage", "paternity", "maternity", "hajj", "exam", "patient_care"]);
+
+/** Check-ins outside the work sites waiting for approval: who, when, why, the photo, the place; approve or reject. */
+function outsideSection(list) {
+  if (!list.length) return null;
+  const act = (c, action) => async () => {
+    let note = "";
+    if (action === "reject") { note = await confirm(t("ci_reject_q"), { input: t("reject_reason"), required: true, okText: t("reject"), danger: true }); if (note === null) return; }
+    try { await api.post(`/api/attendance/checkins/${c.id}/${action}`, { note }); toast(t("saved")); rerender(); } catch (e) { toast(errText(e), "bad"); }
+  };
+  const near = (c) => (c.nearest ? t("ci_nearest", { name: getLang() === "en" ? c.nearest.name_en || c.nearest.name_ar : c.nearest.name_ar || c.nearest.name_en, km: ((c.distance || 0) / 1000).toFixed(1) }) : "");
+  return h("section", { class: "card" }, h("h2", null, t("ci_pending_title"), " ", h("span", { class: "badge b-pending" }, list.length)),
+    h("p", { class: "sub" }, t("ci_pending_hint")),
+    h("div", { class: "list" }, list.map((c) => h("div", { class: "item", style: { flexWrap: "wrap" } },
+      avatar({ ...c, photo_file_id: c.emp_photo }, 36),
+      h("div", { class: "grow" }, h("div", { class: "title" }, nm(c), h("span", { class: "muted" }, ` · ${c.emp_no}`)),
+        h("div", { class: "meta" }, t(c.kind === "in" ? "ci_check_in" : "ci_check_out"), ` · ${dmy(c.at.slice(0, 10))} ${c.at.slice(11)}`, near(c) ? ` · ${near(c)}` : ""),
+        h("div", { dir: "auto" }, "“", c.reason, "”")),
+      h("div", { class: "row doc-actions" },
+        c.photo_file_id ? h("button", { class: "btn small", type: "button", onclick: () => viewFile({ id: c.photo_file_id, name: `${nm(c)} · ${c.at}`, mime: "image/jpeg" }) }, "📷 ", t("ci_photo")) : null,
+        c.lat !== null ? h("a", { class: "btn small", href: `https://maps.google.com/?q=${c.lat},${c.lng}`, target: "_blank", rel: "noopener" }, "🗺 ", t("ci_map")) : null,
+        h("button", { class: "btn small danger", type: "button", onclick: act(c, "reject") }, t("reject")),
+        h("button", { class: "btn small ok", type: "button", onclick: act(c, "approve") }, t("approve")))))));
+}
 
 function coverSection(cover, me) {
   const mine = cover.items.filter((c) => c.approver_user_id === me.user.id);
@@ -27,8 +50,9 @@ function coverSection(cover, me) {
 }
 
 export async function render(el, _p, { me }) {
-  const [{ items }, cover] = await Promise.all([api.get("/api/requests?scope=approvals"), api.get("/api/cover")]);
+  const [{ items }, cover, outside] = await Promise.all([api.get("/api/requests?scope=approvals"), api.get("/api/cover"), api.get("/api/attendance/checkins/pending").catch(() => ({ items: [] }))]);
   el.append(pageHead(t("nav_approvals")),
+    outsideSection(outside.items),
     items.length ? h("div", { class: "grid cols2" }, items.map((r) => h("article", { class: "card" },
       h("div", { class: "card-head" }, h("h2", null, h("a", { href: `#/leave/${r.id}` }, nm(r))),
         h("div", { class: "row" }, PROOF.has(r.type) && !r.file_count ? h("span", { class: "badge b-rejected" }, t("proof_missing")) : null,

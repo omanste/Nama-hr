@@ -25,6 +25,9 @@ export async function render(el) {
     try {
       if (useList && !who.value) { err.textContent = t("choose_your_name"); btn.disabled = false; btn.textContent = t("sign_in"); who.focus(); return; }
       const r = await api.post("/api/login", useList ? { employee_id: Number(who.value), password: pass.value } : { username: user.value.trim(), password: pass.value });
+      // the location of this sign-in (asked of the browser; signing in never waits for it or depends on it)
+      if (navigator.geolocation) navigator.geolocation.getCurrentPosition((p) => api.post("/api/me/login-location", { lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy || 0) }).catch(() => {}),
+        () => {}, { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 });
       await loadMe();
       location.hash = r.mustChange ? "#/password" : "#/";
     } catch (e2) {
@@ -35,6 +38,7 @@ export async function render(el) {
     useList ? h("div", { class: "field" }, h("label", { for: "who" }, t("staff_name")), who) : h("div", { class: "field" }, h("label", { for: "u" }, t("username")), Object.assign(user, { id: "u" })),
     h("div", { class: "field" }, h("label", { for: "p" }, t("password")), Object.assign(pass, { id: "p" })),
     err, btn,
+    h("p", { class: "sub", style: { margin: "4px 0 0", fontSize: "12px" } }, t("login_loc_note")),
     opts.devStaffList ? h("button", { class: "linkish", type: "button", onclick: () => { preferUsername = useList; el.replaceChildren(); render(el); } }, t(useList ? "sign_in_username" : "sign_in_staff_list")) : null);
   el.append(h("div", { class: "login-wrap" }, h("div", { class: "login-card" },
     h("div", { class: "brand" }, h("img", { src: "/logo-wordmark.png", alt: t("company") }), h("div", null, t("app_name"))),

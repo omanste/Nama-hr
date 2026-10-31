@@ -106,8 +106,17 @@ function sitesCard(settings, save) {
     const inp = (k, attrs) => h("input", { name: k, value: s[k] ?? "", ...attrs });
     const f = { name_ar: inp("name_ar", { dir: "rtl" }), name_en: inp("name_en", { dir: "ltr" }), lat: inp("lat", { inputmode: "decimal", dir: "ltr" }),
       lng: inp("lng", { inputmode: "decimal", dir: "ltr" }), radius_m: inp("radius_m", { type: "number", min: 30, max: 2000, step: 10, value: s.radius_m ?? 150 }) };
+    // paste the place's Google Maps link (a short one too) or "lat, lng": the portal reads the coordinates
+    const link = h("input", { name: "map_link", dir: "ltr", placeholder: "https://maps.app.goo.gl/…" });
+    const readLink = async () => {
+      if (!link.value.trim()) return;
+      try { const c = await api.post("/api/settings/map-link", { link: link.value.trim() }); f.lat.value = c.lat; f.lng.value = c.lng; toast(t("site_link_ok")); }
+      catch (e) { toast(errText(e), "bad"); }
+    };
     const box = h("div", { class: "site-row card" },
-      h("div", { class: "fields" }, field(t("site_name_ar"), f.name_ar), field(t("site_name_en"), f.name_en), field(t("site_lat"), f.lat), field(t("site_lng"), f.lng), field(t("site_radius"), f.radius_m)),
+      h("div", { class: "fields" }, field(t("site_name_ar"), f.name_ar), field(t("site_name_en"), f.name_en),
+        field(t("site_link"), h("div", { class: "row", style: { flexWrap: "nowrap", gap: "6px" } }, link, h("button", { class: "btn small", type: "button", onclick: readLink }, t("site_link_read"))), { full: true, hint: t("site_link_hint") }),
+        field(t("site_lat"), f.lat), field(t("site_lng"), f.lng), field(t("site_radius"), f.radius_m)),
       h("div", { class: "row", style: { gap: "8px", marginTop: "8px" } },
         h("button", { class: "btn small", type: "button", onclick: () => navigator.geolocation ? navigator.geolocation.getCurrentPosition(
           (p) => { f.lat.value = p.coords.latitude.toFixed(6); f.lng.value = p.coords.longitude.toFixed(6); toast(`±${Math.round(p.coords.accuracy)} m`); },

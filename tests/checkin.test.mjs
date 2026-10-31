@@ -68,13 +68,45 @@ test("check-in: notice first, then location and a photo; inside the site; the se
   assert.equal(st.next, "out"); assert.equal(st.items[0].site.name_en, "Head office");
 });
 
-test("check-out outside every site needs a reason, and the manager is told", async () => {
+test("check-out outside every site needs a reason and the manager's approval; it counts only once approved", async () => {
   t.app.ctx.fakeClock = "16:40";
   const r1 = await ci(s, "out", FAR);
   assert.equal(r1.status, 400); assert.equal(r1.data.field, "reason"); assert.equal(r1.data.outside, true); assert.equal(r1.data.nearest.name_en, "Head office");
   const r2 = await ci(s, "out", FAR, "&reason=" + encodeURIComponent("زيارة موقع عميل"));
-  assert.equal(r2.status, 201); assert.equal(r2.data.checkin.outside, true);
-  assert.ok((await mgr.c.get("/api/notifications")).data.items.some((n) => /outside the work sites/.test(n.title_en)));
+  assert.equal(r2.status, 201); assert.equal(r2.data.checkin.outside, true); assert.equal(r2.data.checkin.approval, "pending");
+  assert.ok((await mgr.c.get("/api/notifications")).data.items.some((n) => /outside the work sites awaiting your approval/.test(n.title_en)));
+  // waiting: the check-out doesn't count yet (the arrival does)
+  let day = (await s.c.get(`/api/attendance/employee/${s.emp.id}?month=2026-11`)).data.days.find((x) => x.date === "2026-11-02");
+  assert.equal(day.status, "missing"); assert.equal(day.checkins[1].approval, "pending");
+  // who may decide: the manager (or HR/Admin), not a colleague, not the person
+  const pend = (await mgr.c.get("/api/attendance/checkins/pending")).data.items;
+  assert.equal(pend.length, 1); assert.equal(pend[0].nearest.name_en, "Head office");
+  assert.equal((await other.c.get("/api/attendance/checkins/pending")).data.items.length, 0);
+  assert.equal((await s.c.post(`/api/attendance/checkins/${pend[0].id}/approve`, {})).status, 403);
+  assert.equal((await other.c.post(`/api/attendance/checkins/${pend[0].id}/approve`, {})).status, 403);
+  assert.ok((await mgr.c.get("/api/me")).data.pendingCheckins >= 1);
+  assert.equal((await mgr.c.post(`/api/attendance/checkins/${pend[0].id}/reject`, {})).status, 400, "a reason to reject");
+  assert.equal((await mgr.c.post(`/api/attendance/checkins/${pend[0].id}/approve`, {})).status, 200);
+  assert.equal((await mgr.c.post(`/api/attendance/checkins/${pend[0].id}/approve`, {})).status, 409);
+  assert.ok((await s.c.get("/api/notifications")).data.items.some((n) => /was approved/.test(n.title_en)));
+});
+
+test("a rejected check-in outside the sites doesn't count", async () => {
+  t.app.ctx.fakeClock = "09:05";
+  const c = await other.c.post("/api/attendance/checkin/consent", {});
+  assert.equal(c.status, 200);
+  const r = await ci(other, "in", FAR, "&reason=x");
+  assert.equal((await mgr.c.post(`/api/attendance/checkins/${r.data.checkin.id}/reject`, { note: "ليس في مهمة" })).status, 200);
+  const day = (await hr.c.get(`/api/attendance/employee/${other.emp.id}?month=2026-11`)).data.days.find((x) => x.date === "2026-11-02");
+  assert.equal(day.in, null); assert.equal(day.checkins[0].approval, "rejected"); assert.equal(day.checkins[0].decision_note, "ليس في مهمة");
+});
+
+test("Settings: a Google Maps link (or coordinates) gives the site's location — Admin only, Google hosts only", async () => {
+  t.app.ctx.fetchImpl = async (u) => ({ headers: { get: (k) => (k === "location" ? "https://www.google.com/maps/place/HQ/@23.58,58.38,17z/data=!3d23.5881!4d58.3829" : null) }, text: async () => "" });
+  assert.deepEqual((await admin.post("/api/settings/map-link", { link: "https://maps.app.goo.gl/madeup123" })).data, { lat: 23.5881, lng: 58.3829 });
+  assert.deepEqual((await admin.post("/api/settings/map-link", { link: "23.5, 58.4" })).data, { lat: 23.5, lng: 58.4 });
+  assert.equal((await admin.post("/api/settings/map-link", { link: "https://example.com/x" })).status, 400);
+  assert.equal((await hr.c.post("/api/settings/map-link", { link: "23.5, 58.4" })).status, 403);
 });
 
 test("the monthly sheet: online check-ins are the day's punches (in within the grace, out early), with site, photo and map", async () => {
@@ -110,12 +142,23 @@ test("retention: photos go after 90 days, locations after 12 months", async () =
   assert.ok(fs.existsSync(file));
   assert.deepEqual(runCheckinRetention(t.app.ctx, "2026-12-01"), { photos: 0, locations: 0 });
   const r = runCheckinRetention(t.app.ctx, "2027-02-15"); // 105 days later
-  assert.equal(r.photos, 2); assert.equal(r.locations, 0);
+  assert.equal(r.photos, 3); assert.equal(r.locations, 0);
   assert.equal(fs.existsSync(file), false);
   assert.equal(db.prepare("SELECT photo_file_id p, lat FROM att_checkins WHERE id=?").get(c.id).p, null);
-  assert.equal(runCheckinRetention(t.app.ctx, "2027-11-10").locations, 2);
+  assert.equal(runCheckinRetention(t.app.ctx, "2027-11-10").locations, 3);
   assert.equal(db.prepare("SELECT lat FROM att_checkins WHERE id=?").get(c.id).lat, null);
   // the times stay: the day still counts
   const day = (await hr.c.get(`/api/attendance/employee/${s.emp.id}?month=2026-11`)).data.days.find((x) => x.date === "2026-11-02");
   assert.equal(day.status, "present");
+});
+
+test("every sign-in is logged; the browser adds its location; HR sees a person's sign-ins", async () => {
+  const { login } = await import("./helpers.mjs");
+  const c = await login(t.base, "s1", "Passw0rd!" + s.emp.id);
+  assert.equal((await c.post("/api/me/login-location", { lat: 999, lng: 0 })).status, 400);
+  assert.equal((await c.post("/api/me/login-location", { lat: OFFICE.lat, lng: OFFICE.lng, acc: 30 })).data.ok, true);
+  const items = (await hr.c.get(`/api/employees/${s.emp.id}/logins`)).data.items;
+  assert.ok(items.length >= 2); assert.equal(items[0].lat, OFFICE.lat); assert.equal(items[0].accuracy_m, 30); assert.ok(items[0].ip);
+  assert.equal((await mgr.c.get(`/api/employees/${s.emp.id}/logins`)).status, 403);
+  assert.equal((await s.c.get(`/api/employees/${s.emp.id}/logins`)).status, 403);
 });

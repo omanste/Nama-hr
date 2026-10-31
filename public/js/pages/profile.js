@@ -218,6 +218,7 @@ export async function render(el, params, { me, can, opts }) {
       ["education", "specialization", "experience", "languages", "certifications"].map((k) => h("div", null, h("dt", null, t("f_" + k), oneLangTag(e[k])), h("dd", { dir: "auto" }, tx(e[k]) || "—"))),
       ["skills", "main_tasks"].map((k) => h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("f_" + k), oneLangTag(e[k])), h("dd", { dir: "auto", style: { whiteSpace: "pre-line" } }, tx(e[k]) || "—"))))),
     documents(p, e, can, mayUpload, setPhoto),
+    can.edit() && !own ? signIns(e) : null,
     h("section", { class: "card kpi-placeholder" }, h("h2", null, t("sec_kpi")), h("p", null, t("kpi_later"))));
 }
 
@@ -228,6 +229,24 @@ function oneLangTag(v) {
   return other ? h("span", { class: "badge one-lang", title: t("one_lang_hint") }, t(getLang() === "en" ? "only_ar" : "only_en")) : null;
 }
 
+/** A person's recent sign-ins (HR/Admin): time, device, network address and where — loaded when opened. */
+function signIns(e) {
+  const list = h("div", { class: "list" });
+  let loaded = false;
+  const box = h("details", { class: "card signins" }, h("summary", null, h("h2", { style: { display: "inline" } }, t("signins_title"))), list);
+  box.addEventListener("toggle", async () => {
+    if (!box.open || loaded) return; loaded = true;
+    try {
+      const { items } = await api.get(`/api/employees/${e.id}/logins`);
+      const device = (ua) => (/iPhone|iPad/.test(ua) ? "iPhone/iPad" : /Android/.test(ua) ? "Android" : /Windows/.test(ua) ? "Windows" : /Mac OS/.test(ua) ? "Mac" : "—");
+      list.replaceChildren(...(items.length ? items.map((x) => h("div", { class: "item" }, h("div", { class: "grow" },
+        h("div", { class: "title" }, dateTime(x.at)), h("div", { class: "meta" }, device(x.user_agent || ""), " · ", h("span", { dir: "ltr" }, x.ip || "—"))),
+        x.lat !== null ? h("a", { class: "btn small", href: `https://maps.google.com/?q=${x.lat},${x.lng}`, target: "_blank", rel: "noopener", title: x.accuracy_m ? `±${x.accuracy_m} m` : "" }, "🗺 ", t("ci_map"))
+          : h("span", { class: "muted" }, t("signins_no_loc")))) : [h("p", { class: "sub" }, t("signins_none"))]));
+    } catch (er) { list.replaceChildren(h("p", { class: "sub" }, errText(er))); }
+  });
+  return box;
+}
 /** Documents that can be renewed, and when: expired, or expiring within 30 days. */
 const RENEWABLE = ["civil_id", "passport", "visa"];
 function renewButton(e, f, can, mayUpload) {

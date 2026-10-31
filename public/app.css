@@ -452,3 +452,4 @@ th[aria-sort="ascending"] .arrow,th[aria-sort="descending"] .arrow{color:var(--b
 .site-row{padding:12px;margin:0}
 .att-table tr.ci-row td{padding-top:0;border-top:0;font-size:13px}
 .ci-day{display:flex;flex-wrap:wrap;gap:4px 16px}
+.signins summary{cursor:pointer;list-style:revert}
