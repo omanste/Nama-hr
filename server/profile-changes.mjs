@@ -16,6 +16,7 @@ const SOURCES = { contact: ["بيانات الاتصال", "contact details"], q
 /** After a person saved their own profile: keep what changed for HR/Admin to verify. Changes HR or Admin make to others need no review. */
 export function recordSelfChange(ctx, sess, emp, before, after, source) {
   if (!sess.employee || sess.employee.id !== emp.id) return null;
+  if (sess.user.role === "admin") return null; // Admin is the last check: their own changes are saved without a review
   const changes = {};
   for (const k of Object.keys(after)) if (!same(before[k], after[k])) changes[k] = [before[k] ?? null, after[k] ?? null];
   if (!Object.keys(changes).length) return null;

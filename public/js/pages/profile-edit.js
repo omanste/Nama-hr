@@ -5,7 +5,7 @@ import { h, field, select, toast, errText, showFieldError, backLink } from "../u
 
 const STATUSES = ["active", "on_leave", "resigned", "terminated", "disabled"];
 
-export async function render(el, params, { can }) {
+export async function render(el, params, { can, query }) {
   if (!can.edit()) throw { status: 403 };
   const isNew = !params.id;
   const [cur, depts, emps, settings] = await Promise.all([
@@ -24,7 +24,7 @@ export async function render(el, params, { can }) {
   };
   const contractTypes = [...new Set([...(settings.contract_types || []), ...(e.contract_type ? [e.contract_type] : [])])];
   const form = h("form", { class: "form", novalidate: true, onsubmit: (ev) => save(ev, form, isNew, e) },
-    h("section", { class: "card" }, h("h2", null, t("sec_personal")), h("div", { class: "fields" },
+    h("section", { class: "card", id: "sec-personal" }, h("h2", null, t("sec_personal")), h("div", { class: "fields" },
       field(t("f_name_ar"), inp("name_ar", { dir: "rtl" }), { req: true }),
       field(t("f_name_en"), inp("name_en", { dir: "ltr" })),
       field(t("f_emp_no"), inp("emp_no", { dir: "ltr" }), { hint: isNew ? t("f_emp_no_hint") : null }),
@@ -34,14 +34,14 @@ export async function render(el, params, { can }) {
       field(t("f_civil_id"), inp("civil_id", { dir: "ltr", inputmode: "numeric" })),
       field(t("f_civil_id_expiry"), date("civil_id_expiry")),
       field(t("f_passport_no"), inp("passport_no", { dir: "ltr" })), field(t("f_passport_expiry"), date("passport_expiry")), field(t("f_visa_expiry"), date("visa_expiry")))),
-    h("section", { class: "card" }, h("h2", null, t("sec_contact")), h("div", { class: "fields" },
+    h("section", { class: "card", id: "sec-contact" }, h("h2", null, t("sec_contact")), h("div", { class: "fields" },
       field(t("f_mobile"), inp("mobile", { type: "tel", dir: "ltr" })),
       field(t("f_email"), inp("email", { type: "email", dir: "ltr" })),
       field(t("f_address"), inp("address"), { full: true }),
       field(t("f_emergency_name"), inp("emergency_name")),
       field(t("f_emergency_relation"), inp("emergency_relation")),
       field(t("f_emergency_phone"), inp("emergency_phone", { type: "tel", dir: "ltr" })))),
-    h("section", { class: "card" }, h("h2", null, t("sec_job")), h("div", { class: "fields" },
+    h("section", { class: "card", id: "sec-job" }, h("h2", null, t("sec_job")), h("div", { class: "fields" },
       field(t("f_department_id"), select("department_id", [["", "—"], ...depts.items.map((d) => [d.id, nm(d)])], e.department_id)),
       both("job_title"),
       field(t("f_manager_employee_id"), select("manager_employee_id", [["", "—"], ...emps.items.filter((x) => x.id !== e.id).map((x) => [x.id, `${nm(x)} (${x.emp_no})`])], e.manager_employee_id)),
@@ -51,17 +51,23 @@ export async function render(el, params, { can }) {
       field(t("f_shift_locked"), select("shift_locked", [[0, t("shift_by_staff")], [1, t("shift_by_hr")]], e.shift_locked ? 1 : 0), { hint: t("f_shift_locked_hint") }),
       field(t("att_mode"), select("att_mode", [["both", t("att_mode_both")], ["online", t("att_mode_online")], ["machine", t("att_mode_machine")]], e.att_mode || "both")),
       isNew ? field(t("f_opening_days"), h("input", { name: "opening_days", type: "number", min: "0", step: "0.25", inputmode: "decimal" }), { hint: t("f_opening_hint") }) : null)),
-    h("section", { class: "card" }, h("h2", null, t("sec_contract")), h("div", { class: "fields" },
+    h("section", { class: "card", id: "sec-contract" }, h("h2", null, t("sec_contract")), h("div", { class: "fields" },
       field(t("f_contract_type"), select("contract_type", [["", "—"], ...contractTypes.map((c) => [c, tx(c)])], e.contract_type)),
       field(t("f_contract_end"), date("contract_end")))),
-    h("section", { class: "card" }, h("h2", null, t("sec_qualifications")), h("div", { class: "fields" },
+    h("section", { class: "card", id: "sec-qualifications" }, h("h2", null, t("sec_qualifications")), h("div", { class: "fields" },
       h("p", { class: "sub full", style: { margin: 0 } }, t("both_boxes_hint")),
       ["education", "specialization", "experience", "languages"].map((k) => both(k)),
       ["certifications", "skills", "main_tasks"].map((k) => both(k, { long: true })))),
     h("div", { class: "form-actions" },
       h("a", { class: "btn", href: isNew ? "#/staff" : `#/staff/${e.id}` }, t("cancel")),
       h("button", { class: "btn primary", type: "submit" }, t("save"))));
-  el.append(backLink(isNew ? "#/staff" : `#/staff/${e.id}`), h("h1", null, isNew ? t("new_employee") : `${t("edit_employee")} · ${nm(e)}`), form);
+  // opened from my own profile: back (and after saving) to "My profile"
+  const home = isNew ? "#/staff" : (query && query.get("from") === "me") ? "#/me" : `#/staff/${e.id}`;
+  form.dataset.home = home;
+  el.append(backLink(home), h("h1", null, isNew ? t("new_employee") : `${t("edit_employee")} · ${nm(e)}`), form);
+  // ✏️ on a profile section: start at that section
+  const sec = query && query.get("s");
+  if (sec) requestAnimationFrame(() => { const box = el.querySelector(`#sec-${CSS.escape(sec)}`); if (box) { box.scrollIntoView({ block: "start" }); const f = box.querySelector("input,select,textarea"); if (f) f.focus({ preventScroll: true }); } });
 }
 
 async function save(ev, form, isNew, e) {
@@ -77,7 +83,7 @@ async function save(ev, form, isNew, e) {
   try {
     const r = isNew ? await api.post("/api/employees", data) : await api.put(`/api/employees/${e.id}`, data);
     toast(t("saved"));
-    location.hash = `#/staff/${r.employee.id}`;
+    location.hash = isNew ? `#/staff/${r.employee.id}` : form.dataset.home || `#/staff/${r.employee.id}`;
   } catch (er) {
     btn.disabled = false;
     if (!(er.field && showFieldError(form, er.field, errText(er)))) toast(errText(er), "bad");

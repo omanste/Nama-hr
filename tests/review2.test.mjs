@@ -104,3 +104,19 @@ test("the cover created with an approver's own leave can't be deleted while that
 test("settings refuse Ramadan dates in the wrong order", async () => {
   assert.equal((await admin.put("/api/settings", { ramadan_start: "2027-03-09", ramadan_end: "2027-02-08" })).status, 400);
 });
+
+test("Admin on their own record: changes save without a review, and Admin may adjust their own balance", async () => {
+  const boss = await makePerson(t.base, admin, { emp_no: "AD1", name_ar: "مسؤول النظام", join_date: "2020-01-01", opening_days: 10 }, "admin");
+  // contact details: saved, nothing queued for HR
+  assert.equal((await boss.c.put(`/api/employees/${boss.emp.id}/contact`, { mobile: "91234567" })).status, 200);
+  assert.equal(t.db.prepare("SELECT count(*) n FROM profile_changes WHERE employee_id=?").get(boss.emp.id).n, 0);
+  // the full form on their own record
+  assert.equal((await boss.c.put(`/api/employees/${boss.emp.id}`, { job_title: "مدير النظام", nationality: "PS" })).status, 200);
+  assert.equal(t.db.prepare("SELECT nationality FROM employees WHERE id=?").get(boss.emp.id).nationality, "PS");
+  // their own balance
+  assert.equal((await boss.c.post(`/api/employees/${boss.emp.id}/adjust`, { minutes: 480, note: "تصحيح" })).status, 200);
+  // HR still can't, and a staff member's own change is still listed for review
+  assert.equal((await hr.c.post(`/api/employees/${hr.emp.id}/adjust`, { minutes: 480, note: "x" })).status, 403);
+  assert.equal((await man.c.put(`/api/employees/${man.emp.id}/contact`, { mobile: "97654321" })).status, 200);
+  assert.ok(t.db.prepare("SELECT count(*) n FROM profile_changes WHERE employee_id=?").get(man.emp.id).n >= 1);
+});

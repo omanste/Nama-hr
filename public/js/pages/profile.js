@@ -12,6 +12,9 @@ const DOC_TYPES = ["civil_id", "passport", "visa", "resume", "certificate", "cou
 const SELF_DOC_TYPES = ["civil_id", "passport", "visa", "resume", "certificate", "course", "contract", "medical", "other"];
 const DOC_ACCEPT = "application/pdf,image/png,image/jpeg,image/webp";
 
+/** HR/Admin: ✏️ on a profile section opens the full edit form at that section. */
+const editLink = (e, sec, me = false) => h("a", { class: "btn small", href: `#/staff/${e.id}/edit?s=${sec}${me ? "&from=me" : ""}` }, "✏️ ", t("edit"));
+
 async function uploadDoc(e, f, docType, expiry, canEditAll, replaces = null) {
   if (!f) return;
   const qs = new URLSearchParams({ kind: "doc", doc_type: docType, name: f.name || `${docType}.jpg` });
@@ -159,7 +162,7 @@ export async function render(el, params, { me, can, opts }) {
     h("div", { class: "profile-head" }, photo,
       h("div", { class: "grow" }, h("h1", null, nm(e)), h("div", { class: "sub" }, [e.emp_no, tx(e.job_title), nm(p.department)].filter(Boolean).join(" · ")), h("div", { class: "row", style: { marginTop: "6px" } }, badge(e.status, "st_"))),
       h("div", { class: "row" },
-        can.edit() ? h("a", { class: "btn", href: `#/staff/${e.id}/edit` }, t("edit")) : null,
+        can.edit() ? h("a", { class: "btn", href: `#/staff/${e.id}/edit${opts.me ? "?from=me" : ""}` }, t("edit")) : null,
         can.edit() ? h("button", { class: "btn", type: "button", onclick: () => adjustDialog(e) }, t("adjust_balance")) : null,
         can.edit() ? h("button", { class: "btn", type: "button", onclick: () => encashDialog(e, p.files.filter((f) => f.doc_type === "consent")) }, t("encash")) : null,
         // disable (keeps history) / enable; Admin may delete a mistaken record with no history
@@ -186,7 +189,7 @@ export async function render(el, params, { me, can, opts }) {
 
     h("div", { class: "grid cols2" },
       h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_personal")), badgeIfPending(p, "identity"),
-          mayUpload ? h("button", { class: "btn small", type: "button", onclick: () => identityDialog(e) }, t("edit_id_details")) : null), facts([
+          can.edit() ? editLink(e, "personal", !!opts.me) : mayUpload ? h("button", { class: "btn small", type: "button", onclick: () => identityDialog(e) }, t("edit_id_details")) : null), facts([
         ["f_name_ar", e.name_ar], ["f_name_en", e.name_en], ["f_emp_no", e.emp_no], ["f_gender", e.gender ? t("g_" + e.gender) : ""], ["f_nationality", countryName(e.nationality, getLang())], ["f_dob", dmy(e.dob)],
         ["f_civil_id", e.civil_id], ["f_civil_id_expiry", e.civil_id_expiry ? h("span", null, dmy(e.civil_id_expiry), " ", expiryBadge(e.civil_id_expiry)) : null],
         ["f_passport_no", e.passport_no && h("span", { dir: "ltr" }, e.passport_no)], ["f_passport_expiry", e.passport_expiry ? h("span", null, dmy(e.passport_expiry), " ", expiryBadge(e.passport_expiry)) : null],
@@ -200,10 +203,10 @@ export async function render(el, params, { me, can, opts }) {
           ["f_perm_wilayat", wilayatName(e.perm_wilayat)], ["f_current_area", areaName(e.current_area)], ["f_address", e.address]])),
         h("div", { class: "sub-box" }, h("h3", null, t("sec_emergency")), facts([
           ["emergency_person", e.emergency_name], ["f_emergency_relation", e.emergency_relation], ["f_emergency_phone", e.emergency_phone && h("a", { href: `tel:${e.emergency_phone}`, dir: "ltr" }, e.emergency_phone)]]))),
-      h("section", { class: "card" }, h("h2", null, t("sec_job")), facts([
+      h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_job")), can.edit() ? editLink(e, "job", !!opts.me) : null), facts([
         ["f_department_id", nm(p.department)], ["f_job_title", tx(e.job_title)], ["f_manager_employee_id", nm(p.manager)], ["f_join_date", dmy(e.join_date)], ["f_status", t("st_" + e.status)],
         ["f_shift", h("span", null, t(`shift_${[1, 2, 3].includes(e.shift) ? e.shift : 2}_full`), " ", p.shiftSelf ? h("button", { class: "btn small", type: "button", onclick: () => shiftDialog(e) }, t("shift_change")) : null)]])),
-      h("section", { class: "card", style: { gridColumn: "1 / -1" } }, h("h2", null, t("sec_contract")), facts([
+      h("section", { class: "card", style: { gridColumn: "1 / -1" } }, h("div", { class: "card-head" }, h("h2", null, t("sec_contract")), can.edit() ? editLink(e, "contract", !!opts.me) : null), facts([
         ["f_join_date", dmy(e.join_date)], ["probation_end", dmy(p.leave.probationEnd)], ["service_length", serviceLength(e.join_date)],
         ["f_contract_type", tx(e.contract_type)], ["f_contract_end", e.contract_end ? h("span", null, dmy(e.contract_end), " ", expiryBadge(e.contract_end)) : null]]),
         // the login account (and resetting its password) is managed from someone else's profile or Users — not shown in "My profile"

@@ -124,8 +124,9 @@ export function profile(db, sess, emp, today) {
   return out;
 }
 
-/** Nobody changes their own balance or decides their own case. */
+/** Nobody changes their own balance (Admin excepted: there is nobody above them to do it). */
 export function notSelf(sess, emp) {
+  if (sess.user.role === "admin") return;
   if (sess.employee && sess.employee.id === emp.id) throw new HttpError(403, "forbidden", "You can't do this on your own record");
 }
 
