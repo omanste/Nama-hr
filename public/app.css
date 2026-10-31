@@ -439,3 +439,16 @@ th[aria-sort="ascending"] .arrow,th[aria-sort="descending"] .arrow{color:var(--b
 /* calendar day names: one letter on narrow phones */
 .cal-wk .wk-short{display:none}
 @media (max-width:400px){.cal-wk .wk-long{display:none}.cal-wk .wk-short{display:inline}}
+/* online check-in */
+.checkin-card .ci-lines{display:grid;gap:4px;margin:4px 0 12px}
+.checkin-card .ci-btn{width:100%;font-size:17px;padding:14px}
+.checkin-card.is-in{border-color:var(--gold)}
+.ci-video{width:100%;max-height:60vh;border-radius:12px;background:#000;transform:scaleX(-1)}
+.ci-notice{margin:0;padding-inline-start:20px;display:grid;gap:8px}
+.ci-day{display:grid;gap:2px;margin-top:6px;font-size:13px}
+.ci-chip{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ci-chip .linkish,.ci-chip a{text-decoration:none;font-size:15px}
+.sites{display:grid;gap:10px}
+.site-row{padding:12px;margin:0}
+.att-table tr.ci-row td{padding-top:0;border-top:0;font-size:13px}
+.ci-day{display:flex;flex-wrap:wrap;gap:4px 16px}

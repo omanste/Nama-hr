@@ -63,6 +63,7 @@ export async function render(el, _p, { can }) {
         shift_1_start: sh[1].start.value, shift_1_end: sh[1].end.value, shift_2_start: sh[2].start.value, shift_2_end: sh[2].end.value, shift_3_start: sh[3].start.value, shift_3_end: sh[3].end.value,
         ...(attStart.value ? { attendance_start: attStart.value } : {}), shift_self_select: selfShift.value === "1",
         ramadan_start: rStart.value || null, ramadan_end: rEnd.value || null, ramadan_hours: Number(rHours.value) })) }, t("save")))),
+    sitesCard(settings, save),
     h("section", { class: "card" }, h("h2", null, t("official_holidays")),
       hol.el,
       h("div", { class: "row end", style: { marginTop: "12px" } }, h("span", { class: "sub" }, t("holidays_save_hint")), h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", {
@@ -95,4 +96,31 @@ function restoreCard() {
     h("div", { class: "note bad" }, t("restore_warn")),
     h("div", { class: "fields", style: { marginTop: "12px" } }, field(t("restore_file"), file), field(t("restore_type"), word)),
     h("div", { class: "row end", style: { marginTop: "12px" } }, btn), out);
+}
+
+/** Work sites for online check-in (a point and a radius) and the late grace. */
+function sitesCard(settings, save) {
+  const rows = h("div", { class: "sites" });
+  const grace = h("input", { type: "number", min: 0, max: 60, step: 1, value: settings.late_grace_min ?? 15, style: { maxWidth: "120px" } });
+  const row = (s = {}) => {
+    const inp = (k, attrs) => h("input", { name: k, value: s[k] ?? "", ...attrs });
+    const f = { name_ar: inp("name_ar", { dir: "rtl" }), name_en: inp("name_en", { dir: "ltr" }), lat: inp("lat", { inputmode: "decimal", dir: "ltr" }),
+      lng: inp("lng", { inputmode: "decimal", dir: "ltr" }), radius_m: inp("radius_m", { type: "number", min: 30, max: 2000, step: 10, value: s.radius_m ?? 150 }) };
+    const box = h("div", { class: "site-row card" },
+      h("div", { class: "fields" }, field(t("site_name_ar"), f.name_ar), field(t("site_name_en"), f.name_en), field(t("site_lat"), f.lat), field(t("site_lng"), f.lng), field(t("site_radius"), f.radius_m)),
+      h("div", { class: "row", style: { gap: "8px", marginTop: "8px" } },
+        h("button", { class: "btn small", type: "button", onclick: () => navigator.geolocation ? navigator.geolocation.getCurrentPosition(
+          (p) => { f.lat.value = p.coords.latitude.toFixed(6); f.lng.value = p.coords.longitude.toFixed(6); toast(`±${Math.round(p.coords.accuracy)} m`); },
+          () => toast(t("ci_geo_denied"), "bad"), { enableHighAccuracy: true, timeout: 15000 }) : toast(t("ci_no_geo"), "bad") }, t("site_here")),
+        h("button", { class: "btn small", type: "button", onclick: () => f.lat.value && f.lng.value && window.open(`https://maps.google.com/?q=${f.lat.value},${f.lng.value}`, "_blank", "noopener") }, "🗺 ", t("site_map")),
+        h("button", { class: "btn small danger", type: "button", onclick: () => box.remove() }, t("delete"))));
+    box.read = () => ({ id: s.id, name_ar: f.name_ar.value, name_en: f.name_en.value, lat: f.lat.value, lng: f.lng.value, radius_m: Number(f.radius_m.value) });
+    return box;
+  };
+  for (const s of settings.att_sites || []) rows.append(row(s));
+  return h("section", { class: "card" }, h("h2", null, t("att_sites")), h("p", { class: "sub" }, t("att_sites_hint")), rows,
+    h("div", { class: "row", style: { marginTop: "10px" } }, h("button", { class: "btn", type: "button", onclick: () => rows.append(row()) }, "+ ", t("site_add"))),
+    h("div", { class: "fields", style: { marginTop: "14px" } }, field(t("late_grace"), grace, { hint: t("att_policy_note", { n: grace.value }) })),
+    h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", {
+      att_sites: [...rows.children].map((r) => r.read()), late_grace_min: Number(grace.value) })) }, t("save"))));
 }

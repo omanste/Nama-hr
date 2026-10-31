@@ -1,5 +1,7 @@
-/* Attendance (policy 007/2026): HR uploads the fingerprint machine's export; each machine number is linked to a person once.
- * Each working day is measured against the person's shift — late from the first minute (no grace period), leaving early,
+/* Attendance (policy 007/2026): HR uploads the fingerprint machine's export; each machine number is linked to a person once,
+ * and staff can also check in and out online from the portal (server/checkin.mjs) — both are punches here.
+ * Each working day is measured against the person's shift — late only after the grace minutes (Settings, 15 by default;
+ * then counted from the shift start), leaving early,
  * a missing punch (a correction request, never an automatic deduction), absence, leave, external tasks.
  * Nothing here applies a penalty: the sheet and reports inform people, HR and managers. */
 import { tx, nowIso, getSetting, setSetting } from "./db.mjs";
@@ -33,7 +35,7 @@ export function uncovered(from, to, intervals) {
   return left;
 }
 
-/** One day of one person. ctx: {shift, rest, holiday, leave, pending, punches[min], excused[[a,b]], missions[[a,b]], correction:{in,out}|null, covered} */
+/** One day of one person. ctx: {shift, rest, holiday, leave, pending, punches[min], excused[[a,b]], missions[[a,b]], correction:{in,out}|null, covered, grace} */
 export function computeDay(c) {
   const d = { status: "", in: null, out: null, late: 0, early: 0, onSite: 0, missing: null };
   if (!c.covered) return { ...d, status: "no_data" };
@@ -56,7 +58,8 @@ export function computeDay(c) {
     return { ...d, status: c.pending ? "pending" : "absent" };
   }
   const ok = [...c.excused, ...c.missions];
-  if (inn !== null) d.late = uncovered(c.shift.start, Math.min(inn, c.shift.end), ok);
+  // arriving within the grace minutes isn't late; after them, lateness counts from the shift start (09:20 → 20 minutes)
+  if (inn !== null) d.late = inn <= c.shift.start + (c.grace || 0) ? 0 : uncovered(c.shift.start, Math.min(inn, c.shift.end), ok);
   if (out !== null) d.early = uncovered(Math.max(out, c.shift.start), c.shift.end, ok);
   if (inn === null || out === null) return { ...d, status: "missing", missing: inn === null ? "in" : "out" };
   return { ...d, status: "present" };
@@ -75,6 +78,21 @@ export function employeeDays(db, emp, from, to, today) {
       punches.get(k).push(toMin(r.at));
     }
   }
+  // online check-ins (portal): punches too; they cover each day from the person's first one up to today
+  const online = db.prepare("SELECT * FROM att_checkins WHERE employee_id=? AND at>=? AND at<? ORDER BY at, id").all(emp.id, from, addDays(to, 1));
+  const firstOnline = (db.prepare("SELECT min(substr(at,1,10)) d FROM att_checkins WHERE employee_id=?").get(emp.id) || {}).d || null;
+  const sites = new Map(getSetting(db, "att_sites", []).map((s) => [s.id, s]));
+  const byDay = new Map();
+  for (const c of online) {
+    const k = c.at.slice(0, 10);
+    if (!punches.has(k)) punches.set(k, []);
+    punches.get(k).push(toMin(c.at));
+    if (!byDay.has(k)) byDay.set(k, []);
+    const s = c.site_id && sites.get(c.site_id);
+    byDay.get(k).push({ id: c.id, kind: c.kind, time: c.at.slice(11, 16), outside: !!c.outside, reason: c.reason, site_ar: s ? s.name_ar : null, site_en: s ? s.name_en : null,
+      photo_file_id: c.photo_file_id, lat: c.lat, lng: c.lng, accuracy: c.accuracy_m });
+  }
+  const grace = Number(getSetting(db, "late_grace_min", 15)) || 0;
   const reqs = db.prepare("SELECT * FROM leave_requests WHERE employee_id=? AND status IN ('pending','approved') AND start_date<=? AND end_date>=?").all(emp.id, to, from);
   const holidays = new Map(getSetting(db, "official_holidays", []).map((x) => [x.date, x.name]));
   const start = getSetting(db, "attendance_start", null);
@@ -85,9 +103,11 @@ export function employeeDays(db, emp, from, to, today) {
     const approved = on.filter((r) => r.status === "approved");
     const leaveReq = approved.find((r) => !TYPES[r.type].permission && !TYPES[r.type].attendance && r.type !== "comp_day");
     const corr = approved.find((r) => r.type === "correction" && r.hr_class === "confirmed");
-    const covered = !!(dataFrom && dataTo && date >= dataFrom && date <= dataTo && date <= today && (!emp.join_date || date >= emp.join_date));
+    const machine = !!(dataFrom && dataTo && date >= dataFrom && date <= dataTo);
+    const viaPortal = !!(firstOnline && (emp.att_mode || "both") !== "machine" && date >= firstOnline);
+    const covered = (machine || viaPortal) && date <= today && (!emp.join_date || date >= emp.join_date);
     const day = computeDay({
-      shift, covered, rest: isRestDay(date), holiday: holidays.has(date), leave: leaveReq ? leaveReq.type : null,
+      shift, covered, grace, rest: isRestDay(date), holiday: holidays.has(date), leave: leaveReq ? leaveReq.type : null,
       pending: on.some((r) => r.status === "pending" && r.type !== "comp_day"),
       punches: punches.get(date) || [],
       excused: approved.filter((r) => PERMISSION_TYPES.includes(r.type)).map((r) => permissionSpan(r.type, { time: r.early_time, endTime: r.end_time, dayStart: shift.start, dayEnd: shift.end })),
@@ -98,6 +118,7 @@ export function employeeDays(db, emp, from, to, today) {
     day.shift = { no: shift.no, start: shift.start, end: shift.end, ramadan: shift.ramadan };
     day.info = !start || date < start; // before the policy applies: for information only (§17)
     if (holidays.has(date)) day.holiday = holidays.get(date);
+    if (byDay.has(date)) day.checkins = byDay.get(date);
     day.requests = on.map((r) => ({ id: r.id, type: r.type, status: r.status, hr_class: r.hr_class }));
     // the correction waits on the manager or HR
     const pc = on.find((r) => r.type === "correction" && (r.status === "pending" || !r.hr_class));
@@ -109,7 +130,7 @@ export function employeeDays(db, emp, from, to, today) {
 
 /** Totals over days (policy §18: approved leave and tasks are left out of the compliance rate). */
 export function summarize(days) {
-  const s = { workDays: 0, present: 0, onTime: 0, late: 0, lateMin: 0, early: 0, earlyMin: 0, missing: 0, absent: 0, pending: 0, leave: 0, mission: 0, restWorked: 0, onSite: 0, onSiteDays: 0, compliance: null };
+  const s = { outside: 0, workDays: 0, present: 0, onTime: 0, late: 0, lateMin: 0, early: 0, earlyMin: 0, missing: 0, absent: 0, pending: 0, leave: 0, mission: 0, restWorked: 0, onSite: 0, onSiteDays: 0, compliance: null };
   for (const d of days) {
     if (["rest_worked", "holiday_worked"].includes(d.status)) s.restWorked++;
     if (d.status === "leave") s.leave++;
@@ -125,6 +146,7 @@ export function summarize(days) {
     if (d.status === "absent") s.absent++;
     if (d.status === "pending") s.pending++;
     if (d.onSite) { s.onSite += d.onSite; s.onSiteDays++; }
+    if (d.checkins && d.checkins.some((c) => c.outside)) s.outside++; // a day with an online check-in outside the work sites
   }
   s.compliance = s.workDays ? Math.round((s.onTime / s.workDays) * 1000) / 10 : null;
   return s;
@@ -295,7 +317,8 @@ export function registerAttendance(api, ctx) {
     const { days, dataFrom, dataTo } = employeeDays(db, emp, from, to, today);
     const review = db.prepare("SELECT r.*, u.username FROM att_reviews r LEFT JOIN users u ON u.id=r.user_id WHERE r.employee_id=? AND r.month=?").get(emp.id, month) || null;
     const linked = db.prepare("SELECT machine_no FROM att_devices WHERE employee_id=? AND ignored=0").all(emp.id).map((r) => r.machine_no);
-    send(req, res, 200, { employee: { id: emp.id, emp_no: emp.emp_no, name_ar: emp.name_ar, name_en: emp.name_en, shift: emp.shift, join_date: emp.join_date },
+    send(req, res, 200, { employee: { id: emp.id, emp_no: emp.emp_no, name_ar: emp.name_ar, name_en: emp.name_en, shift: emp.shift, join_date: emp.join_date, att_mode: emp.att_mode || "both" },
+      grace: Number(getSetting(db, "late_grace_min", 15)) || 0,
       month, days, summary: summarize(days), review, linked, dataFrom, dataTo, start: getSetting(db, "attendance_start", null),
       own: !!(req.sess.employee && req.sess.employee.id === emp.id), exempt: attendanceExempt(db).includes(emp.id) });
   });
@@ -334,8 +357,8 @@ export function registerAttendance(api, ctx) {
     const r = attendanceReport(db, sess, from, to, today, Number(req.query.get("department_id") || 0));
     if (req.query.get("format") === "csv") {
       const h = (m) => (m / 60).toFixed(1);
-      const head = ["Work days", "On time", "Compliance %", "Late (times)", "Late (hours)", "Left early (times)", "Left early (hours)", "Missing punch", "Absent (unexcused)", "Absence pending a request", "Leave days", "External task days", "Worked on a rest day"];
-      const vals = (s) => [s.workDays, s.onTime, s.compliance ?? "", s.late, h(s.lateMin), s.early, h(s.earlyMin), s.missing, s.absent, s.pending, s.leave, s.mission, s.restWorked];
+      const head = ["Work days", "On time", "Compliance %", "Late (times)", "Late (hours)", "Left early (times)", "Left early (hours)", "Missing punch", "Absent (unexcused)", "Absence pending a request", "Leave days", "External task days", "Worked on a rest day", "Outside work sites (days)"];
+      const vals = (s) => [s.workDays, s.onTime, s.compliance ?? "", s.late, h(s.lateMin), s.early, h(s.earlyMin), s.missing, s.absent, s.pending, s.leave, s.mission, s.restWorked, s.outside || 0];
       const lines = [["Department", "Staff", ...head].join(",")];
       for (const d of r.departments) lines.push([d.name_en || d.name_ar || "—", d.staff, ...vals(d)].join(","));
       if (r.people.length) {

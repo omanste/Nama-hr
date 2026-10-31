@@ -24,6 +24,8 @@ export async function startServer({ dataDir, port = 3000, env = process.env } = 
   // tests may pin "today" (APP_ENV=test only); everyone else uses the Muscat calendar date
   ctx.fakeToday = ctx.appEnv === "test" ? env.FAKE_TODAY || null : null;
   ctx.today = () => ctx.fakeToday || todayMuscat();
+  // the time of day in Muscat, "HH:MM" (tests may pin it through ctx.fakeClock)
+  ctx.clock = () => ctx.fakeClock || new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Muscat", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
   const api = router();
   api.get("/api/health", (req, res) => send(req, res, 200, { ok: true, env: ctx.appEnv }));
   await registerModules(api, ctx);
@@ -46,7 +48,7 @@ export async function startServer({ dataDir, port = 3000, env = process.env } = 
       if (req.method !== "GET" && req.method !== "HEAD") return fail(req, res, 405, "method_not_allowed");
       return await serveStatic(req, res);
     } catch (e) {
-      if (e instanceof HttpError) return send(req, res, e.status, { error: e.code, message: e.message, ...(e.field ? { field: e.field } : {}) });
+      if (e instanceof HttpError) return send(req, res, e.status, { error: e.code, message: e.message, ...(e.field ? { field: e.field } : {}), ...(e.extra || {}) });
       console.error(e);
       if (!res.headersSent) fail(req, res, 500, "server_error", "Unexpected server error");
     }

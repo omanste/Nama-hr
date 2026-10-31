@@ -11,7 +11,7 @@ test("a full backup from one portal restores into another: staff, settings, atte
   const admin = await adminClient(a.base);
   const s = await makePerson(a.base, admin, { emp_no: "NAMA-025", name_ar: "نبراس", name_en: "Test Person", join_date: "2022-01-10", shift: 3 }, "hr");
   await admin.put("/api/settings", { attendance_start: "2026-11-01" });
-  await admin.post("/api/attendance/upload", { name: "x.xls", punches: [{ no: "35", name: "X", at: "2026-10-26 10:02" }, { no: "35", name: "X", at: "2026-10-26 17:00" }] });
+  await admin.post("/api/attendance/upload", { name: "x.xls", punches: [{ no: "35", name: "X", at: "2026-10-26 10:20" }, { no: "35", name: "X", at: "2026-10-26 17:00" }] });
   await admin.put("/api/attendance/devices/35", { employee_id: s.emp.id });
   const photo = Buffer.from("fake photo bytes");
   const f = await s.c.upload(`/api/employees/${s.emp.id}/files?name=p.jpg&doc_type=other`, photo, "image/jpeg");
@@ -37,7 +37,7 @@ test("a full backup from one portal restores into another: staff, settings, atte
   assert.equal(p.employee.name_ar, "نبراس"); assert.equal(p.employee.shift, 3);
   assert.equal((await again.get("/api/settings")).data.attendance_start, "2026-11-01");
   const day = (await again.get(`/api/attendance/employee/${s.emp.id}?month=2026-10`)).data.days.find((x) => x.date === "2026-10-26");
-  assert.deepEqual([day.status, day.late], ["present", 2]);
+  assert.deepEqual([day.status, day.late], ["present", 20]);
   const doc = await fetch(`${b.base}/api/files/${f.data.file.id}`, { headers: { cookie: again.cookie } });
   assert.equal(doc.status, 200); assert.deepEqual(Buffer.from(await doc.arrayBuffer()), photo);
   const users = (await again.get("/api/users")).data.items.map((u) => u.username);

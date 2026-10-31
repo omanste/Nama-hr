@@ -101,9 +101,9 @@ test("the monthly sheet: each day against the person's own shift", async () => {
   assert.equal(d["2026-10-23"].status, "no_data", "before this person's first punch");
   assert.equal(r.summary.late, 1); assert.equal(r.summary.lateMin, 30); assert.equal(r.summary.missing, 1); assert.equal(r.summary.absent, 1);
   assert.equal(r.summary.workDays, 4); assert.equal(r.summary.onTime, 1); assert.equal(r.summary.compliance, 25);
-  // shift 1 starts at 08:30: 08:45 is 15 minutes late
+  // shift 1 starts at 08:30: 08:45 is inside the 15-minute grace, so on time
   const j = (await mgr.c.get(`/api/attendance/employee/${other.emp.id}?month=2026-10`)).data;
-  assert.equal(j.days.find((x) => x.date === "2026-10-25").late, 15);
+  assert.equal(j.days.find((x) => x.date === "2026-10-25").late, 0);
   assert.equal(j.days.find((x) => x.date === "2026-10-28").late, 0);
   // who may see it: the person, their manager, HR — not a colleague, not the CEO
   assert.equal((await other.c.get(`/api/attendance/employee/${s.emp.id}`)).status, 403);
@@ -163,7 +163,7 @@ test("weekly report: by department without names for the CEO; HR and the manager
   const c = (await ceo.c.get(`/api/attendance/report?${q}`)).data;
   assert.equal(c.people.length, 0);
   const sales = c.departments.find((x) => x.name_en === "Sales");
-  assert.equal(sales.staff, 2); assert.equal(sales.late, 2); assert.equal(sales.lateMin, 45);
+  assert.equal(sales.staff, 2); assert.equal(sales.late, 1); assert.equal(sales.lateMin, 30); // 08:45 on an 08:30 shift is within the grace
   assert.equal(sales.mission, 1);
   const h = (await hr.c.get(`/api/attendance/report?${q}`)).data;
   assert.ok(h.people.some((p) => p.employee.id === s.emp.id));

@@ -15,6 +15,7 @@ import { registerAttendance } from "./attendance.mjs";
 import { registerBackup } from "./backup.mjs";
 import { registerProfileChanges } from "./profile-changes.mjs";
 
+import { registerCheckin } from "./checkin.mjs";
 export async function registerModules(api, ctx) {
   registerAuth(api, ctx);
   registerEmployees(api, ctx);
@@ -30,6 +31,7 @@ export async function registerModules(api, ctx) {
   registerVoice(api, ctx);
   registerCalendar(api, ctx);
   registerAttendance(api, ctx);
+  registerCheckin(api, ctx);
   registerBackup(api, ctx);
   registerProfileChanges(api, ctx);
 }

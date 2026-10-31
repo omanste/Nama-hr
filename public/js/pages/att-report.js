@@ -26,9 +26,9 @@ export async function render(el, _p, { me, can, query }) {
   const out = h("div"), queue = h("div");
   const csv = h("a", { class: "btn", href: "#" }, "⬇ ", t("download_excel"));
 
-  const head = [t("att_work_days"), t("att_compliance"), t("att_late"), t("att_early"), t("att_missing"), t("att_absent"), t("att_pending_abs"), t("att_leave_days"), t("att_mission_days")];
+  const head = [t("att_work_days"), t("att_compliance"), t("att_late"), t("att_early"), t("att_missing"), t("att_absent"), t("att_pending_abs"), t("att_leave_days"), t("att_mission_days"), t("ci_outside")];
   const cells = (s) => [num(s.workDays), pct(s.compliance), s.late ? `${num(s.late)} · ${durText(s.lateMin)}` : "—", s.early ? `${num(s.early)} · ${durText(s.earlyMin)}` : "—",
-    num(s.missing), num(s.absent), num(s.pending), num(s.leave), num(s.mission)].map((v) => h("td", { class: "num" }, v));
+    num(s.missing), num(s.absent), num(s.pending), num(s.leave), num(s.mission), num(s.outside || 0)].map((v) => h("td", { class: "num" }, v));
 
   async function load() {
     const qs = new URLSearchParams({ from: from.value, to: to.value });

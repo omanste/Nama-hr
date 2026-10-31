@@ -1,6 +1,7 @@
 import { api } from "../api.js";
 import { t, nm, tx } from "../i18n.js";
 import { leaveSections } from "./profile.js";
+import { checkinCard } from "../checkin.js";
 import { h, num, daysOf, daysText, dmy, badge, when, amountText, empty, todayIso, avatar, pager } from "../ui.js";
 
 export const balanceHero = (leave, { apply = true } = {}) => h("section", { class: "card hero", "aria-label": t("bal_available") },
@@ -25,6 +26,8 @@ export const requestItem = (r, showName = false) => h("a", { class: "item", href
 export async function render(el, _p, { me, can }) {
   el.append(h("h1", null, t("hello", { name: nm(me.employee) || me.user.username })));
   const jobs = [];
+  // online check-in / check-out: first, it's the day's first thing to do
+  if (me.employee && !me.attendanceExempt) jobs.push(checkinCard());
   // colleagues' birthdays in the next 5 days (never your own) — so the team can prepare a surprise
   jobs.push(api.get("/api/birthdays/upcoming").then(({ items }) => {
     if (!items.length) return null;
@@ -87,5 +90,5 @@ export async function render(el, _p, { me, can }) {
       return h("div", { class: "grid" }, h("div", { class: "grid tiles home-tiles" }, tileBtn("approvals", appr.items.length, t("pending_approvals"), appr.items.length ? "warn" : "")), panel);
     }));
   }
-  for (const node of await Promise.all(jobs)) el.append(node);
+  for (const node of await Promise.all(jobs)) if (node) el.append(node);
 }

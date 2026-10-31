@@ -13,6 +13,7 @@ import { deputyOf } from "./requests.mjs";
 import { readDocument, readPdf } from "./idread.mjs";
 import { toArabicName, completeArabicName } from "./names-ar.mjs";
 import { canReadVoice } from "./voice.mjs";
+import { canSeeAttendance } from "./attendance.mjs";
 import { runExpiryCheck } from "./jobs.mjs";
 import { recordSelfChange } from "./profile-changes.mjs";
 import { cleanEmployee } from "./employees.mjs";
@@ -31,15 +32,16 @@ export const SELF_DOC_TYPES = ["civil_id", "passport", "visa", "resume", "certif
 /** Store an uploaded body; returns the files row. Caller checks permissions. */
 export async function storeUpload(ctx, req, { employeeId, requestId = null, voiceId = null, kind = "doc" }) {
   const mime = String(req.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
-  if (!(kind === "photo" ? IMAGES : DOCS).includes(mime)) throw new HttpError(415, "unsupported_type", kind === "photo" ? "Photo must be JPG, PNG or WebP" : "Only PDF, JPG, PNG or WebP files are accepted");
+  const image = kind === "photo" || kind === "checkin";
+  if (!(image ? IMAGES : DOCS).includes(mime)) throw new HttpError(415, "unsupported_type", image ? "Photo must be JPG, PNG or WebP" : "Only PDF, JPG, PNG or WebP files are accepted");
   const body = await readBody(req, MAX_FILE);
   if (!body.length) throw new HttpError(400, "empty_file", "The file is empty");
   const q = req.query;
-  const docType = q.get("doc_type") || (kind === "photo" ? null : "other");
+  const docType = image ? null : q.get("doc_type") || "other";
   if (docType && !DOC_TYPES.includes(docType)) throw new HttpError(400, "invalid", "unknown document type");
   const expiry = q.get("expiry") || null;
   if (expiry && !isIsoDate(expiry)) throw new HttpError(400, "invalid", "expiry must be a valid date");
-  const name = String(q.get("name") || (kind === "photo" ? "photo" : "document")).replace(/[\\/\r\n"]/g, "_").slice(0, 120);
+  const name = String(q.get("name") || (image ? "photo" : "document")).replace(/[\\/\r\n"]/g, "_").slice(0, 120);
   const { db } = ctx;
   const r = db.prepare("INSERT INTO files(employee_id,request_id,voice_id,kind,doc_type,name,mime,size,expiry,note,uploaded_by,uploaded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)")
     .run(employeeId, requestId, voiceId, kind, docType, name, mime, body.length, expiry, (q.get("note") || "").slice(0, 300) || null, req.sess.user.id, nowIso());
@@ -205,6 +207,8 @@ export function registerFiles(api, ctx) {
     if (f.voice_id) { // Staff Voice attachments: only the people who can read the message
       const m = db.prepare("SELECT * FROM voice_messages WHERE id=?").get(f.voice_id);
       if (!m || !canReadVoice(req.sess, m)) throw forbidden();
+    } else if (f.kind === "checkin") { // a check-in photo: the person, HR/Admin and their manager — like their attendance
+      if (!canSeeAttendance(db, req.sess, emp)) throw forbidden();
     } else if (!approverOfRequest && !canViewEmployee(db, req.sess, emp)) throw forbidden();
     if (f.archived_at && !["hr", "admin"].includes(req.sess.user.role)) throw new HttpError(404, "not_found", "File not found"); // an old, replaced copy
     if (req.sess.user.role === "consultant" && f.kind !== "photo" && f.employee_id !== req.sess.user.employee_id && !f.request_id && !f.voice_id) throw forbidden(); // a consultant sees no one's papers

@@ -54,6 +54,9 @@ export function readSettings(db) {
     managers_approver_title: getSetting(db, "managers_approver_title", "ceo"),
     chairman_employee_id: getSetting(db, "chairman_employee_id", null),
     ceo_final_types: getSetting(db, "ceo_final_types", DEFAULT_CEO_FINAL),
+    // online check-in: the work sites (a point and a radius) and the minutes of grace before someone counts as late
+    att_sites: getSetting(db, "att_sites", []),
+    late_grace_min: getSetting(db, "late_grace_min", 15),
     contract_types: getSetting(db, "contract_types", DEFAULT_CONTRACT_TYPES),
     shift_1_start: S[1].start, shift_1_end: S[1].end, shift_2_start: S[2].start, shift_2_end: S[2].end, shift_3_start: S[3].start, shift_3_end: S[3].end,
     ramadan_start: getSetting(db, "ramadan_start", null),
@@ -122,7 +125,7 @@ export function registerAdmin(api, ctx) {
   api.put("/api/settings", async (req, res) => {
     need(req.sess, "settings.edit");
     const b = await readJson(req);
-    const allowed = ["managers_approver_employee_id", "managers_approver_title", "chairman_employee_id", "ceo_final_types", "contract_types", "shift_1_start", "shift_1_end", "shift_2_start", "shift_2_end", "shift_3_start", "shift_3_end", "ramadan_start", "ramadan_end", "ramadan_hours", "attendance_start", "shift_self_select", "official_holidays"];
+    const allowed = ["managers_approver_employee_id", "managers_approver_title", "chairman_employee_id", "ceo_final_types", "att_sites", "late_grace_min", "contract_types", "shift_1_start", "shift_1_end", "shift_2_start", "shift_2_end", "shift_3_start", "shift_3_end", "ramadan_start", "ramadan_end", "ramadan_hours", "attendance_start", "shift_self_select", "official_holidays"];
     if ("official_holidays" in b) {
       if (!Array.isArray(b.official_holidays) || !b.official_holidays.every((x) => x && isIsoDate(x.date))) throw invalid("official_holidays", "each holiday needs a valid date");
       b.official_holidays = b.official_holidays.map((x) => ({ date: x.date, name: String(x.name || "").trim().slice(0, 80) })).sort((x, y) => (x.date < y.date ? -1 : 1));
@@ -146,6 +149,19 @@ export function registerAdmin(api, ctx) {
     if ("managers_approver_employee_id" in b && b.managers_approver_employee_id !== null && !getEmployee(db, b.managers_approver_employee_id)) throw invalid("managers_approver_employee_id", "unknown employee");
     if ("managers_approver_title" in b && !["ceo", "chairman"].includes(b.managers_approver_title)) throw invalid("managers_approver_title", "title must be ceo or chairman");
     if ("chairman_employee_id" in b && b.chairman_employee_id !== null && !getEmployee(db, b.chairman_employee_id)) throw invalid("chairman_employee_id", "unknown employee");
+    if ("late_grace_min" in b && !(Number.isInteger(b.late_grace_min) && b.late_grace_min >= 0 && b.late_grace_min <= 60)) throw invalid("late_grace_min", "grace must be 0–60 minutes");
+    if ("att_sites" in b) {
+      if (!Array.isArray(b.att_sites) || b.att_sites.length > 50) throw invalid("att_sites", "sites must be a list");
+      b.att_sites = b.att_sites.map((x, i) => {
+        const lat = Number(x && x.lat), lng = Number(x && x.lng), r = Number(x && x.radius_m);
+        const name_ar = String((x && x.name_ar) || "").trim().slice(0, 80), name_en = String((x && x.name_en) || "").trim().slice(0, 80);
+        if (!name_ar && !name_en) throw invalid("att_sites", `site ${i + 1}: a name is needed`);
+        if (!Number.isFinite(lat) || Math.abs(lat) > 90 || !Number.isFinite(lng) || Math.abs(lng) > 180) throw invalid("att_sites", `site ${i + 1}: a valid location is needed`);
+        if (!(Number.isFinite(r) && r >= 30 && r <= 2000)) throw invalid("att_sites", `site ${i + 1}: radius must be 30–2000 m`);
+        const id = /^[a-z0-9-]{4,40}$/.test(String(x.id || "")) ? String(x.id) : `s-${Date.now().toString(36)}-${i}`;
+        return { id, name_ar, name_en, lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6, radius_m: Math.round(r) };
+      });
+    }
     const ceoId = "managers_approver_employee_id" in b ? b.managers_approver_employee_id : getSetting(db, "managers_approver_employee_id", null);
     const chId = "chairman_employee_id" in b ? b.chairman_employee_id : getSetting(db, "chairman_employee_id", null);
     if (ceoId && chId && Number(ceoId) === Number(chId)) throw invalid("chairman_employee_id", "The CEO and the Chairman are two different people");

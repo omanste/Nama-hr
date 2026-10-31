@@ -148,6 +148,13 @@ const MIGRATIONS = [
       ...db.prepare("SELECT employee_id FROM users WHERE role IN ('ceo','chairman','consultant') AND employee_id IS NOT NULL").all().map((u) => u.employee_id)].filter(Boolean);
     for (const id of new Set(ids.map(Number))) db.prepare("UPDATE employees SET department_id=? WHERE id=?").run(dept.id, id);
   },
+  // 28: online check-in / check-out from the portal — the server's time, where (location, nearest work site) and who (a live photo)
+  `CREATE TABLE att_checkins(id INTEGER PRIMARY KEY, employee_id INTEGER NOT NULL REFERENCES employees(id), kind TEXT NOT NULL CHECK(kind IN ('in','out')),
+     at TEXT NOT NULL, lat REAL, lng REAL, accuracy_m REAL, site_id TEXT, outside INTEGER NOT NULL DEFAULT 0, reason TEXT, photo_file_id INTEGER,
+     device_id TEXT, ip TEXT, user_agent TEXT, created_at TEXT NOT NULL);
+   CREATE INDEX ac_emp_at ON att_checkins(employee_id, at);
+   ALTER TABLE employees ADD COLUMN att_mode TEXT NOT NULL DEFAULT 'both' CHECK(att_mode IN ('machine','online','both'));
+   ALTER TABLE users ADD COLUMN checkin_consent_at TEXT;`,
 ];
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */

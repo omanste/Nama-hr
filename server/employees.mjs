@@ -34,7 +34,7 @@ const GONE = ["resigned", "terminated", "disabled"]; // no access to the portal
 const TEXT = ["name_ar", "name_en", "civil_id", "passport_no", "nationality", "mobile", "address", "emergency_name", "emergency_relation", "emergency_phone", "job_title", "contract_type"];
 const DATES = ["civil_id_expiry", "passport_expiry", "visa_expiry", "dob", "join_date", "contract_end"];
 export const LONG = ["education", "specialization", "experience", "languages", "skills", "certifications", "main_tasks"];
-export const FIELDS = ["emp_no", ...TEXT, ...LONG, "email", ...DATES, "department_id", "manager_employee_id", "status", "gender", "shift", "shift_locked", "personal_email", "personal_phone", "perm_wilayat", "current_area", ...BANK];
+export const FIELDS = ["emp_no", ...TEXT, ...LONG, "email", ...DATES, "department_id", "manager_employee_id", "status", "gender", "shift", "shift_locked", "att_mode", "personal_email", "personal_phone", "perm_wilayat", "current_area", ...BANK];
 export const GENDERS = ["male", "female"];
 
 const bad = (field, message) => Object.assign(new HttpError(400, "invalid", message), { field });
@@ -62,6 +62,7 @@ export function cleanEmployee(db, body, cur = null) {
     if (k === "gender" && v !== null && !GENDERS.includes(v)) throw bad(k, "gender must be male or female");
     if (k === "shift") { if (v === null) continue; v = Number(v); if (!SHIFTS.includes(v)) throw bad(k, "shift must be 1, 2 or 3"); }
     if (k === "shift_locked") v = v === true || v === 1 || v === "1" || v === "on" ? 1 : 0;
+    if (k === "att_mode") { if (v === null) v = "both"; if (!["machine", "online", "both"].includes(v)) throw bad(k, "attendance method must be machine, online or both"); }
     if ((k === "name_ar" || k === "name_en") && v === null) v = ""; // names are never NULL, just empty
     if (k === "nationality" && v !== null) v = toCountryCode(v); // stored as a country code, e.g. "OM"
     if (k === "department_id" && v !== null && !db.prepare("SELECT 1 FROM departments WHERE id=?").get(Number(v))) throw bad(k, "unknown department");
@@ -106,7 +107,7 @@ export function profile(db, sess, emp, today) {
   // archived copies (a renewed ID, passport or visa) only for HR and Admin
   const mine = sess.employee && sess.employee.id === emp.id;
   // archived copies (a renewed ID, passport or visa) only for HR and Admin; a consultant sees nobody's documents but their own
-  const files = isConsultant(sess) && !mine ? [] : db.prepare(`SELECT id,kind,doc_type,name,mime,size,expiry,note,uploaded_at,archived_at,replaced_by FROM files WHERE employee_id=? AND request_id IS NULL AND voice_id IS NULL
+  const files = isConsultant(sess) && !mine ? [] : db.prepare(`SELECT id,kind,doc_type,name,mime,size,expiry,note,uploaded_at,archived_at,replaced_by FROM files WHERE employee_id=? AND request_id IS NULL AND voice_id IS NULL AND kind<>'checkin'
     ${["hr", "admin"].includes(sess.user.role) ? "" : "AND archived_at IS NULL"} ORDER BY uploaded_at DESC`).all(emp.id);
   if (isConsultant(sess) && !mine) { emp = { ...emp }; for (const k of PRIVATE) delete emp[k]; }
   const requests = db.prepare("SELECT * FROM leave_requests WHERE employee_id=? ORDER BY start_date DESC, id DESC").all(emp.id);
