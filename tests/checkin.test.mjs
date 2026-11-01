@@ -37,6 +37,25 @@ test("the grace: arriving within 15 minutes is on time; after it, lateness count
   assert.equal(day(540, 1050).early, 30, "left 17:30");
 });
 
+test("online check-ins keep their own label: a check-out minutes after the check-in is still both, never one guessed punch", () => {
+  const day = (o) => computeDay({ shift: { start: 540, end: 1080 }, covered: true, rest: false, holiday: false, leave: null, pending: false, punches: [], excused: [], missions: [], correction: null, grace: 15, ...o });
+  // 14:00 in, 14:05 out (a test): both kept, 5 minutes on site, late and left early — not "check-in missing"
+  const a = day({ onlineIn: 840, onlineOut: 845 });
+  assert.equal(a.status, "present"); assert.equal(a.in, 840); assert.equal(a.out, 845); assert.equal(a.onSite, 5);
+  assert.equal(a.late, 300); assert.equal(a.early, 235);
+  // only an online arrival: the leaving is missing
+  const b = day({ onlineIn: 545 });
+  assert.equal(b.status, "missing"); assert.equal(b.missing, "out"); assert.equal(b.late, 0);
+  // only an online leaving in the morning still counts as the leaving
+  assert.equal(day({ onlineOut: 600 }).missing, "in");
+  // with the machine: the earliest arrival and the latest leaving of both
+  const c = day({ punches: [550, 1000], onlineIn: 545, onlineOut: 1085 });
+  assert.equal(c.in, 545); assert.equal(c.out, 1085); assert.equal(c.early, 0);
+  // a lone afternoon machine punch before the online arrival isn't taken as the leaving
+  const d = day({ punches: [820], onlineIn: 830, onlineOut: 1080 });
+  assert.equal(d.in, 820); assert.equal(d.out, 1080);
+});
+
 test("distance and work sites", () => {
   assert.ok(Math.abs(metres(OFFICE, FAR) - 2500) < 400);
   const sites = [{ id: "s-office", name_en: "Office", ...OFFICE, radius_m: 150 }];

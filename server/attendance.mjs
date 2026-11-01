@@ -35,7 +35,7 @@ export function uncovered(from, to, intervals) {
   return left;
 }
 
-/** One day of one person. ctx: {shift, rest, holiday, leave, pending, punches[min], excused[[a,b]], missions[[a,b]], correction:{in,out}|null, covered, grace} */
+/** One day of one person. ctx: {shift, rest, holiday, leave, pending, punches[min] (machine), onlineIn, onlineOut (labelled check-ins), excused[[a,b]], missions[[a,b]], correction:{in,out}|null, covered, grace} */
 export function computeDay(c) {
   const d = { status: "", in: null, out: null, late: 0, early: 0, onSite: 0, missing: null };
   if (!c.covered) return { ...d, status: "no_data" };
@@ -46,6 +46,14 @@ export function computeDay(c) {
   if (p.length === 1) { // one punch: before the middle of the shift it's the arrival, after it the leaving
     if (p[0] >= (c.shift.start + c.shift.end) / 2) { out = p[0]; inn = null; }
   }
+  // online check-ins say themselves whether they are an arrival or a leaving: never guessed, never merged as a double press
+  const oIn = c.onlineIn ?? null, oOut = c.onlineOut ?? null;
+  if (oIn !== null) {
+    if (inn === null && out !== null && out <= oIn) { inn = out; out = null; } // a lone machine punch before the online arrival was an arrival
+    inn = inn === null ? oIn : Math.min(inn, oIn);
+  }
+  if (oOut !== null) out = out === null ? oOut : Math.max(out, oOut);
+  if (inn !== null && out !== null && out < inn) out = null;
   if (c.correction) { if (c.correction.in !== null) inn = c.correction.in; if (c.correction.out !== null) out = c.correction.out; }
   d.in = inn; d.out = out;
   const any = inn !== null || out !== null;
@@ -88,12 +96,18 @@ export function employeeDays(db, emp, from, to, today, source = "all") {
   const online = db.prepare("SELECT * FROM att_checkins WHERE employee_id=? AND at>=? AND at<? ORDER BY at, id").all(emp.id, from, addDays(to, 1));
   const firstOnline = (db.prepare("SELECT min(substr(at,1,10)) d FROM att_checkins WHERE employee_id=?").get(emp.id) || {}).d || null;
   const sites = new Map(getSetting(db, "att_sites", []).map((s) => [s.id, s]));
-  const byDay = new Map(), waiting = new Set();
+  const byDay = new Map(), waiting = new Set(), labelled = new Map();
   for (const c of online) {
     const k = c.at.slice(0, 10);
     // outside the work sites it counts once the manager approves it; waiting, the day reads "pending", not "absent"
     if (useOnline && c.approval === "pending") waiting.add(k);
-    if (useOnline && c.approval !== "pending" && c.approval !== "rejected") { if (!punches.has(k)) punches.set(k, []); punches.get(k).push(toMin(c.at)); }
+    // counted (inside a site, or approved outside): the day's first arrival and last leaving, by their own label
+    if (useOnline && c.approval !== "pending" && c.approval !== "rejected") {
+      const m = toMin(c.at), o = labelled.get(k) || { in: null, out: null };
+      if (c.kind === "in" && (o.in === null || m < o.in)) o.in = m;
+      if (c.kind === "out" && (o.out === null || m > o.out)) o.out = m;
+      labelled.set(k, o);
+    }
     if (!byDay.has(k)) byDay.set(k, []);
     const s = c.site_id && sites.get(c.site_id);
     byDay.get(k).push({ id: c.id, kind: c.kind, time: c.at.slice(11, 16), outside: !!c.outside, reason: c.reason, site_ar: s ? s.name_ar : null, site_en: s ? s.name_en : null,
@@ -118,6 +132,7 @@ export function employeeDays(db, emp, from, to, today, source = "all") {
       pending: on.some((r) => r.status === "pending" && r.type !== "comp_day") || waiting.has(date),
       waitingCheckin: waiting.has(date),
       punches: punches.get(date) || [],
+      onlineIn: labelled.has(date) ? labelled.get(date).in : null, onlineOut: labelled.has(date) ? labelled.get(date).out : null,
       excused: approved.filter((r) => PERMISSION_TYPES.includes(r.type)).map((r) => permissionSpan(r.type, { time: r.early_time, endTime: r.end_time, dayStart: shift.start, dayEnd: shift.end })),
       missions: approved.filter((r) => r.type === "mission").map((r) => [clockMin(r.early_time), clockMin(r.end_time)]),
       correction: corr ? { in: clockMin(corr.early_time), out: clockMin(corr.end_time) } : null,
