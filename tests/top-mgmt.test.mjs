@@ -60,9 +60,12 @@ test("the CEO and the Chairman see everything and may decide any request — but
   }
 });
 
-test("an exception (special unpaid leave): the manager approves, then the CEO has the final word", async () => {
+test("an exception (special unpaid leave): the manager, then HR, then the CEO has the final word", async () => {
   const r = await staff.c.post("/api/requests", { type: "unpaid", start: "2027-01-03", end: "2027-01-07", reason: "سفر" });
   assert.equal((await mgr.c.post(`/api/requests/${r.data.request.id}/approve`, {})).status, 200);
+  assert.equal((await staff.c.get(`/api/requests/${r.data.request.id}`)).data.request.route_reason, "hr_final");
+  assert.equal((await ceo.c.get("/api/requests?scope=approvals")).data.items.some((x) => x.id === r.data.request.id), false, "not with the CEO yet");
+  assert.equal((await hr.c.post(`/api/requests/${r.data.request.id}/approve`, {})).status, 200);
   let got = (await staff.c.get(`/api/requests/${r.data.request.id}`)).data;
   assert.equal(got.request.status, "pending"); assert.equal(got.request.approver_user_id, ceo.user.id); assert.equal(got.request.route_reason, "ceo_final");
   assert.ok(got.events.some((e) => e.action === "approved_first"));
@@ -71,9 +74,10 @@ test("an exception (special unpaid leave): the manager approves, then the CEO ha
   assert.equal((await ceo.c.post(`/api/requests/${r.data.request.id}/approve`, {})).status, 200);
   got = (await staff.c.get(`/api/requests/${r.data.request.id}`)).data;
   assert.equal(got.request.status, "approved");
-  // annual leave is not an exception (unless chosen in Settings): one approval is enough
+  // annual leave is not an exception (unless chosen in Settings): the manager and HR are enough
   const a = await staff.c.post("/api/requests", { type: "annual", start: "2027-01-10", end: "2027-01-10" });
   await mgr.c.post(`/api/requests/${a.data.request.id}/approve`, {});
+  await hr.c.post(`/api/requests/${a.data.request.id}/approve`, {});
   assert.equal((await staff.c.get(`/api/requests/${a.data.request.id}`)).data.request.status, "approved");
 });
 

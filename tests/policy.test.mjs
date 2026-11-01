@@ -17,7 +17,11 @@ before(async () => {
 });
 after(async () => { await t.close(); });
 const remaining = async (id) => (await hr.c.get(`/api/employees/${id}`)).data.leave.remaining;
-const approve = (id) => mgr.c.post(`/api/requests/${id}/approve`, {});
+// leave: the manager, then HR (the second step)
+const approve = async (id) => {
+  const a = await mgr.c.post(`/api/requests/${id}/approve`, {});
+  return a.status === 200 && a.data.request.status === "pending" && a.data.request.route_reason === "hr_final" ? hr.c.post(`/api/requests/${id}/approve`, {}) : a;
+};
 
 test("official holidays inside annual leave are not deducted", async () => {
   const bad = await admin.put("/api/settings", { official_holidays: [{ date: "2026-11-31", name: "x" }] });

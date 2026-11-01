@@ -120,3 +120,18 @@ test("Admin on their own record: changes save without a review, and Admin may ad
   assert.equal((await man.c.put(`/api/employees/${man.emp.id}/contact`, { mobile: "97654321" })).status, 200);
   assert.ok(t.db.prepare("SELECT count(*) n FROM profile_changes WHERE employee_id=?").get(man.emp.id).n >= 1);
 });
+
+test("HR step: an HR person's own leave goes to top management (final); a department approver who is HR approves in one step", async () => {
+  // HR staff are routed like managers (the managers' approver, else Admin): that approval is final, no HR step
+  const r = (await hr2.c.post("/api/requests", { type: "annual", start: "2027-03-07", end: "2027-03-07" })).data.request;
+  assert.notEqual(r.route_reason, "hr_final");
+  assert.equal((await hr.c.post(`/api/requests/${r.id}/approve`, {})).status, 403, "a colleague in HR can't take the first step");
+  assert.equal((await admin.post(`/api/requests/${r.id}/approve`, {})).data.request.status, "approved");
+  // a department whose approver is in HR: their approval is the HR approval
+  const s2 = await makePerson(t.base, admin, { emp_no: "S9", name_ar: "موظف", join_date: "2020-01-01", opening_days: 10 }, "staff");
+  const dep2 = (await admin.post("/api/departments", { name_ar: "الموارد البشرية" })).data.department;
+  await admin.put(`/api/employees/${s2.emp.id}`, { department_id: dep2.id });
+  await admin.put(`/api/departments/${dep2.id}`, { approver_employee_id: hr.emp.id });
+  const r2 = (await s2.c.post("/api/requests", { type: "annual", start: "2027-03-08", end: "2027-03-08" })).data.request;
+  assert.equal((await hr.c.post(`/api/requests/${r2.id}/approve`, {})).data.request.status, "approved");
+});

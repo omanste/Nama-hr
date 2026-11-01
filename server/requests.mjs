@@ -66,13 +66,17 @@ export function deputyOf(db, approverUserId, date) {
 }
 
 /** May this session approve/reject this request? Never one's own; the stored approver, their deputy while covering, Admin,
- * or top management (the CEO and the Chairman may decide any request). */
+ * top management (the CEO and the Chairman may decide any request), or — at the HR step — any HR account. */
 export function mayDecide(db, sess, r, today) {
   if (sess.employee && sess.employee.id === r.employee_id) return false;
   if (sess.user.role === "admin" || TOP.includes(sess.user.role) || r.approver_user_id === sess.user.id) return true;
+  if (r.route_reason === "hr_final" && sess.user.role === "hr") return true; // the second step: any HR account
   return deputyOf(db, r.approver_user_id, today) === sess.user.id;
 }
 
+/** Leave of every kind goes to HR after the direct manager (permissions and fingerprint corrections already have their own
+ * HR step after approval; external missions are an attendance matter). */
+export const needsHrStep = (type) => !isPermission(type) && !["correction", "mission"].includes(type);
 const hrUsers = (db) => db.prepare("SELECT id FROM users WHERE role='hr' AND active=1").all().map((u) => u.id);
 
 /** Undo whatever a request took from (or added to) the balance — the net per leave year, so it can run more than once. */
@@ -279,7 +283,8 @@ export function registerRequests(api, ctx) {
     else if (scope === "approvals") {
       where.push("r.status='pending'", "r.employee_id<>?"); args.push(sess.employee ? sess.employee.id : -1);
       if (sess.user.role !== "admin") {
-        where.push(`(r.approver_user_id=? OR r.approver_user_id IN (SELECT approver_user_id FROM approver_cover WHERE deputy_user_id=? AND start_date<=? AND end_date>=?))`);
+        where.push(`(r.approver_user_id=? OR r.approver_user_id IN (SELECT approver_user_id FROM approver_cover WHERE deputy_user_id=? AND start_date<=? AND end_date>=?)
+          ${sess.user.role === "hr" ? "OR r.route_reason='hr_final'" : ""})`);
         args.push(sess.user.id, sess.user.id, ctx.today(), ctx.today());
       }
     }
@@ -341,12 +346,30 @@ export function registerRequests(api, ctx) {
         if (action === "approve") {
           if (TYPES[r.type].proof && !db.prepare("SELECT 1 FROM files WHERE request_id=?").get(r.id))
             throw err(409, "proof_required", "Attach the supporting document (e.g. medical certificate) before approval");
-          // an exception to the normal policy (Settings › Top management): after the manager, it goes to the CEO for the final word
+          const final = ["admin", ...TOP].includes(sess.user.role); // Admin, the CEO and the Chairman decide for good
+          // the balance is checked at every step, so a manager isn't asked to pass on what can't be granted
+          if (TYPES[r.type].effect === "deduct") {
+            const available = balanceOf(db, emp.id) - pendingMinutes(db, emp.id, r.id);
+            if (r.minutes > available) throw err(409, "insufficient_balance", `The balance is no longer enough (${fmtDays(available)} days available)`);
+          }
+          // leave: after the direct manager, HR approves (any HR account other than the person themselves). Skipped when the
+          // one approving is already HR, or there is no other HR account.
+          const owner = ownerUser(db, r.employee_id);
+          const otherHr = hrUsers(db).filter((id) => id !== owner && id !== sess.user.id);
+          if (!final && needsHrStep(r.type) && !["hr_final", "ceo_final"].includes(r.route_reason) && sess.user.role !== "hr" && otherHr.length) {
+            db.prepare("UPDATE leave_requests SET approver_user_id=NULL, route_reason='hr_final', first_approved_by=?, first_approved_at=?, decision_comment=coalesce(?,decision_comment) WHERE id=?")
+              .run(sess.user.id, nowIso(), comment || null, r.id);
+            event(db, r.id, "approved_to_hr", sess.user.id, comment);
+            const after = getReq(db, r.id);
+            audit(db, sess.user.id, "request.approve_first", "request", r.id, r, after);
+            return { r: after, emp, toHr: otherHr };
+          }
+          // an exception to the normal policy (Settings › Top management): it then goes to the CEO for the final word
           const ceoEmp = getSetting(db, "managers_approver_employee_id", null);
           const ceoUser = ceoEmp && (db.prepare("SELECT id FROM users WHERE employee_id=? AND active=1").get(ceoEmp) || {}).id;
-          if (getSetting(db, "ceo_final_types", ["unpaid"]).includes(r.type) && !r.first_approved_by && ceoUser && ceoUser !== sess.user.id
-            && r.employee_id !== ceoEmp && !["admin", ...TOP].includes(sess.user.role)) {
-            db.prepare("UPDATE leave_requests SET approver_user_id=?, route_reason='ceo_final', first_approved_by=?, first_approved_at=?, decision_comment=coalesce(?,decision_comment) WHERE id=?")
+          if (getSetting(db, "ceo_final_types", ["unpaid"]).includes(r.type) && r.route_reason !== "ceo_final" && ceoUser && ceoUser !== sess.user.id
+            && r.employee_id !== ceoEmp && !final) {
+            db.prepare("UPDATE leave_requests SET approver_user_id=?, route_reason='ceo_final', first_approved_by=coalesce(first_approved_by,?), first_approved_at=coalesce(first_approved_at,?), decision_comment=coalesce(?,decision_comment) WHERE id=?")
               .run(ceoUser, sess.user.id, nowIso(), comment || null, r.id);
             event(db, r.id, "approved_first", sess.user.id, comment);
             const after = getReq(db, r.id);
@@ -365,7 +388,7 @@ export function registerRequests(api, ctx) {
       } else { // cancel
         if (r.status === "pending") { if (!(isOwner || can(sess, "employee.edit") || sess.user.role === "admin")) throw forbidden(); }
         else if (r.status === "approved") {
-          if (!(sess.user.role === "admin" || r.approver_user_id === sess.user.id)) throw forbidden();
+          if (!(sess.user.role === "admin" || [r.approver_user_id, r.decided_by, r.first_approved_by].includes(sess.user.id))) throw forbidden();
           reverseRequest(db, emp, r.id, ctx.today(), sess.user.id, "Cancelled");
         } else throw err(409, "not_cancellable", "This request cannot be cancelled");
       }
@@ -380,6 +403,11 @@ export function registerRequests(api, ctx) {
     });
     const { r, emp } = out;
     const d = describe(r, emp);
+    if (out.toHr) { // approved by the manager, now with HR
+      notify(ctx, out.toHr, { title_ar: "طلب إجازة بانتظار موافقة الموارد البشرية", title_en: "A leave request awaiting HR approval", body_ar: d.ar, body_en: d.en, link: `#/leave/${r.id}` });
+      notify(ctx, [ownerUser(db, r.employee_id)].filter((id) => id && id !== sess.user.id), { title_ar: "وافق مديرك على طلبك — بانتظار موافقة الموارد البشرية", title_en: "Your manager approved — now with HR", body_ar: d.ar, body_en: d.en, link: `#/leave/${r.id}` });
+      return send(req, res, 200, { request: r });
+    }
     if (out.escalated) { // approved by the manager, now with the CEO
       notify(ctx, [out.escalated], { title_ar: "طلب بانتظار موافقتك النهائية", title_en: "A request awaiting your final approval", body_ar: d.ar, body_en: d.en, link: `#/leave/${r.id}` });
       notify(ctx, [ownerUser(db, r.employee_id)].filter((id) => id && id !== sess.user.id), { title_ar: "وافق المدير على طلبك — بانتظار موافقة الرئيس التنفيذي", title_en: "Your manager approved — now with the CEO", body_ar: d.ar, body_en: d.en, link: `#/leave/${r.id}` });

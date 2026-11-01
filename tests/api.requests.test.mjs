@@ -66,16 +66,33 @@ test("invalid input is refused", async () => {
   assert.equal((await staff.c.post("/api/requests", { type: "annual", start: "2026-01-01", end: "2026-03-05" })).status, 400);
 });
 
-test("HR cannot approve; the department approver can, and the balance drops", async () => {
-  const no = await hr.c.post(`/api/requests/${annualId}/approve`, {});
-  assert.equal(no.status, 403);
+test("leave: the direct manager approves first, then HR gives the final approval and the balance drops", async () => {
+  // HR can't go first
+  assert.equal((await hr.c.post(`/api/requests/${annualId}/approve`, {})).status, 403);
   mails.length = 0;
-  const ok = await tawfiq.c.post(`/api/requests/${annualId}/approve`, { comment: "موافق" });
-  assert.equal(ok.status, 200);
-  assert.equal(ok.data.request.status, "approved");
+  const first = await tawfiq.c.post(`/api/requests/${annualId}/approve`, { comment: "موافق" });
+  assert.equal(first.status, 200);
+  assert.equal(first.data.request.status, "pending"); assert.equal(first.data.request.route_reason, "hr_final");
+  assert.equal(await remaining(hr.c, staff.emp.id), days(10), "nothing taken until HR approves");
+  assert.equal((await tawfiq.c.post(`/api/requests/${annualId}/approve`, {})).status, 403, "the manager's step is done");
+  // it's on HR's Approvals page and counted
+  assert.ok((await hr.c.get("/api/requests?scope=approvals")).data.items.some((x) => x.id === annualId));
+  assert.ok((await hr.c.get("/api/me")).data.pendingApprovals >= 1);
+  assert.ok(mails.some((m) => m.to === "s1@nama.om"), "the person is told it's now with HR");
+  mails.length = 0;
+  const ok = await hr.c.post(`/api/requests/${annualId}/approve`, {});
+  assert.equal(ok.status, 200); assert.equal(ok.data.request.status, "approved");
   assert.equal(await remaining(hr.c, staff.emp.id), days(5));
   assert.ok(mails.some((m) => m.to === "s1@nama.om"));
-  assert.equal((await tawfiq.c.post(`/api/requests/${annualId}/approve`, {})).status, 409);
+  assert.equal((await hr.c.post(`/api/requests/${annualId}/approve`, {})).status, 409);
+});
+
+test("Admin's approval is final: no HR step", async () => {
+  const r = await staff.c.post("/api/requests", { type: "annual", start: "2027-06-01", end: "2027-06-01" });
+  // Admin decides for good: no HR step
+  const a = await admin.post(`/api/requests/${r.data.request.id}/approve`, {});
+  assert.equal(a.data.request.status, "approved");
+  await admin.post(`/api/requests/${r.data.request.id}/cancel`, {});
 });
 
 test("early leave is recorded in hours and does not reduce annual leave", async () => {
@@ -163,6 +180,8 @@ test("worked-on-holiday adds one day once approved and only once per date", asyn
   const r = await staff.c.post("/api/requests", { type: "comp_day", date: "2026-10-24", reason: "معرض" });
   assert.equal(r.status, 201);
   assert.equal((await tawfiq.c.post(`/api/requests/${r.data.request.id}/approve`, {})).status, 200);
+  assert.equal(await remaining(hr.c, staff.emp.id), before, "not yet: HR approves next");
+  assert.equal((await hr.c.post(`/api/requests/${r.data.request.id}/approve`, {})).status, 200);
   assert.equal(await remaining(hr.c, staff.emp.id), before + 480);
   assert.equal((await staff.c.post("/api/requests", { type: "comp_day", date: "2026-10-24" })).data.error, "overlap");
   assert.equal((await staff.c.post("/api/requests", { type: "comp_day", date: "2026-10-30" })).status, 400);
@@ -171,7 +190,7 @@ test("worked-on-holiday adds one day once approved and only once per date", asyn
 test("history records who requested and who decided", async () => {
   const r = await staff.c.get(`/api/requests/${annualId}`);
   const acts = r.data.events.map((e) => e.action);
-  assert.deepEqual(acts, ["submitted", "approved", "cancelled"]);
+  assert.deepEqual(acts, ["submitted", "approved_to_hr", "approved", "cancelled"]);
   assert.equal(r.data.events[1].actor_user_id, tawfiq.user.id);
   assert.ok(r.data.events[1].at);
   assert.equal(r.data.events[1].actor_name, "توفيق");

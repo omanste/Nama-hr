@@ -50,7 +50,7 @@ export const can = {
   viewAll: () => VIEW_ALL.includes(state.me?.user.role),
   edit: () => ["hr", "admin"].includes(state.me?.user.role),
   admin: () => state.me?.user.role === "admin",
-  approve: () => state.me && (state.me.isApprover || ["ceo", "chairman", "admin"].includes(state.me.user.role) || state.me.pendingApprovals > 0),
+  approve: () => state.me && (state.me.isApprover || ["ceo", "chairman", "admin", "hr"].includes(state.me.user.role) || state.me.pendingApprovals > 0),
   staffList: () => can.viewAll() || !!state.me?.isApprover,
 };
 
