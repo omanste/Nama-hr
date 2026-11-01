@@ -23,6 +23,12 @@ export async function render(el, _p, { me, can, query }) {
   const from = h("input", { type: "date", value: f0 }), to = h("input", { type: "date", value: t0 });
   const quick = select("period", [["last_week", t("last_week")], ["this_week", t("this_week")], ["this_month", t("this_month")], ["last_month", t("last_month")], ["custom", t("custom_period")]], query.get("from") ? "custom" : "last_week");
   const dept = depts.length ? select("department_id", [["", `${t("f_department")}: ${t("all")}`], ...depts.map((d) => [d.id, nm(d)])], "") : null;
+  // which punches count: the fingerprint machine, the online check-ins, or both (kept apart while both are on trial)
+  let source = ["machine", "online", "all"].includes(query.get("source")) ? query.get("source") : "all";
+  const srcTabs = h("div", { class: "seg att-src", role: "group", "aria-label": t("att_source") });
+  const drawTabs = () => srcTabs.replaceChildren(...[["all", "att_src_all"], ["machine", "att_src_machine_tab"], ["online", "att_src_online_tab"]].map(([k, key]) =>
+    h("button", { type: "button", "aria-pressed": String(source === k), onclick: () => { source = k; drawTabs(); load(); } }, t(key))));
+  drawTabs();
   const out = h("div"), queue = h("div");
   const csv = h("a", { class: "btn", href: "#" }, "⬇ ", t("download_excel"));
 
@@ -33,12 +39,13 @@ export async function render(el, _p, { me, can, query }) {
   async function load() {
     const qs = new URLSearchParams({ from: from.value, to: to.value });
     if (dept && dept.value) qs.set("department_id", dept.value);
+    if (source !== "all") qs.set("source", source);
     csv.href = `/api/attendance/report?${qs}&format=csv`;
     let r;
     try { r = await api.get(`/api/attendance/report?${qs}`); } catch (e) { clear(out).append(empty(errText(e))); return; }
     const T = r.total;
     clear(out).append(...[
-      h("p", { class: "sub" }, `${dmy(r.from)} – ${dmy(r.to)} · `, t("att_report_note"), r.dataTo ? ` · ${t("att_data_to", { d: dmy(r.dataTo) })}` : ""),
+      h("p", { class: "sub" }, h("b", null, t({ all: "att_src_all_note", machine: "att_src_machine_note", online: "att_src_online_note" }[source])), " · ", `${dmy(r.from)} – ${dmy(r.to)} · `, t("att_report_note"), r.dataTo && source !== "online" ? ` · ${t("att_data_to", { d: dmy(r.dataTo) })}` : ""),
       r.start && r.from < r.start ? h("div", { class: "note", style: { marginBottom: "12px" } }, t("att_info_before", { d: dmy(r.start) })) : null,
       h("div", { class: "grid tiles" },
         h("div", { class: `card tile ${T.compliance !== null && T.compliance < 80 ? "warn" : ""}` }, h("div", { class: "n" }, pct(T.compliance)), h("div", { class: "l" }, t("att_compliance"))),
@@ -55,7 +62,7 @@ export async function render(el, _p, { me, can, query }) {
         h("div", { class: "table-wrap" }, h("table", null,
           h("thead", null, h("tr", null, h("th", null, t("employee")), head.map((x) => h("th", { class: "num" }, x)))),
           h("tbody", null, r.people.map((p) => h("tr", null,
-            h("td", null, h("a", { href: `#/attendance?emp=${p.employee.id}&m=${r.to.slice(0, 7)}` }, nm(p.employee)), h("div", { class: "muted" }, `${p.employee.emp_no} · ${t("shift_" + (p.employee.shift || 2))}`)),
+            h("td", null, h("a", { href: `#/attendance?emp=${p.employee.id}&m=${r.to.slice(0, 7)}${source !== "all" ? `&source=${source}` : ""}` }, nm(p.employee)), h("div", { class: "muted" }, `${p.employee.emp_no} · ${t("shift_" + (p.employee.shift || 2))}`)),
             cells(p))))))) : null].filter(Boolean));
   }
 
@@ -74,6 +81,7 @@ export async function render(el, _p, { me, can, query }) {
   if (dept) dept.addEventListener("change", load);
 
   el.append(pageHead(t("nav_att_report"), h("a", { class: "btn", href: "#/attendance/online" }, "📍 ", t("nav_att_online")), ["hr", "admin", "accounts", "ceo", "chairman"].includes(me.user.role) ? h("a", { class: "btn", href: "#/attendance/allowances" }, "💰 ", t("nav_allowances")) : null, can.edit() ? h("a", { class: "btn", href: "#/attendance/upload" }, "⬆ ", t("nav_att_upload")) : null, csv),
+    srcTabs,
     h("section", { class: "card" }, h("div", { class: "fields" }, field(t("period"), quick), field(t("holiday_from"), from), field(t("holiday_to"), to), dept ? field(t("f_department"), dept) : null)),
     out, queue);
   await Promise.all([load(), loadQueue()]);

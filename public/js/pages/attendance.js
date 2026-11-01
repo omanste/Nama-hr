@@ -39,9 +39,12 @@ export async function render(el, _p, { me, query, can }) {
   const empId = Number(query.get("emp")) || (me.employee && me.employee.id);
   if (!empId) { el.append(empty(t("no_profile"))); return; }
   const month = /^\d{4}-\d{2}$/.test(query.get("m") || "") ? query.get("m") : todayIso().slice(0, 7);
-  const [d, people] = await Promise.all([api.get(`/api/attendance/employee/${empId}?month=${month}`), api.get("/api/attendance/people")]);
+  const source = ["machine", "online"].includes(query.get("source")) ? query.get("source") : "all";
+  const [d, people] = await Promise.all([api.get(`/api/attendance/employee/${empId}?month=${month}${source !== "all" ? `&source=${source}` : ""}`), api.get("/api/attendance/people")]);
   const own = d.own;
-  const go = (m, e = empId) => { location.hash = `#/attendance?${e !== (me.employee && me.employee.id) ? `emp=${e}&` : ""}m=${m}`; };
+  const go = (m, e = empId, src = source) => { location.hash = `#/attendance?${e !== (me.employee && me.employee.id) ? `emp=${e}&` : ""}m=${m}${src !== "all" ? `&source=${src}` : ""}`; };
+  const srcTabs = h("div", { class: "seg att-src", role: "group", "aria-label": t("att_source") }, [["all", "att_src_all"], ["machine", "att_src_machine_tab"], ["online", "att_src_online_tab"]].map(([k, key]) =>
+    h("button", { type: "button", "aria-pressed": String(source === k), onclick: () => go(month, empId, k) }, t(key))));
 
   const monthSel = select("month", Array.from({ length: 12 }, (_, i) => [pad(i + 1), new Intl.DateTimeFormat(loc(), { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2026, i, 1)))]), month.slice(5), { "aria-label": t("month") });
   const y = Number(month.slice(0, 4)), years = []; for (let k = y - 2; k <= y + 1; k++) years.push(k);
@@ -110,6 +113,8 @@ export async function render(el, _p, { me, query, can }) {
       monthSel, yearSel,
       h("button", { class: "btn", type: "button", "aria-label": t("next_month"), onclick: () => go(shiftMonth(month, 1)) }, getLang() === "ar" ? "←" : "→"),
       who),
+    srcTabs,
+    source !== "all" ? h("p", { class: "sub" }, h("b", null, t(source === "machine" ? "att_src_machine_note" : "att_src_online_note"))) : null,
     notes,
     summaryTiles(d.summary),
     h("section", { class: "card", style: { marginTop: "16px" } },

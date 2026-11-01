@@ -66,13 +66,18 @@ export function computeDay(c) {
   return { ...d, status: "present" };
 }
 
+/** Where a day's punches may come from: both (the normal sheet), the fingerprint machine only, or the portal only (online
+ * check-ins) — so the two can be compared while both are on trial. */
+export const SOURCES = ["all", "machine", "online"];
+export const sourceOf = (q) => (SOURCES.includes(q) ? q : "all");
 /** Days of a person between two dates, with what explains each. */
-export function employeeDays(db, emp, from, to, today) {
+export function employeeDays(db, emp, from, to, today, source = "all") {
+  const useMachine = source !== "online", useOnline = source !== "machine";
   const nos = db.prepare("SELECT machine_no, first_date FROM att_devices WHERE employee_id=? AND ignored=0").all(emp.id);
   const dataFrom = nos.map((n) => n.first_date).filter(Boolean).sort()[0] || null;
   const dataTo = db.prepare("SELECT max(to_date) d FROM att_uploads").get().d;
   const punches = new Map();
-  if (nos.length) {
+  if (nos.length && useMachine) {
     for (const r of db.prepare(`SELECT at FROM att_punches WHERE machine_no IN (${nos.map(() => "?").join(",")}) AND at>=? AND at<?`).all(...nos.map((n) => n.machine_no), from, addDays(to, 1))) {
       const k = r.at.slice(0, 10);
       if (!punches.has(k)) punches.set(k, []);
@@ -87,8 +92,8 @@ export function employeeDays(db, emp, from, to, today) {
   for (const c of online) {
     const k = c.at.slice(0, 10);
     // outside the work sites it counts once the manager approves it; waiting, the day reads "pending", not "absent"
-    if (c.approval === "pending") waiting.add(k);
-    if (c.approval !== "pending" && c.approval !== "rejected") { if (!punches.has(k)) punches.set(k, []); punches.get(k).push(toMin(c.at)); }
+    if (useOnline && c.approval === "pending") waiting.add(k);
+    if (useOnline && c.approval !== "pending" && c.approval !== "rejected") { if (!punches.has(k)) punches.set(k, []); punches.get(k).push(toMin(c.at)); }
     if (!byDay.has(k)) byDay.set(k, []);
     const s = c.site_id && sites.get(c.site_id);
     byDay.get(k).push({ id: c.id, kind: c.kind, time: c.at.slice(11, 16), outside: !!c.outside, reason: c.reason, site_ar: s ? s.name_ar : null, site_en: s ? s.name_en : null,
@@ -105,8 +110,8 @@ export function employeeDays(db, emp, from, to, today) {
     const approved = on.filter((r) => r.status === "approved");
     const leaveReq = approved.find((r) => !TYPES[r.type].permission && !TYPES[r.type].attendance && r.type !== "comp_day");
     const corr = approved.find((r) => r.type === "correction" && r.hr_class === "confirmed");
-    const machine = !!(dataFrom && dataTo && date >= dataFrom && date <= dataTo);
-    const viaPortal = !!(firstOnline && (emp.att_mode || "both") !== "machine" && date >= firstOnline);
+    const machine = useMachine && !!(dataFrom && dataTo && date >= dataFrom && date <= dataTo);
+    const viaPortal = useOnline && !!(firstOnline && (emp.att_mode || "both") !== "machine" && date >= firstOnline);
     const covered = (machine || viaPortal) && date <= today && (!emp.join_date || date >= emp.join_date);
     const day = computeDay({
       shift, covered, grace, rest: isRestDay(date), holiday: holidays.has(date), leave: leaveReq ? leaveReq.type : null,
@@ -121,7 +126,7 @@ export function employeeDays(db, emp, from, to, today) {
     day.shift = { no: shift.no, start: shift.start, end: shift.end, ramadan: shift.ramadan };
     day.info = !start || date < start; // before the policy applies: for information only (§17)
     if (holidays.has(date)) day.holiday = holidays.get(date);
-    if (byDay.has(date)) day.checkins = byDay.get(date);
+    if (useOnline && byDay.has(date)) day.checkins = byDay.get(date);
     day.requests = on.map((r) => ({ id: r.id, type: r.type, status: r.status, hr_class: r.hr_class }));
     // the correction waits on the manager or HR
     const pc = on.find((r) => r.type === "correction" && (r.status === "pending" || !r.hr_class));
@@ -201,7 +206,7 @@ export function lastWeek(today) {
 }
 
 /** Department totals (no names, §18) and, for HR or a manager, per person. */
-export function attendanceReport(db, sess, from, to, today, deptId = 0) {
+export function attendanceReport(db, sess, from, to, today, deptId = 0, source = "all") {
   const ex = new Set(attendanceExempt(db));
   const all = db.prepare("SELECT e.*, d.name_ar dept_ar, d.name_en dept_en FROM employees e LEFT JOIN departments d ON d.id=e.department_id WHERE e.status IN ('active','on_leave') ORDER BY e.name_ar").all()
     .filter((e) => (!deptId || e.department_id === deptId) && !ex.has(e.id));
@@ -211,7 +216,7 @@ export function attendanceReport(db, sess, from, to, today, deptId = 0) {
   const people = [];
   for (const e of all) {
     if (mineDepts && !mineDepts.includes(e.department_id)) continue;
-    const { days } = employeeDays(db, e, from, to, today);
+    const { days } = employeeDays(db, e, from, to, today, source);
     const s = summarize(days);
     if (!s.workDays && !s.leave && !s.mission && !s.restWorked) continue; // no data for this person in the period
     const key = e.department_id || 0;
@@ -317,12 +322,13 @@ export function registerAttendance(api, ctx) {
     const month = req.query.get("month") || today.slice(0, 7);
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw err(400, "invalid", "month must be YYYY-MM", "month");
     const from = `${month}-01`, to = lastDayOf(month);
-    const { days, dataFrom, dataTo } = employeeDays(db, emp, from, to, today);
+    const source = sourceOf(req.query.get("source"));
+    const { days, dataFrom, dataTo } = employeeDays(db, emp, from, to, today, source);
     const review = db.prepare("SELECT r.*, u.username FROM att_reviews r LEFT JOIN users u ON u.id=r.user_id WHERE r.employee_id=? AND r.month=?").get(emp.id, month) || null;
     const linked = db.prepare("SELECT machine_no FROM att_devices WHERE employee_id=? AND ignored=0").all(emp.id).map((r) => r.machine_no);
     send(req, res, 200, { employee: { id: emp.id, emp_no: emp.emp_no, name_ar: emp.name_ar, name_en: emp.name_en, shift: emp.shift, join_date: emp.join_date, att_mode: emp.att_mode || "both" },
       grace: Number(getSetting(db, "late_grace_min", 15)) || 0,
-      month, days, summary: summarize(days), review, linked, dataFrom, dataTo, start: getSetting(db, "attendance_start", null),
+      month, source, days, summary: summarize(days), review, linked, dataFrom, dataTo, start: getSetting(db, "attendance_start", null),
       own: !!(req.sess.employee && req.sess.employee.id === emp.id), exempt: attendanceExempt(db).includes(emp.id) });
   });
   // the person confirms they reviewed the month, or notes what is wrong (HR is told)
@@ -357,7 +363,9 @@ export function registerAttendance(api, ctx) {
     if (req.query.get("to")) to = req.query.get("to");
     if (!isIsoDate(from) || !isIsoDate(to) || to < from) throw err(400, "invalid", "Choose a valid period");
     if (addDays(from, 500) < to) throw err(400, "invalid", "At most about 16 months at a time");
-    const r = attendanceReport(db, sess, from, to, today, Number(req.query.get("department_id") || 0));
+    const source = sourceOf(req.query.get("source"));
+    const r = attendanceReport(db, sess, from, to, today, Number(req.query.get("department_id") || 0), source);
+    r.source = source;
     if (req.query.get("format") === "csv") {
       const h = (m) => (m / 60).toFixed(1);
       const head = ["Work days", "On time", "Compliance %", "Late (times)", "Late (hours)", "Left early (times)", "Left early (hours)", "Missing punch", "Absent (unexcused)", "Absence pending a request", "Leave days", "External task days", "Worked on a rest day", "Outside work sites (days)"];
@@ -369,7 +377,7 @@ export function registerAttendance(api, ctx) {
         for (const p of r.people) lines.push([p.employee.emp_no, p.employee.name_ar, p.employee.name_en, p.employee.dept_en || p.employee.dept_ar || "", p.employee.shift, ...vals(p)].map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","));
       }
       return sendRaw(req, res, 200, Buffer.from("﻿" + lines.join("\r\n"), "utf8"), "text/csv; charset=utf-8",
-        { "Content-Disposition": `attachment; filename="attendance-${from}-to-${to}.csv"`, "Cache-Control": "no-store" });
+        { "Content-Disposition": `attachment; filename="attendance${source === "all" ? "" : "-" + (source === "machine" ? "fingerprint" : "online")}-${from}-to-${to}.csv"`, "Cache-Control": "no-store" });
     }
     send(req, res, 200, r);
   });

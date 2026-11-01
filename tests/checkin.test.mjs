@@ -148,6 +148,29 @@ test("the online check-in log: one line per person per day, first in / last out,
   assert.ok(lines.some((l) => l.includes('"S1"') && l.includes('"09:12"') && l.includes("Outside the work sites")));
 });
 
+test("separate reports: fingerprint only, online check-ins only, or both", async () => {
+  const sheet = async (src) => (await mgr.c.get(`/api/attendance/employee/${s.emp.id}?month=2026-11${src ? `&source=${src}` : ""}`)).data;
+  const day = (d) => d.days.find((x) => x.date === "2026-11-02");
+  // online only: the day is counted from the check-ins (in 09:12 within the grace, out 16:40 early)
+  const on = await sheet("online");
+  assert.equal(on.source, "online"); assert.equal(day(on).status, "present"); assert.equal(day(on).early, 80); assert.ok(day(on).checkins);
+  // fingerprint only: no machine data for this person, so nothing is counted and the check-ins aren't shown
+  const fp = await sheet("machine");
+  assert.equal(day(fp).status, "no_data"); assert.equal(day(fp).checkins, undefined);
+  assert.equal(fp.summary.workDays, 0);
+  // both (the default) matches the online view here
+  assert.equal(day(await sheet()).status, "present");
+  // the report: the person appears from the online source, not from the fingerprint one
+  const rep = async (src) => (await hr.c.get(`/api/attendance/report?from=2026-11-01&to=2026-11-02&source=${src}`)).data;
+  const ro = await rep("online"), rm = await rep("machine");
+  assert.equal(ro.source, "online"); assert.ok(ro.people.some((p) => p.employee.id === s.emp.id && p.early === 1));
+  assert.ok(!rm.people.some((p) => p.employee.id === s.emp.id));
+  // an unknown source falls back to both
+  assert.equal((await rep("other")).source, "all");
+  const csv = await hr.c.get("/api/attendance/report?from=2026-11-01&to=2026-11-02&source=online&format=csv");
+  assert.equal(csv.status, 200);
+});
+
 test("not for the CEO (outside the policy) or someone on the fingerprint machine only", async () => {
   assert.equal((await ceo.c.get("/api/attendance/checkin/today")).data.enabled, false);
   assert.equal((await ceo.c.post("/api/attendance/checkin/consent", {})).status, 403);
