@@ -481,6 +481,7 @@ const D = {
   att_in: ["الحضور", "In"], att_out: ["الانصراف", "Out"], att_on_site: ["مدة التواجد", "On site"],
   att_awaiting_hr: ["بانتظار الموارد البشرية", "Awaiting HR"], att_ask_correction: ["طلب تصحيح", "Ask for a correction"],
   as_present: ["حاضر", "Present"], as_missing_in: ["بصمة الحضور ناقصة", "No arrival punch"], as_missing_out: ["بصمة الانصراف ناقصة", "No leaving punch"],
+  as_today: ["اليوم — لم يُسجَّل حضور بعد", "Today — not checked in yet"], as_on_duty: ["في الدوام", "On duty"],
   as_absent: ["غائب", "Absent"], as_pending: ["بانتظار طلب", "Request pending"], as_mission: ["مهمة خارجية", "External task"],
   as_rest: ["راحة أسبوعية", "Weekly rest"], as_rest_worked: ["عمل في يوم راحة", "Worked on a rest day"], as_holiday: ["عطلة رسمية", "Official holiday"],
   as_holiday_worked: ["عمل في عطلة رسمية", "Worked on a holiday"], as_no_data: ["لا توجد بيانات", "No data"],

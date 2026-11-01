@@ -10,7 +10,7 @@ const pad = (n) => String(n).padStart(2, "0");
 const loc = () => (getLang() === "ar" ? "ar-OM-u-nu-latn" : "en-GB");
 const shiftMonth = (m, n) => { const [y, mo] = m.split("-").map(Number); const d = new Date(Date.UTC(y, mo - 1 + n, 1)); return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}`; };
 const weekday = (iso) => new Intl.DateTimeFormat(loc(), { weekday: "short", timeZone: "UTC" }).format(new Date(iso + "T00:00:00Z"));
-const STATUS_CLASS = { present: "b-approved", missing: "b-pending", absent: "b-rejected", pending: "b-pending", leave: "b-on_leave", mission: "b-on_leave", holiday: "b-on_leave", rest: "", rest_worked: "", holiday_worked: "", no_data: "" };
+const STATUS_CLASS = { present: "b-approved", missing: "b-pending", absent: "b-rejected", pending: "b-pending", leave: "b-on_leave", mission: "b-on_leave", holiday: "b-on_leave", rest: "", rest_worked: "", holiday_worked: "", no_data: "", today: "", on_duty: "b-approved" };
 
 /** "Shift 2 · 09:00–18:00" */
 export const shiftText = (sh) => `${t("shift_" + sh.no)} · ${clockText(sh.start)}–${clockText(sh.end)}${sh.ramadan ? ` (${t("ramadan")})` : ""}`;
@@ -83,7 +83,7 @@ export async function render(el, _p, { me, query, can }) {
     };
     const more = cis.length > 2 ? h("details", { class: "ci-more" }, h("summary", null, t("ci_all_n", { n: num(cis.length) })),
       h("div", { class: "ci-day" }, cis.map(checkinChip))) : null;
-    const quiet = ["rest", "holiday", "no_data"].includes(x.status);
+    const quiet = ["rest", "holiday", "no_data", "today"].includes(x.status);
     return h("tr", { class: quiet ? "muted-row" : null },
       h("td", null, h("b", null, dmy(x.date).slice(0, 5)), " ", h("span", { class: "muted" }, weekday(x.date)), x.holiday ? h("div", { class: "muted" }, tx(x.holiday)) : null),
       punchCell(x.in, "in"), punchCell(x.out, "out"),

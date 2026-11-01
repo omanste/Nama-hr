@@ -56,6 +56,18 @@ test("online check-ins keep their own label: a check-out minutes after the check
   assert.equal(d.in, 820); assert.equal(d.out, 1080);
 });
 
+test("today isn't judged before the shift ends: not yet, then on duty; absent or missing only once it's over", () => {
+  const day = (o) => computeDay({ shift: { start: 540, end: 1080 }, covered: true, rest: false, holiday: false, leave: null, pending: false, punches: [], excused: [], missions: [], correction: null, grace: 15, ...o });
+  assert.equal(day({ now: 480 }).status, "today", "07:00, nobody in yet");
+  assert.equal(day({ now: 700 }).status, "today", "11:40, still not called absent");
+  assert.equal(day({ now: 1090 }).status, "absent", "after the shift");
+  const on = day({ now: 700, onlineIn: 570 });
+  assert.equal(on.status, "on_duty"); assert.equal(on.late, 30); assert.equal(on.missing, null);
+  assert.equal(day({ now: 1090, onlineIn: 570 }).status, "missing", "the day is over and no leaving");
+  assert.equal(day({ now: 900, onlineIn: 545, onlineOut: 880 }).status, "present", "left early today: shown at once");
+  assert.equal(day({ now: 600 }).status, "today"); assert.equal(day({}).status, "absent", "past days as before");
+});
+
 test("distance and work sites", () => {
   assert.ok(Math.abs(metres(OFFICE, FAR) - 2500) < 400);
   const sites = [{ id: "s-office", name_en: "Office", ...OFFICE, radius_m: 150 }];
@@ -94,7 +106,8 @@ test("check-out outside every site needs a reason and the manager's approval; it
   const r2 = await ci(s, "out", FAR, "&reason=" + encodeURIComponent("زيارة موقع عميل"));
   assert.equal(r2.status, 201); assert.equal(r2.data.checkin.outside, true); assert.equal(r2.data.checkin.approval, "pending");
   assert.ok((await mgr.c.get("/api/notifications")).data.items.some((n) => /outside the work sites awaiting your approval/.test(n.title_en)));
-  // waiting: the check-out doesn't count yet (the arrival does)
+  // waiting: the check-out doesn't count yet (the arrival does) — read after the shift has ended
+  t.app.ctx.fakeClock = "23:30";
   let day = (await s.c.get(`/api/attendance/employee/${s.emp.id}?month=2026-11`)).data.days.find((x) => x.date === "2026-11-02");
   assert.equal(day.status, "pending", "waiting for the manager, not a missing punch"); assert.equal(day.missing, "out"); assert.equal(day.checkins[1].approval, "pending");
   // who may decide: the manager (or HR/Admin), not a colleague, not the person
@@ -115,6 +128,7 @@ test("a rejected check-in outside the sites doesn't count", async () => {
   const c = await other.c.post("/api/attendance/checkin/consent", {});
   assert.equal(c.status, 200);
   const r = await ci(other, "in", FAR, "&reason=x");
+  t.app.ctx.fakeClock = "23:30"; // the day is over when it is read
   assert.equal((await mgr.c.post(`/api/attendance/checkins/${r.data.checkin.id}/reject`, { note: "ليس في مهمة" })).status, 200);
   const day = (await hr.c.get(`/api/attendance/employee/${other.emp.id}?month=2026-11`)).data.days.find((x) => x.date === "2026-11-02");
   assert.equal(day.in, null); assert.equal(day.checkins[0].approval, "rejected"); assert.equal(day.checkins[0].decision_note, "ليس في مهمة");

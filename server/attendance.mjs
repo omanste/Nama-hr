@@ -61,8 +61,11 @@ export function computeDay(c) {
   if (c.leave) return { ...d, status: "leave", leave: c.leave };
   if (c.holiday) return { ...d, status: any ? "holiday_worked" : "holiday" };
   if (c.rest) return { ...d, status: any ? "rest_worked" : "rest" };
+  // today, before the shift has ended: not judged yet — "not yet" with no punch, "on duty" once arrived and not yet left
+  const open = c.now !== null && c.now !== undefined && c.now < c.shift.end;
   if (!any) {
     if (c.missions.length) return { ...d, status: "mission" };
+    if (open && !c.pending) return { ...d, status: "today" };
     return { ...d, status: c.pending ? "pending" : "absent" };
   }
   const ok = [...c.excused, ...c.missions];
@@ -70,6 +73,7 @@ export function computeDay(c) {
   if (inn !== null) d.late = inn <= c.shift.start + (c.grace || 0) ? 0 : uncovered(c.shift.start, Math.min(inn, c.shift.end), ok);
   if (out !== null) d.early = uncovered(Math.max(out, c.shift.start), c.shift.end, ok);
   // the other punch is an outside-the-sites check-in waiting for the manager: "pending", not "missing"
+  if (open && inn !== null && out === null) return { ...d, status: "on_duty" }; // arrived, the day isn't over: lateness shows, no "missing"
   if (inn === null || out === null) return { ...d, status: c.waitingCheckin ? "pending" : "missing", missing: inn === null ? "in" : "out" };
   return { ...d, status: "present" };
 }
@@ -79,7 +83,7 @@ export function computeDay(c) {
 export const SOURCES = ["all", "machine", "online"];
 export const sourceOf = (q) => (SOURCES.includes(q) ? q : "all");
 /** Days of a person between two dates, with what explains each. */
-export function employeeDays(db, emp, from, to, today, source = "all") {
+export function employeeDays(db, emp, from, to, today, source = "all", nowMin = null) {
   const useMachine = source !== "online", useOnline = source !== "machine";
   const nos = db.prepare("SELECT machine_no, first_date FROM att_devices WHERE employee_id=? AND ignored=0").all(emp.id);
   const dataFrom = nos.map((n) => n.first_date).filter(Boolean).sort()[0] || null;
@@ -131,6 +135,7 @@ export function employeeDays(db, emp, from, to, today, source = "all") {
       shift, covered, grace, rest: isRestDay(date), holiday: holidays.has(date), leave: leaveReq ? leaveReq.type : null,
       pending: on.some((r) => r.status === "pending" && r.type !== "comp_day") || waiting.has(date),
       waitingCheckin: waiting.has(date),
+      now: date === today ? nowMin : null, // today's time: the day isn't judged before its shift ends
       punches: punches.get(date) || [],
       onlineIn: labelled.has(date) ? labelled.get(date).in : null, onlineOut: labelled.has(date) ? labelled.get(date).out : null,
       excused: approved.filter((r) => PERMISSION_TYPES.includes(r.type)).map((r) => permissionSpan(r.type, { time: r.early_time, endTime: r.end_time, dayStart: shift.start, dayEnd: shift.end })),
@@ -158,6 +163,7 @@ export function summarize(days) {
     if (["rest_worked", "holiday_worked"].includes(d.status)) s.restWorked++;
     if (d.status === "leave") s.leave++;
     if (d.status === "mission") s.mission++;
+    if (d.status === "on_duty" && d.late) { s.late++; s.lateMin += d.late; } // today's lateness shows already; the day counts once over
     if (["present", "missing", "absent", "pending"].includes(d.status)) s.workDays++;
     if (d.status === "present" || d.status === "missing") {
       s.present++;
@@ -221,7 +227,7 @@ export function lastWeek(today) {
 }
 
 /** Department totals (no names, §18) and, for HR or a manager, per person. */
-export function attendanceReport(db, sess, from, to, today, deptId = 0, source = "all") {
+export function attendanceReport(db, sess, from, to, today, deptId = 0, source = "all", nowMin = null) {
   const ex = new Set(attendanceExempt(db));
   const all = db.prepare("SELECT e.*, d.name_ar dept_ar, d.name_en dept_en FROM employees e LEFT JOIN departments d ON d.id=e.department_id WHERE e.status IN ('active','on_leave') ORDER BY e.name_ar").all()
     .filter((e) => (!deptId || e.department_id === deptId) && !ex.has(e.id));
@@ -231,7 +237,7 @@ export function attendanceReport(db, sess, from, to, today, deptId = 0, source =
   const people = [];
   for (const e of all) {
     if (mineDepts && !mineDepts.includes(e.department_id)) continue;
-    const { days } = employeeDays(db, e, from, to, today, source);
+    const { days } = employeeDays(db, e, from, to, today, source, nowMin);
     const s = summarize(days);
     if (!s.workDays && !s.leave && !s.mission && !s.restWorked) continue; // no data for this person in the period
     const key = e.department_id || 0;
@@ -338,7 +344,7 @@ export function registerAttendance(api, ctx) {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw err(400, "invalid", "month must be YYYY-MM", "month");
     const from = `${month}-01`, to = lastDayOf(month);
     const source = sourceOf(req.query.get("source"));
-    const { days, dataFrom, dataTo } = employeeDays(db, emp, from, to, today, source);
+    const { days, dataFrom, dataTo } = employeeDays(db, emp, from, to, today, source, clockMin(ctx.clock()));
     const review = db.prepare("SELECT r.*, u.username FROM att_reviews r LEFT JOIN users u ON u.id=r.user_id WHERE r.employee_id=? AND r.month=?").get(emp.id, month) || null;
     const linked = db.prepare("SELECT machine_no FROM att_devices WHERE employee_id=? AND ignored=0").all(emp.id).map((r) => r.machine_no);
     send(req, res, 200, { employee: { id: emp.id, emp_no: emp.emp_no, name_ar: emp.name_ar, name_en: emp.name_en, shift: emp.shift, join_date: emp.join_date, att_mode: emp.att_mode || "both" },
@@ -379,7 +385,7 @@ export function registerAttendance(api, ctx) {
     if (!isIsoDate(from) || !isIsoDate(to) || to < from) throw err(400, "invalid", "Choose a valid period");
     if (addDays(from, 500) < to) throw err(400, "invalid", "At most about 16 months at a time");
     const source = sourceOf(req.query.get("source"));
-    const r = attendanceReport(db, sess, from, to, today, Number(req.query.get("department_id") || 0), source);
+    const r = attendanceReport(db, sess, from, to, today, Number(req.query.get("department_id") || 0), source, clockMin(ctx.clock()));
     r.source = source;
     if (req.query.get("format") === "csv") {
       const h = (m) => (m / 60).toFixed(1);
