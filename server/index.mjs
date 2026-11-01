@@ -29,7 +29,7 @@ export async function startServer({ dataDir, port = 3000, env = process.env } = 
   const api = router();
   api.get("/api/health", (req, res) => send(req, res, 200, { ok: true, env: ctx.appEnv }));
   await registerModules(api, ctx);
-  const serveStatic = makeStatic(path.join(ROOT, "public"));
+  const serveStatic = makeStatic(path.join(ROOT, "public"), { watch: (env.APP_ENV || "") === "test" || !!env.STATIC_WATCH });
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://x");

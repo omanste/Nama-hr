@@ -211,10 +211,25 @@ export function tx(db, fn) {
 
 export const nowIso = () => new Date().toISOString();
 
+/* Settings are read very often (a monthly report reads the shift times for every person and day), so the stored text is
+ * kept in memory for a moment: cleared at once when a setting is saved here, and at most 2 seconds old otherwise (a
+ * restore from backup writes the table directly). A fresh copy of the value is returned each time. */
+const settingsCache = new WeakMap();
+const SETTINGS_TTL = 2000;
+function settingsOf(db) {
+  let c = settingsCache.get(db);
+  if (!c || Date.now() - c.at > SETTINGS_TTL) {
+    c = { at: Date.now(), map: new Map(db.prepare("SELECT key, value FROM settings").all().map((r) => [r.key, r.value])) };
+    settingsCache.set(db, c);
+  }
+  return c.map;
+}
 export function getSetting(db, key, fallback = null) {
-  const r = db.prepare("SELECT value FROM settings WHERE key=?").get(key);
-  return r ? JSON.parse(r.value) : fallback;
+  const v = settingsOf(db).get(key);
+  return v === undefined ? fallback : JSON.parse(v);
 }
 export function setSetting(db, key, value) {
   db.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key, JSON.stringify(value));
+  settingsCache.delete(db);
 }
+export const clearSettingsCache = (db) => settingsCache.delete(db);

@@ -5,7 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { openDb, nowIso } from "./db.mjs";
+import { openDb, nowIso, clearSettingsCache } from "./db.mjs";
 import { sendRaw, send, readBody, HttpError } from "./http.mjs";
 import { can } from "./perm.mjs";
 import { audit } from "./audit.mjs";
@@ -66,6 +66,7 @@ export function restoreFrom(ctx, buffer) {
         db.exec("DELETE FROM main.sessions");
         if (db.prepare("PRAGMA main.foreign_key_check").all().length) throw new HttpError(400, "invalid", "The backup's records don't fit together");
         db.exec("COMMIT");
+        clearSettingsCache(db); // the restored settings, at once
       } catch (e) { db.exec("ROLLBACK"); throw e; }
       // documents and photos
       const up = path.join(ctx.dataDir, "uploads");
