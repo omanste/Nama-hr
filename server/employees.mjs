@@ -13,6 +13,7 @@ import { permissionSummary } from "./permissions.mjs";
 import { rerouteFallbacks } from "./requests.mjs";
 import { SHIFTS, SELF_SHIFTS } from "./shifts.mjs";
 import { recordSelfChange, pendingChangesOf } from "./profile-changes.mjs";
+import { removeUpload } from "./files.mjs";
 
 const CONTACT = ["mobile", "personal_phone", "personal_email", "perm_wilayat", "current_area", "address", "emergency_name", "emergency_relation", "emergency_phone"];
 const BANK = ["bank_name", "bank_account", "bank_iban"];
@@ -343,7 +344,7 @@ export function registerEmployees(api, ctx) {
       db.prepare("DELETE FROM employees WHERE id=?").run(cur.id);
       audit(db, req.sess.user.id, "employee.delete", "employee", cur.id, { emp_no: cur.emp_no, name_ar: cur.name_ar, name_en: cur.name_en }, null);
     });
-    for (const id of files) fs.rmSync(path.join(ctx.dataDir, "uploads", String(id)), { force: true });
+    for (const id of files) removeUpload(ctx, id);
     send(req, res, 200, { ok: true });
   });
 

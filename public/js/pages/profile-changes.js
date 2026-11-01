@@ -11,7 +11,7 @@ const SOURCE_KEYS = { identity: "sec_identity", contact: "sec_contact", qualific
 const DATES = ["dob", "civil_id_expiry", "passport_expiry", "visa_expiry"];
 function show(k, v) {
   if (v === null || v === undefined || v === "") return h("span", { class: "muted" }, "—");
-  if (k === "photo_file_id") return h("img", { src: `/api/files/${v}`, alt: "", class: "pc-photo" });
+  if (k === "photo_file_id") return h("img", { src: `/api/files/${v}?w=192`, alt: "", class: "pc-photo", loading: "lazy" });
   if (DATES.includes(k)) return dmy(v);
   if (k === "gender") return t("g_" + v);
   if (k === "nationality") return countryName(v, getLang());

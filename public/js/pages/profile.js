@@ -385,7 +385,7 @@ function simpleDialog(title, fields, save, note, wide = false, onClose = null) {
 
 /** Take the profile photo from an ID or passport scan: move and size the square over the face, then save (or keep the current photo). */
 function cropDialog(e, fileId) {
-  const img = h("img", { src: `/api/files/${fileId}`, alt: "", draggable: "false", style: { display: "block", width: "100%", userSelect: "none" } });
+  const img = h("img", { src: `/api/files/${fileId}?w=1600`, alt: "", draggable: "false", style: { display: "block", width: "100%", userSelect: "none" } });
   const box = h("div", { class: "crop-box" });
   const stage = h("div", { class: "crop-stage" }, img, box);
   const size = h("input", { type: "range", min: 10, max: 90, value: 30, "aria-label": t("photo_size") });

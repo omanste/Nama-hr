@@ -134,7 +134,8 @@ export const pageHead = (title, ...actions) => h("div", { class: "page-head" }, 
 export const backLink = (href) => h("a", { class: "back", href }, h("span", { "aria-hidden": "true" }, getLang() === "ar" ? "→ " : "← "), t("back"));
 export const empty = (text = t("no_results")) => h("div", { class: "empty" }, text);
 export const avatar = (emp, size = 40) => emp && emp.photo_file_id
-  ? h("img", { class: "avatar", src: `/api/files/${emp.photo_file_id}`, alt: "", width: size, height: size, style: { width: size + "px", height: size + "px" } })
+  // a small copy (twice the size shown, for sharp screens), not the full camera photo
+  ? h("img", { class: "avatar", src: `/api/files/${emp.photo_file_id}?w=${size * 2 <= 96 ? 96 : size * 2 <= 192 ? 192 : 400}`, alt: "", width: size, height: size, loading: "lazy", decoding: "async", style: { width: size + "px", height: size + "px" } })
   : h("span", { class: "avatar ph", style: { width: size + "px", height: size + "px", fontSize: Math.round(size / 2.4) + "px" }, "aria-hidden": "true" }, ((emp && (getLang() === "en" ? emp.name_en || emp.name_ar : emp.name_ar || emp.name_en)) || "؟").trim().charAt(0).toUpperCase());
 /** Today's date in Muscat as YYYY-MM-DD. */
 export const todayIso = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Muscat", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -174,7 +175,7 @@ export async function viewFile(f) {
       h("button", { class: "btn primary", type: "button", onclick: () => dlg.close() }, t("close"))));
   dlg.addEventListener("close", () => dlg.remove());
   document.body.append(dlg); dlg.showModal();
-  if (/^image\//.test(f.mime || "")) { body.append(h("img", { src: `/api/files/${f.id}`, alt: f.name || "" })); return; }
+  if (/^image\//.test(f.mime || "")) { body.append(h("img", { src: `/api/files/${f.id}?w=1600`, alt: f.name || "" })); return; } // screen size; Download gives the original
   if (f.mime !== "application/pdf") { body.append(h("p", { class: "sub" }, t("view_not_possible"))); return; }
   body.append(h("p", { class: "sub" }, t("loading")));
   let pages = 0;

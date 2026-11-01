@@ -73,6 +73,7 @@ export function restoreFrom(ctx, buffer) {
       fs.mkdirSync(up, { recursive: true });
       if (theirs.has("backup_files")) {
         for (const f of fs.readdirSync(up)) if (/^\d+$/.test(f)) fs.rmSync(path.join(up, f), { force: true });
+        fs.rmSync(path.join(ctx.dataDir, "previews"), { recursive: true, force: true }); // copies made from the old files
         for (const r of db.prepare("SELECT id, data FROM b.backup_files").iterate()) fs.writeFileSync(path.join(up, String(r.id)), r.data);
         counts.uploads = db.prepare("SELECT count(*) n FROM b.backup_files").get().n;
       }

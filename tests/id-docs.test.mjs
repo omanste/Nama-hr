@@ -167,8 +167,10 @@ test("a PDF can be viewed page by page as pictures — only by people who may se
   if (!p) return; // no poppler on this machine (the server image has it)
   assert.equal(p, 1);
   const png = await fetch(`${t.base}/api/files/${id}/page/1`, { headers: { cookie: hr.c.cookie } });
-  assert.equal(png.status, 200); assert.equal(png.headers.get("content-type"), "image/png");
-  assert.deepEqual([...Buffer.from(await png.arrayBuffer()).subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
+  assert.equal(png.status, 200); assert.equal(png.headers.get("content-type"), "image/jpeg", "a scan page as JPEG (far smaller than PNG)");
+  assert.deepEqual([...Buffer.from(await png.arrayBuffer()).subarray(0, 3)], [0xff, 0xd8, 0xff]);
+  // asked again with its tag: nothing is sent
+  assert.equal((await fetch(`${t.base}/api/files/${id}/page/1`, { headers: { cookie: hr.c.cookie, "If-None-Match": png.headers.get("etag") } })).status, 304);
   assert.equal((await staff.c.get(`/api/files/${id}/page/2`)).status, 404);
   assert.equal((await fetch(`${t.base}/api/files/${id}/page/1`, { headers: { cookie: other.c.cookie } })).status, 403);
 });
@@ -308,4 +310,24 @@ test("nationality: every country's 3-letter code on the <<< lines, and the print
   assert.equal(parseFront("NAME SAMPLE PERSON\nNATIONALITY PALESTINIAN\n").nationality, "PS");
   assert.equal(parseFront("Nationality: Egyptian").nationality, "EG");
   assert.equal(parseFront("NATIONALITY XQZWV").nationality, undefined, "an unknown word isn't taken");
+});
+
+test("photos are sent small where they are shown small; the original for a download; a repeat asks with a tag (304)", async () => {
+  const jpg = fs.readFileSync(new URL("./fixtures/fake-id.jpg", import.meta.url));
+  const up = await hr.c.upload(`/api/employees/${staff.emp.id}/files?kind=photo&name=face.jpg`, jpg, "image/jpeg");
+  const id = up.data.file.id;
+  const get = (q, h = {}) => fetch(`${t.base}/api/files/${id}${q}`, { headers: { cookie: hr.c.cookie, ...h } });
+  const orig = await get("");
+  assert.equal(orig.status, 200); const origLen = Buffer.from(await orig.arrayBuffer()).length;
+  assert.match(orig.headers.get("cache-control"), /max-age=86400/);
+  const small = await get("?w=96");
+  assert.equal(small.status, 200);
+  const sb = Buffer.from(await small.arrayBuffer());
+  assert.ok(sb.length <= origLen, "the small copy is no bigger than the original");
+  assert.equal((await get("?w=96", { "If-None-Match": small.headers.get("etag") })).status, 304);
+  assert.notEqual(small.headers.get("etag"), orig.headers.get("etag"));
+  // a download is always the original
+  assert.equal(Buffer.from(await (await get("?w=96&download=1")).arrayBuffer()).length, origLen);
+  // someone who may not see it still can't, small or not
+  assert.equal((await fetch(`${t.base}/api/files/${id}?w=96`)).status, 401);
 });

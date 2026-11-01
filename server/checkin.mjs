@@ -12,6 +12,7 @@ import { notify } from "./notify.mjs";
 import { storeUpload } from "./files.mjs";
 import { attendanceExempt } from "./attendance.mjs";
 import { approvedDepartments } from "./perm.mjs";
+import { removeUpload } from "./files.mjs";
 
 const bad = (field, message) => Object.assign(new HttpError(400, "invalid", message), { field });
 const ipOf = (req) => String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",").pop().trim();
@@ -80,7 +81,7 @@ export function runCheckinRetention(ctx, today) {
     db.prepare("UPDATE att_checkins SET lat=NULL, lng=NULL, accuracy_m=NULL WHERE lat IS NOT NULL AND at<?").run(d365);
     audit(db, null, "checkin.retention", "attendance", null, null, { photos: old.length, locations: loc, before_photos: d90, before_locations: d365 });
   });
-  for (const c of old) fs.rmSync(path.join(ctx.dataDir, "uploads", String(c.photo_file_id)), { force: true });
+  for (const c of old) removeUpload(ctx, c.photo_file_id); // the photo and its smaller copies
   return { photos: old.length, locations: loc };
 }
 

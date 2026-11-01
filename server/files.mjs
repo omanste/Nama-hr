@@ -52,6 +52,26 @@ export async function storeUpload(ctx, req, { employeeId, requestId = null, voic
 
 const run = promisify(execFile);
 const previewDir = (ctx) => { const d = path.join(ctx.dataDir, "previews"); fs.mkdirSync(d, { recursive: true }); return d; };
+/** Delete an uploaded file and every copy made from it (PDF pages, smaller photos). */
+export function removeUpload(ctx, id) {
+  fs.rmSync(path.join(ctx.dataDir, "uploads", String(id)), { force: true });
+  const d = path.join(ctx.dataDir, "previews");
+  for (const x of fs.existsSync(d) ? fs.readdirSync(d) : []) if (x.startsWith(`${id}-`)) fs.rmSync(path.join(d, x), { force: true });
+}
+/* Photos are shown small (a 40-pixel face on the staff list) but may be uploaded at full camera size (several MB): a
+ * smaller copy is made once with ImageMagick and kept with the previews. Without ImageMagick the original is sent. */
+const SIZES = [96, 192, 400, 800, 1600];
+async function smallerImage(ctx, f, w) {
+  const out = path.join(previewDir(ctx), `${f.id}-w${w}.jpg`);
+  if (!fs.existsSync(out)) {
+    const src = path.join(ctx.dataDir, "uploads", String(f.id));
+    const args = [src, "-auto-orient", "-resize", `${w}x${w}>`, "-strip", "-quality", "82", "jpg:" + out];
+    let ok = false;
+    for (const cmd of ["magick", "convert"]) { try { await run(cmd, args, { timeout: 30000 }); ok = true; break; } catch (e) { if (e.code !== "ENOENT") break; } }
+    if (!ok || !fs.existsSync(out)) return null;
+  }
+  return fs.readFileSync(out);
+}
 /** Number of pages in a stored PDF (0 when poppler isn't installed). */
 async function pdfPages(ctx, f) {
   try {
@@ -61,9 +81,9 @@ async function pdfPages(ctx, f) {
 }
 /** One page of a stored PDF as a PNG (made once, then kept in DATA_DIR/previews). */
 async function pdfPage(ctx, f, n) {
-  const out = path.join(previewDir(ctx), `${f.id}-${n}.png`);
+  const out = path.join(previewDir(ctx), `${f.id}-${n}.jpg`);
   if (!fs.existsSync(out)) {
-    try { await run("pdftoppm", ["-png", "-r", "110", "-f", String(n), "-l", String(n), "-singlefile", path.join(ctx.dataDir, "uploads", String(f.id)), out.slice(0, -4)], { timeout: 60000 }); }
+    try { await run("pdftoppm", ["-jpeg", "-jpegopt", "quality=80", "-r", "110", "-f", String(n), "-l", String(n), "-singlefile", path.join(ctx.dataDir, "uploads", String(f.id)), out.slice(0, -4)], { timeout: 60000 }); }
     catch { return null; }
   }
   return fs.existsSync(out) ? fs.readFileSync(out) : null;
@@ -71,6 +91,13 @@ async function pdfPage(ctx, f, n) {
 
 export function registerFiles(api, ctx) {
   const { db } = ctx;
+  // an uploaded file never changes under its id: the browser keeps it a day, then asks again (a tiny 304 if unchanged)
+  const tagOf = (f, variant) => `"f${f.id}-${variant}-${String(f.uploaded_at || "").replace(/\D/g, "")}"`;
+  const fileCache = (f, variant) => ({ "Cache-Control": "private, max-age=86400", ETag: tagOf(f, variant) });
+  const notModified = (req, res, f, variant) => {
+    if ((req.headers["if-none-match"] || "") !== tagOf(f, variant)) return false;
+    res.writeHead(304, fileCache(f, variant)); res.end(); return true;
+  };
   const forbidden = () => new HttpError(403, "forbidden", "You do not have permission for this");
   // read value → profile column; the expiry goes to the matching date (civil ID, passport or visa)
   const readMap = (docType) => ({ civil_id: "civil_id", passport_no: docType === "passport" ? "passport_no" : null, dob: "dob", gender: "gender", nationality: "nationality", name_en: "name_en", name_ar: "name_ar",
@@ -225,20 +252,25 @@ export function registerFiles(api, ctx) {
     const f = fileFor(req);
     const n = Number(req.params.n);
     if (f.mime !== "application/pdf" || !Number.isInteger(n) || n < 1 || n > 50) throw new HttpError(404, "not_found", "No such page");
-    const png = await pdfPage(ctx, f, n);
-    if (!png) throw new HttpError(404, "not_found", "This page can't be shown here — download the file");
-    sendRaw(req, res, 200, png, "image/png", { "Cache-Control": "private, max-age=300" });
+    if (notModified(req, res, f, `p${n}`)) return;
+    const jpg = await pdfPage(ctx, f, n);
+    if (!jpg) throw new HttpError(404, "not_found", "This page can't be shown here — download the file");
+    sendRaw(req, res, 200, jpg, "image/jpeg", fileCache(f, `p${n}`));
   });
 
-  api.get("/api/files/:id", (req, res) => {
+  api.get("/api/files/:id", async (req, res) => {
     const f = fileFor(req);
     const p = path.join(ctx.dataDir, "uploads", String(f.id));
     if (!fs.existsSync(p)) throw new HttpError(404, "not_found", "File missing on disk");
     const ext = { "application/pdf": ".pdf", "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp" }[f.mime] || "";
     const fname = /\.\w{2,4}$/.test(f.name) ? f.name : f.name + ext;
-    sendRaw(req, res, 200, fs.readFileSync(p), f.mime, {
+    // ?w=… a smaller copy of a photo (faces on lists, the viewer); the original for a download
+    const w = Number(req.query.get("w")) || 0, size = w > 0 && !req.query.get("download") && f.mime.startsWith("image/") && (SIZES.find((x) => x >= w) || SIZES.at(-1));
+    if (notModified(req, res, f, size ? `w${size}` : "o")) return;
+    const small = size ? await smallerImage(ctx, f, size) : null;
+    sendRaw(req, res, 200, small || fs.readFileSync(p), small ? "image/jpeg" : f.mime, {
       "Content-Disposition": `${req.query.get("download") ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(fname)}`,
-      "Cache-Control": "private, max-age=300",
+      ...fileCache(f, size ? `w${size}` : "o"),
     });
   });
 
@@ -305,8 +337,7 @@ export function registerFiles(api, ctx) {
       db.prepare("UPDATE files SET archived_at=NULL, replaced_by=NULL WHERE replaced_by=?").run(f.id); // the copy it replaced is current again
       audit(db, req.sess.user.id, "file.delete", "employee", f.employee_id, f, null);
     });
-    fs.rmSync(path.join(ctx.dataDir, "uploads", String(f.id)), { force: true });
-    for (const x of fs.existsSync(path.join(ctx.dataDir, "previews")) ? fs.readdirSync(path.join(ctx.dataDir, "previews")) : []) if (x.startsWith(`${f.id}-`)) fs.rmSync(path.join(ctx.dataDir, "previews", x), { force: true });
+    removeUpload(ctx, f.id);
     send(req, res, 200, { ok: true });
   });
 }

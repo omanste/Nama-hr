@@ -7,6 +7,7 @@ import { send, readJson, HttpError } from "./http.mjs";
 import { audit } from "./audit.mjs";
 import { notify } from "./notify.mjs";
 import { storeUpload } from "./files.mjs";
+import { removeUpload } from "./files.mjs";
 
 export const CATEGORIES = ["suggestion", "question", "complaint", "note", "other"];
 const STATUSES = ["new", "in_review", "answered", "closed"];
@@ -198,7 +199,7 @@ export function registerVoice(api, ctx) {
       db.prepare("DELETE FROM voice_messages WHERE id=?").run(m.id);
       audit(db, req.sess.user.id, "voice.delete", "voice", m.id, { category: m.category, to_kind: m.to_kind, from_employee: m.employee_id }, null); // content stays out of the log
     });
-    for (const id of files) fs.rmSync(path.join(ctx.dataDir, "uploads", String(id)), { force: true });
+    for (const id of files) removeUpload(ctx, id);
     send(req, res, 200, { ok: true });
   });
 
