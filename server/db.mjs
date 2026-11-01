@@ -161,6 +161,9 @@ const MIGRATIONS = [
    CREATE TABLE login_log(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, employee_id INTEGER, at TEXT NOT NULL, ip TEXT, user_agent TEXT,
      lat REAL, lng REAL, accuracy_m REAL, located_at TEXT);
    CREATE INDEX ll_emp_at ON login_log(employee_id, at);`,
+  // 30: people who report straight to top management — their requests go to the CEO, the Chairman, or both (either one decides)
+  `ALTER TABLE employees ADD COLUMN reports_to_top TEXT CHECK(reports_to_top IN ('ceo','chairman','both'));
+   ALTER TABLE leave_requests ADD COLUMN alt_approver_user_id INTEGER REFERENCES users(id);`,
 ];
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */

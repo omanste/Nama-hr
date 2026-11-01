@@ -153,6 +153,12 @@ const D = {
   comment_optional: ["ملاحظة (اختياري)", "Comment (optional)"], approved_ok: ["تمت الموافقة", "Approved"], rejected_ok: ["تم الرفض", "Rejected"], cancelled_ok: ["تم الإلغاء", "Cancelled"],
   no_approvals: ["لا توجد طلبات بانتظارك", "Nothing waiting for you"], current_balance: ["الرصيد الحالي", "Current balance"],
   employee: ["الموظف", "Employee"], amount: ["المدة", "Amount"], submitted_at: ["تاريخ التقديم", "Submitted"], status: ["الحالة", "Status"],
+  f_reports_to_top: ["تُرفع طلباته إلى", "Requests go to"], rtt_dept: ["مدير القسم (المعتاد)", "The department's approver (usual)"], rtt_ceo: ["الرئيس التنفيذي", "The CEO"],
+  rtt_chairman: ["رئيس مجلس الإدارة", "The Chairman"], rtt_both: ["الرئيس التنفيذي ورئيس مجلس الإدارة — يكفي أحدهما", "The CEO and the Chairman — either one"],
+  rtt_hint: ["عند اختيار الاثنين يظهر الطلب لكليهما، وأول من يقرّر يُغلقه ويرى الآخر من قرّر.", "With both, the request shows to each of them; the first to decide closes it and the other sees who decided."],
+  route_top_ceo: ["الرئيس التنفيذي — مباشرة", "The CEO — directly"], route_top_chairman: ["رئيس مجلس الإدارة — مباشرة", "The Chairman — directly"],
+  route_top_both: ["الرئيس التنفيذي أو رئيس مجلس الإدارة — يكفي أحدهما", "The CEO or the Chairman — either one"],
+  decided_by: ["القرار من", "Decided by"], decided_by_other: ["قرّر فيه {name}", "Decided by {name}"],
   route_dept: ["مدير القسم", "Department manager"], route_managers: ["اعتماد المديرين", "Managers' approver"], route_admin: ["مدير النظام", "Admin"], route_chairman: ["رئيس مجلس الإدارة", "Chairman"], route_ceo_final: ["الرئيس التنفيذي — موافقة نهائية", "CEO — final approval"], route_hr_final: ["الموارد البشرية — موافقة نهائية", "HR — final approval"],
   // notifications
   mark_all_read: ["تعليم الكل كمقروء", "Mark all as read"], no_notifications: ["لا توجد إشعارات", "No notifications"],

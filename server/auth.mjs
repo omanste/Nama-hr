@@ -190,13 +190,13 @@ export function registerAuth(api, ctx) {
     const today = ctx.today(), own = s.employee ? s.employee.id : -1;
     const pendingApprovals = s.user.role === "admin"
       ? db.prepare("SELECT count(*) n FROM leave_requests WHERE status='pending' AND employee_id<>?").get(own).n
-      : db.prepare(`SELECT count(*) n FROM leave_requests WHERE status='pending' AND employee_id<>? AND (approver_user_id=?
+      : db.prepare(`SELECT count(*) n FROM leave_requests WHERE status='pending' AND employee_id<>? AND (approver_user_id=? OR alt_approver_user_id=?
           OR approver_user_id IN (SELECT approver_user_id FROM approver_cover WHERE deputy_user_id=? AND start_date<=? AND end_date>=?)
-          ${s.user.role === "hr" ? "OR route_reason='hr_final'" : ""})`).get(own, s.user.id, s.user.id, today, today).n;
+          ${s.user.role === "hr" ? "OR route_reason='hr_final'" : ""})`).get(own, s.user.id, s.user.id, s.user.id, today, today).n;
     // check-ins outside the work sites waiting for this person (their team; HR/Admin: everyone's), counted with approvals
     const myDepts = s.employee ? db.prepare("SELECT id FROM departments WHERE approver_employee_id=? AND active=1").all(s.employee.id).map((d) => d.id) : [];
     const pendingCheckins = db.prepare(`SELECT count(*) n FROM att_checkins c JOIN employees e ON e.id=c.employee_id WHERE c.approval='pending' AND c.employee_id<>?
-      ${["hr", "admin"].includes(s.user.role) ? "" : `AND (e.manager_employee_id=? ${myDepts.length ? `OR e.department_id IN (${myDepts.join(",")})` : ""})`}`)
+      ${["hr", "admin"].includes(s.user.role) ? "" : `AND (e.manager_employee_id=? ${myDepts.length ? `OR e.department_id IN (${myDepts.join(",")})` : ""} ${["ceo", "chairman"].includes(s.user.role) ? `OR e.reports_to_top IN ('${s.user.role}','both')` : ""})`}`)
       .get(...(["hr", "admin"].includes(s.user.role) ? [own] : [own, own])).n;
     const pendingCapReviews = ["hr", "admin"].includes(s.user.role) ? db.prepare("SELECT count(*) n FROM cap_reviews WHERE status='pending'").get().n : 0;
     // HR: approved permissions to classify and fingerprint corrections to confirm (attendance policy §5, §8)

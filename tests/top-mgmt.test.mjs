@@ -144,3 +144,31 @@ test("the CEO, the Chairman and the consultant are placed in Management; reporti
   assert.equal((await c2.c.post("/api/requests", { type: "sick", start: "2027-03-01", end: "2027-03-01" })).data.request.approver_user_id, ceo.user.id);
   assert.equal((await ceo.c.post("/api/requests", { type: "annual", start: "2027-03-07", end: "2027-03-07", deputy_user_id: hr.user.id })).data.request.approver_user_id, chair.user.id);
 });
+
+test("someone who reports to the CEO and the Chairman: both see the request, the first to decide closes it, the other sees who decided", async () => {
+  const p = await makePerson(t.base, admin, { emp_no: "EA1", name_ar: "مساعد تنفيذي", join_date: "2020-01-01", opening_days: 20, reports_to_top: "both" }, "staff");
+  assert.equal((await admin.put(`/api/employees/${p.emp.id}`, { reports_to_top: "x" })).status, 400);
+  const r = (await p.c.post("/api/requests", { type: "annual", start: "2027-02-07", end: "2027-02-08" })).data.request;
+  assert.equal(r.route_reason, "top_both"); assert.equal(r.approver_user_id, ceo.user.id); assert.equal(r.alt_approver_user_id, chair.user.id);
+  // on both Approvals pages, counted for both
+  for (const c of [ceo.c, chair.c]) {
+    assert.ok((await c.get("/api/requests?scope=approvals")).data.items.some((x) => x.id === r.id));
+    assert.ok((await c.get("/api/me")).data.pendingApprovals >= 1);
+  }
+  // the Chairman approves: done (no HR step after top management)
+  const ok = await chair.c.post(`/api/requests/${r.id}/approve`, {});
+  assert.equal(ok.data.request.status, "approved");
+  // the CEO has nothing left to do and sees who decided
+  assert.ok(!(await ceo.c.get("/api/requests?scope=approvals")).data.items.some((x) => x.id === r.id));
+  assert.equal((await ceo.c.post(`/api/requests/${r.id}/approve`, {})).status, 409);
+  const seen = (await ceo.c.get(`/api/requests/${r.id}`)).data;
+  assert.equal(seen.decider.id, chair.user.id); assert.equal(seen.altApprover.id, chair.user.id);
+  assert.ok((await ceo.c.get("/api/notifications")).data.items.some((n) => /approved/i.test(n.title_en)));
+  // only the CEO / only the Chairman
+  await admin.put(`/api/employees/${p.emp.id}`, { reports_to_top: "chairman" });
+  const r2 = (await p.c.post("/api/requests", { type: "annual", start: "2027-02-14", end: "2027-02-14" })).data.request;
+  assert.equal(r2.approver_user_id, chair.user.id); assert.equal(r2.alt_approver_user_id, null); assert.equal(r2.route_reason, "top_chairman");
+  // back to the usual: the department's approver
+  await admin.put(`/api/employees/${p.emp.id}`, { reports_to_top: null });
+  assert.notEqual((await p.c.post("/api/requests", { type: "annual", start: "2027-02-21", end: "2027-02-21" })).data.request.route_reason, "top_chairman");
+});

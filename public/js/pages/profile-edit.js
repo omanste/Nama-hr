@@ -45,6 +45,8 @@ export async function render(el, params, { can, query }) {
       field(t("f_department_id"), select("department_id", [["", "—"], ...depts.items.map((d) => [d.id, nm(d)])], e.department_id)),
       both("job_title"),
       field(t("f_manager_employee_id"), select("manager_employee_id", [["", "—"], ...emps.items.filter((x) => x.id !== e.id).map((x) => [x.id, `${nm(x)} (${x.emp_no})`])], e.manager_employee_id)),
+      // requests go to the department's approver, or straight to top management (the CEO, the Chairman, or either of them)
+      field(t("f_reports_to_top"), select("reports_to_top", [["", t("rtt_dept")], ["ceo", t("rtt_ceo")], ["chairman", t("rtt_chairman")], ["both", t("rtt_both")]], e.reports_to_top || ""), { hint: t("rtt_hint") }),
       field(t("f_join_date"), date("join_date")),
       field(t("f_status"), select("status", STATUSES.map((s) => [s, t("st_" + s)]), e.status)),
       field(t("f_shift"), select("shift", [[2, t("shift_2_full")], [1, t("shift_1_full")], [3, t("shift_3_full")]], e.shift || 2), { hint: t("f_shift_hint") }),

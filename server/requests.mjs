@@ -69,7 +69,7 @@ export function deputyOf(db, approverUserId, date) {
  * top management (the CEO and the Chairman may decide any request), or — at the HR step — any HR account. */
 export function mayDecide(db, sess, r, today) {
   if (sess.employee && sess.employee.id === r.employee_id) return false;
-  if (sess.user.role === "admin" || TOP.includes(sess.user.role) || r.approver_user_id === sess.user.id) return true;
+  if (sess.user.role === "admin" || TOP.includes(sess.user.role) || r.approver_user_id === sess.user.id || (r.alt_approver_user_id && r.alt_approver_user_id === sess.user.id)) return true;
   if (r.route_reason === "hr_final" && sess.user.role === "hr") return true; // the second step: any HR account
   return deputyOf(db, r.approver_user_id, today) === sess.user.id;
 }
@@ -97,6 +97,14 @@ export function routeFor(db, emp, today) {
     },
     adminUserId: adminUserId(db, user.id || 0),
   });
+  // someone who reports straight to top management: the CEO, the Chairman, or both (the first of them to decide closes it)
+  const top = emp.reports_to_top;
+  if (top) {
+    const userOf = (empId) => empId ? (db.prepare("SELECT u.id FROM users u JOIN employees e ON e.id=u.employee_id WHERE u.employee_id=? AND u.active=1 AND e.status IN ('active','on_leave')").get(empId) || {}).id || null : null;
+    const ceo = userOf(getSetting(db, "managers_approver_employee_id", null)), chair = userOf(getSetting(db, "chairman_employee_id", null));
+    const [a, b] = (top === "ceo" ? [ceo] : top === "chairman" ? [chair] : [ceo, chair]).filter((id) => id && id !== user.id).concat([null, null]);
+    if (a) return { userId: a, altUserId: b || null, reason: b ? "top_both" : top === "chairman" || a === chair ? "top_chairman" : "top_ceo" };
+  }
   if (route.userId && route.userId === user.id) route.userId = adminUserId(db, user.id); // never one's own approver
   // while a deputy covers, the request stays with the real approver; the deputy may decide it during the cover dates
   const deputy = today && route.userId && deputyOf(db, route.userId, today);
@@ -262,7 +270,7 @@ function describe(r, emp) {
 export function registerRequests(api, ctx) {
   const { db } = ctx;
   const forbidden = () => new HttpError(403, "forbidden", "You do not have permission for this");
-  const canSee = (sess, r) => r.approver_user_id === sess.user.id || deputyOf(db, r.approver_user_id, ctx.today()) === sess.user.id || can(sess, "requests.viewAll") || canViewEmployee(db, sess, getEmployee(db, r.employee_id));
+  const canSee = (sess, r) => r.approver_user_id === sess.user.id || (r.alt_approver_user_id && r.alt_approver_user_id === sess.user.id) || deputyOf(db, r.approver_user_id, ctx.today()) === sess.user.id || can(sess, "requests.viewAll") || canViewEmployee(db, sess, getEmployee(db, r.employee_id));
 
   const withNames = `SELECT r.*, e.emp_no, e.name_ar, e.name_en, e.department_id,
       (SELECT coalesce(sum(minutes),0) FROM leave_ledger l WHERE l.employee_id=r.employee_id) balance,
@@ -284,8 +292,8 @@ export function registerRequests(api, ctx) {
     const r = tx(db, () => {
       const v = validateRequest(db, emp, body, ctx.today());
       const route = routeFor(db, emp, ctx.today());
-      const ins = db.prepare(`INSERT INTO leave_requests(employee_id,type,start_date,end_date,early_time,minutes,reason,status,approver_user_id,route_reason,created_by,created_at,relation,event_date,comp_choice,end_time,details)
-        VALUES(?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?,?,?)`).run(emp.id, v.type, v.start_date, v.end_date, v.early_time, v.minutes, String(body.reason || "").slice(0, 1000) || null, route.userId, route.reason, sess.user.id, nowIso(), v.relation, v.event_date, v.comp_choice, v.end_time, v.details || null);
+      const ins = db.prepare(`INSERT INTO leave_requests(employee_id,type,start_date,end_date,early_time,minutes,reason,status,approver_user_id,route_reason,created_by,created_at,relation,event_date,comp_choice,end_time,details,alt_approver_user_id)
+        VALUES(?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?,?,?,?)`).run(emp.id, v.type, v.start_date, v.end_date, v.early_time, v.minutes, String(body.reason || "").slice(0, 1000) || null, route.userId, route.reason, sess.user.id, nowIso(), v.relation, v.event_date, v.comp_choice, v.end_time, v.details || null, route.altUserId || null);
       const row = getReq(db, ins.lastInsertRowid);
       if (needsDeputy) db.prepare("INSERT INTO approver_cover(approver_user_id,deputy_user_id,start_date,end_date,created_by,created_at,request_id) VALUES(?,?,?,?,?,?,?)")
         .run(sess.user.id, deputyId, v.start_date, v.end_date, sess.user.id, nowIso(), row.id);
@@ -295,7 +303,7 @@ export function registerRequests(api, ctx) {
     });
     const d = describe(r, emp);
     const dep = deputyOf(db, r.approver_user_id, ctx.today());
-    notify(ctx, [r.approver_user_id, dep && dep !== sess.user.id ? dep : null], { title_ar: "طلب إجازة بانتظار موافقتك", title_en: "Leave request awaiting your approval", body_ar: d.ar, body_en: d.en, link: `#/leave/${r.id}` });
+    notify(ctx, [r.approver_user_id, r.alt_approver_user_id, dep && dep !== sess.user.id ? dep : null], { title_ar: "طلب إجازة بانتظار موافقتك", title_en: "Leave request awaiting your approval", body_ar: d.ar, body_en: d.en, link: `#/leave/${r.id}` });
     notify(ctx, [sess.user.id], { title_ar: "تم إرسال طلبك", title_en: "Your request was submitted", body_ar: d.ar, body_en: d.en, link: `#/leave/${r.id}`, inAppOnly: true });
     send(req, res, 201, { request: r });
   });
@@ -308,9 +316,9 @@ export function registerRequests(api, ctx) {
     else if (scope === "approvals") {
       where.push("r.status='pending'", "r.employee_id<>?"); args.push(sess.employee ? sess.employee.id : -1);
       if (sess.user.role !== "admin") {
-        where.push(`(r.approver_user_id=? OR r.approver_user_id IN (SELECT approver_user_id FROM approver_cover WHERE deputy_user_id=? AND start_date<=? AND end_date>=?)
+        where.push(`(r.approver_user_id=? OR r.alt_approver_user_id=? OR r.approver_user_id IN (SELECT approver_user_id FROM approver_cover WHERE deputy_user_id=? AND start_date<=? AND end_date>=?)
           ${sess.user.role === "hr" ? "OR r.route_reason='hr_final'" : ""})`);
-        args.push(sess.user.id, sess.user.id, ctx.today(), ctx.today());
+        args.push(sess.user.id, sess.user.id, sess.user.id, ctx.today(), ctx.today());
       }
     }
     else if (scope === "team") {
@@ -341,7 +349,8 @@ export function registerRequests(api, ctx) {
     if (!canSee(req.sess, r)) throw forbidden();
     const events = db.prepare(`SELECT ev.*, u.username actor_username, coalesce(e.name_ar, u.username) actor_name, e.name_en actor_name_en
       FROM request_events ev LEFT JOIN users u ON u.id=ev.actor_user_id LEFT JOIN employees e ON e.id=u.employee_id WHERE ev.request_id=? ORDER BY ev.id`).all(r.id);
-    const approver = db.prepare("SELECT u.id, u.username, e.name_ar, e.name_en FROM users u LEFT JOIN employees e ON e.id=u.employee_id WHERE u.id=?").get(r.approver_user_id);
+    const person = (id) => (id ? db.prepare("SELECT u.id, u.username, u.role, e.name_ar, e.name_en FROM users u LEFT JOIN employees e ON e.id=u.employee_id WHERE u.id=?").get(id) : undefined);
+    const approver = person(r.approver_user_id), altApprover = person(r.alt_approver_user_id), decider = person(r.decided_by);
     const files = db.prepare("SELECT id,name,mime,size,uploaded_at FROM files WHERE request_id=?").all(r.id);
     let sickPay;
     if (r.type === "sick") {
@@ -351,7 +360,7 @@ export function registerRequests(api, ctx) {
     }
     const deducted = -db.prepare("SELECT coalesce(sum(minutes),0) n FROM leave_ledger WHERE request_id=?").get(r.id).n;
     const classes = isPermission(r.type) ? PERM_CLASSES : r.type === "correction" ? CORRECTION_CLASSES : null;
-    send(req, res, 200, { request: r, events, approver, files, sickPay, deducted, classes, canClassify: !!classes && r.status === "approved" && can(req.sess, "employee.edit") && !(req.sess.employee && req.sess.employee.id === r.employee_id), needsProof: !!TYPES[r.type].proof && !files.length,
+    send(req, res, 200, { request: r, events, approver, altApprover, decider, files, sickPay, deducted, classes, canClassify: !!classes && r.status === "approved" && can(req.sess, "employee.edit") && !(req.sess.employee && req.sess.employee.id === r.employee_id), needsProof: !!TYPES[r.type].proof && !files.length,
       canDecide: r.status === "pending" && mayDecide(db, req.sess, r, ctx.today()), canPostpone: r.status === "pending" && r.type === "annual" && mayDecide(db, req.sess, r, ctx.today()) });
   });
 
@@ -447,7 +456,7 @@ export function registerRequests(api, ctx) {
     const T = { approved: ["تمت الموافقة على طلبك", "Your request was approved"], rejected: ["تم رفض طلبك", "Your request was rejected"], cancelled: ["تم إلغاء الطلب", "The request was cancelled"] }[r.status];
     const extra = comment ? { ar: ` — ${comment}`, en: ` — ${comment}` } : { ar: "", en: "" };
     // tell the owner and the approver, except whoever just acted
-    const to = [ownerUser(db, r.employee_id), r.approver_user_id].filter((id) => id && id !== sess.user.id);
+    const to = [ownerUser(db, r.employee_id), r.approver_user_id, r.alt_approver_user_id].filter((id) => id && id !== sess.user.id); // with two approvers the other is told too
     notify(ctx, to, { title_ar: T[0], title_en: T[1], body_ar: d.ar + extra.ar, body_en: d.en + extra.en, link: `#/leave/${r.id}` });
     // §5, §8: after the manager, HR classifies a permission or confirms a fingerprint correction
     if (r.status === "approved" && (isPermission(r.type) || r.type === "correction"))

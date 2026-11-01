@@ -1,5 +1,5 @@
 import { api } from "../api.js";
-import { t, nm } from "../i18n.js";
+import { t, nm, getLang } from "../i18n.js";
 import { h, badge, when, amountText, dateTime, daysText, confirm, toast, errText, backLink, dmy, field, isPermission, isAttendanceReq, viewFile, num } from "../ui.js";
 import { render as rerender, refreshMe } from "../app.js";
 
@@ -65,7 +65,10 @@ export async function render(el, params, { me, can }) {
       r.type === "comp_day" ? row("comp_choice", t(r.comp_choice === "pay" ? "comp_pay" : "comp_leave")) : null,
       r.relation ? row(r.type === "patient_care" ? "patient_relation" : "relation", r.type === "bereavement" ? t("rel_" + r.relation) : r.relation) : null,
       r.event_date ? row(r.type === "bereavement" ? "death_date" : r.type === "childcare" ? "child_birth_date" : "birth_date", dmy(r.event_date)) : null,
-      row("approver", d.approver ? `${nm(d.approver) || d.approver.username} · ${t("route_" + r.route_reason)}` : r.route_reason === "hr_final" ? t("route_hr_final") : "—"),
+      row("approver", d.approver ? `${[d.approver, d.altApprover].filter(Boolean).map((x) => nm(x) || x.username).join(getLang() === "en" ? " or " : " أو ")} · ${t("route_" + r.route_reason)}`
+        : r.route_reason === "hr_final" ? t("route_hr_final") : "—"),
+      // decided: who did it (with two approvers, the other one sees this and has nothing left to do)
+      d.decider && ["approved", "rejected"].includes(r.status) ? row("decided_by", h("span", null, h("span", { class: `badge ${r.status === "approved" ? "b-approved" : "b-rejected"}` }, t("rs_" + r.status)), " ", nm(d.decider) || d.decider.username, r.decided_at ? h("span", { class: "muted" }, ` · ${dateTime(r.decided_at)}`) : null)) : null,
       row("submitted_at", dateTime(r.created_at)),
       r.reason ? h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("reason")), h("dd", null, r.reason)) : null),
       d.files.length ? h("div", { style: { marginTop: "14px" } }, h("h3", null, t("attachments")),

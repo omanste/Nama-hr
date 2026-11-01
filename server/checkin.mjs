@@ -41,16 +41,24 @@ export function canCheckIn(db, emp) {
 
 /** Who approves a person's check-in outside the work sites: their direct manager, else their department's approver. */
 export function approversOf(db, emp) {
+  // someone who reports straight to top management: the CEO, the Chairman, or both (either one decides)
+  if (emp.reports_to_top) {
+    const userOf = (key) => { const id = getSetting(db, key, null); return id ? (db.prepare("SELECT id FROM users WHERE employee_id=? AND active=1").get(id) || {}).id : null; };
+    const ids = [emp.reports_to_top !== "chairman" ? userOf("managers_approver_employee_id") : null, emp.reports_to_top !== "ceo" ? userOf("chairman_employee_id") : null].filter(Boolean);
+    if (ids.length) return ids;
+  }
   const dept = emp.department_id && db.prepare("SELECT approver_employee_id FROM departments WHERE id=?").get(emp.department_id);
   return [emp.manager_employee_id, dept && dept.approver_employee_id].filter((id) => id && id !== emp.id)
     .map((id) => (db.prepare("SELECT id FROM users WHERE employee_id=? AND active=1").get(id) || {}).id).filter(Boolean).slice(0, 1);
 }
 /** May this session approve or reject this check-in? The person's manager or department approver, HR or Admin — never one's own. */
+const TOP_ROLES = ["ceo", "chairman"];
 export function mayDecideCheckin(db, sess, c) {
   if (sess.employee && sess.employee.id === c.employee_id) return false;
   if (["hr", "admin"].includes(sess.user.role)) return true;
   if (!sess.employee) return false;
-  const emp = db.prepare("SELECT manager_employee_id, department_id FROM employees WHERE id=?").get(c.employee_id);
+  const emp = db.prepare("SELECT manager_employee_id, department_id, reports_to_top FROM employees WHERE id=?").get(c.employee_id);
+  if (emp && emp.reports_to_top && TOP_ROLES.includes(sess.user.role) && [sess.user.role, "both"].includes(emp.reports_to_top)) return true;
   return !!emp && (emp.manager_employee_id === sess.employee.id || approvedDepartments(db, sess.employee.id).includes(emp.department_id));
 }
 
