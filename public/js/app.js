@@ -134,10 +134,14 @@ function sidebar(path) {
 }
 function bottomBar(path) {
   const items = navItems();
-  const primary = items.slice(0, 4);
+  // whoever approves gets Approvals second on the bar (with its count); Permission then lives under More (and on Home)
+  const appr = items.find(([href]) => href === "#/approvals");
+  const primary = appr ? [items[0], appr, ...items.filter(([href]) => href !== "#/" && href !== "#/approvals" && href !== "#/permissions")].slice(0, 4) : items.slice(0, 4);
+  // anything waiting inside More shows as a count on More
+  const hidden = items.filter((x) => !primary.includes(x)).reduce((n, x) => n + (Number(x[3]) || 0), 0);
   return h("nav", { class: "bottom", "aria-label": "main" },
     primary.map(([href, key, ic, count]) => h("a", { href, "aria-current": isCurrent(href, path) ? "page" : null, "aria-label": t(key) }, h("span", { class: "ic" }, icon(ic, 22), count ? h("span", { class: "dot" }, count) : null), h("span", null, t(has(key + "_short") ? key + "_short" : key)))),
-    h("a", { href: "#/menu", "aria-current": path === "/menu" ? "page" : null }, h("span", { class: "ic" }, icon("more", 22)), h("span", null, t("nav_more"))));
+    h("a", { href: "#/menu", "aria-current": path === "/menu" ? "page" : null, "aria-label": t("nav_more") }, h("span", { class: "ic" }, icon("more", 22), hidden ? h("span", { class: "dot" }, hidden) : null), h("span", null, t("nav_more"))));
 }
 const matches = (href, path) => { const p = href.slice(1); return p === "/" ? path === "/" : path === p || path.startsWith(p + "/"); };
 // the most specific menu entry wins (My attendance vs Attendance reports)
