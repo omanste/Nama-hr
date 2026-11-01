@@ -19,6 +19,11 @@ export async function render(el, _p, { me, opts, query }) {
   const date = h("input", { type: "date", name: "date", value: pre, max: kind === "correction" ? today : null });
   const t1 = h("input", { type: "time", name: "time" }), t2 = h("input", { type: "time", name: "end_time" });
   const place = h("input", { name: "place", maxlength: 200 });
+  // a task at a distant site may last several days: the last day, outside Muscat, staying overnight (the allowance)
+  const endDate = h("input", { type: "date", name: "end_date", value: pre });
+  const outside = h("input", { type: "checkbox", name: "outside_muscat" }), overnight = h("input", { type: "checkbox", name: "overnight" });
+  const tick = (box, key) => h("label", { class: "row", style: { gap: "8px", alignItems: "center" } }, box, t(key));
+  date.addEventListener("change", () => { if (!endDate.value || endDate.value < date.value) endDate.value = date.value; endDate.min = date.value; });
   const reason = h("textarea", { name: "reason", rows: 3, maxlength: 1000, required: true });
   const info = h("div", { class: "note", "aria-live": "polite" });
   const submit = h("button", { class: "btn primary", type: "submit" }, t("submit_request"));
@@ -51,7 +56,7 @@ export async function render(el, _p, { me, opts, query }) {
     ev.preventDefault();
     if (!reason.value.trim()) { showFieldError(form, "reason", t("reason_required")); return; }
     const body = { type: kind, date: date.value, time: t1.value || null, end_time: t2.value || null, reason: reason.value.trim() };
-    if (kind === "mission") body.place = place.value.trim();
+    if (kind === "mission") Object.assign(body, { place: place.value.trim(), end_date: endDate.value || date.value, outside_muscat: outside.checked, overnight: overnight.checked });
     submit.disabled = true;
     try {
       const r = await api.post("/api/requests", body);
@@ -63,10 +68,12 @@ export async function render(el, _p, { me, opts, query }) {
     }
   } },
     h("section", { class: "card" }, h("div", { class: "fields" },
-      field(t("date"), date, { req: true }),
+      field(t(kind === "mission" ? "mission_date_from" : "date"), date, { req: true }),
+      kind === "mission" ? field(t("mission_date_to"), endDate, { hint: t("mission_date_to_hint") }) : null,
       field(t(kind === "mission" ? "mission_from" : "corr_in"), t1, { req: kind === "mission", hint: kind === "correction" ? t("corr_in_hint") : null }),
       field(t(kind === "mission" ? "mission_to" : "corr_out"), t2, { req: kind === "mission", hint: kind === "correction" ? t("corr_out_hint") : null }),
       kind === "mission" ? field(t("mission_place"), place, { full: true, req: true, hint: t("mission_place_hint") }) : null,
+      kind === "mission" ? h("div", { class: "field full" }, tick(outside, "mission_outside_muscat"), tick(overnight, "mission_overnight"), h("div", { class: "hint" }, t("mission_allow_hint"))) : null,
       field(t(kind === "mission" ? "mission_purpose" : "reason"), reason, { full: true, req: true }))),
     info,
     h("div", { class: "form-actions" }, h("a", { class: "btn", href: back }, t("cancel")), submit));

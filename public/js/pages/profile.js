@@ -443,25 +443,37 @@ export function showTempPassword(username, pw) {
   });
 }
 
-function adjustDialog(e) {
-  const sign = select("sign", [["1", t("adjust_add")], ["-1", t("adjust_deduct")]], "1");
+async function adjustDialog(e) {
+  // add, deduct, or set the balance to an exact number of days (the difference is recorded as an adjustment)
+  let current = null;
+  try { current = (await api.get(`/api/employees/${e.id}`)).leave.remaining; } catch {}
+  const sign = select("sign", [["1", t("adjust_add")], ["-1", t("adjust_deduct")], ...(current !== null ? [["set", t("adjust_set")]] : [])], "1");
   const unit = select("unit", [["480", t("adjust_unit_days")], ["60", t("adjust_unit_hours")]], "480");
-  const amount = h("input", { type: "number", min: "0.5", step: "0.5", required: true, inputmode: "decimal" });
+  const amount = h("input", { type: "number", min: "0", step: "0.5", required: true, inputmode: "decimal" });
   const note = h("textarea", { required: true, rows: 2 });
   const err = h("div", { class: "form-error" });
+  const preview = h("p", { class: "sub", "aria-live": "polite" });
+  const show = () => {
+    const setting = sign.value === "set";
+    unit.disabled = setting; if (setting) unit.value = "480";
+    const diff = setting && amount.value !== "" ? Math.round(Number(amount.value) * 480) - current : null;
+    preview.textContent = current === null ? "" : `${t("adjust_current")}: ${daysText(current)}` + (diff !== null ? ` · ${t("adjust_diff")}: ${diff > 0 ? "+" : ""}${daysText(diff)}` : "");
+  };
+  sign.addEventListener("change", show); amount.addEventListener("input", show);
   const dlg = h("dialog", { class: "dialog" }, h("form", { class: "form", onsubmit: async (ev) => {
     ev.preventDefault();
-    const minutes = Math.round(Number(amount.value) * Number(unit.value)) * Number(sign.value);
+    const minutes = sign.value === "set" ? Math.round(Number(amount.value) * 480) - current : Math.round(Number(amount.value) * Number(unit.value)) * Number(sign.value);
+    if (sign.value === "set" && amount.value !== "" && minutes === 0) { err.textContent = t("adjust_no_change"); return; }
     if (!minutes || !note.value.trim()) { err.textContent = t("required"); return; }
     try { await api.post(`/api/employees/${e.id}/adjust`, { minutes, note: note.value.trim() }); dlg.close(); toast(t("saved")); rerender(); }
     catch (er) { err.textContent = errText(er); }
   } },
     h("h2", null, t("adjust_balance"), " · ", nm(e)),
     h("div", { class: "fields" }, field(t("action"), sign), field(t("adjust_amount"), amount), field(t("adjust_unit_days") + " / " + t("adjust_unit_hours"), unit)),
-    field(t("adjust_reason"), note, { full: true }), err,
+    preview, field(t("adjust_reason"), note, { full: true }), err,
     h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), h("button", { class: "btn primary", type: "submit" }, t("save")))));
   dlg.addEventListener("close", () => dlg.remove());
-  document.body.append(dlg); dlg.showModal(); amount.focus();
+  document.body.append(dlg); dlg.showModal(); show(); amount.focus();
 }
 
 function encashDialog(e, consents) {

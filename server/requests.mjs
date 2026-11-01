@@ -1,7 +1,7 @@
 /* Leave request lifecycle: submit → approve | reject | cancel, with ledger postings and history.
  * The approver is fixed when the request is submitted; Admin can always act. */
 import { nowIso, tx, getSetting } from "./db.mjs";
-import { send, readJson, HttpError } from "./http.mjs";
+import { send, sendRaw, readJson, HttpError } from "./http.mjs";
 import { can, canViewEmployee, approvedDepartments, TOP } from "./perm.mjs";
 import { audit } from "./audit.mjs";
 import { TYPES, PERMISSION_TYPES, ATTENDANCE_TYPES, PERM_CLASSES, CORRECTION_CLASSES, clockMin, permissionSpan, requestMinutes, eligibleFrom, isIsoDate, fmtDays, DAY, checkLeaveRules, RuleError, sickPayBands, addMonths, daysBetweenInclusive, addDays, daysExcludingHolidays } from "./leave.mjs";
@@ -132,7 +132,7 @@ export function validateRequest(db, emp, body, today) {
   if (RETIRED.includes(type)) throw err(400, "retired", "This leave type is no longer offered — please request annual leave", "type");
   let start, end, time = null;
   if (TYPES[type].range) { start = body.start; end = body.end; }
-  else { start = end = body.date; }
+  else { start = end = body.date; if (type === "mission" && body.end_date) end = body.end_date; } // a task may run over several days
   if (!isIsoDate(start)) throw err(400, "invalid", "A valid date is required", TYPES[type].range ? "start" : "date");
   if (!isIsoDate(end)) throw err(400, "invalid", "A valid end date is required", "end");
   let endTime = null;
@@ -142,7 +142,7 @@ export function validateRequest(db, emp, body, today) {
     if (!String(body.reason || "").trim()) throw err(400, "invalid", "Please give a reason", "reason");
     if (holidaySet(db).has(start)) throw err(400, "invalid", "This day is an official holiday", "date");
   }
-  if (TYPES[type].attendance) return validateAttendance(db, emp, type, start, body, today);
+  if (TYPES[type].attendance) return validateAttendance(db, emp, type, start, body, today, end);
   let minutes;
   const sh = shiftFor(db, emp, start), dayStart = sh.start, dayEnd = sh.end;
   if (isPermission(type) && isRestDay(start)) throw err(400, "invalid", "This day is a weekly rest day", "date");
@@ -195,8 +195,10 @@ export function validateRequest(db, emp, body, today) {
   return { type, start_date: start, end_date: end, early_time: time, end_time: endTime, minutes, relation, event_date: TYPES[type].event ? eventDate : null, comp_choice: compChoice };
 }
 
-/** A fingerprint correction (§5) or an external task (§10): one date, times of any minute. */
-function validateAttendance(db, emp, type, date, body, today) {
+/** A fingerprint correction (§5): one date. An external task (§10): one day or several (a distant site), the same hours
+ * each day; outside Muscat and overnight stays decide its allowance (Settings). Times of any minute. */
+export const MISSION_MAX_DAYS = 14;
+function validateAttendance(db, emp, type, date, body, today, endDate = date) {
   if (date > today && type === "correction") throw err(400, "invalid", "You can't correct a day that hasn't happened yet", "date");
   if (!String(body.reason || "").trim()) throw err(400, "invalid", type === "mission" ? "Describe the purpose of the task" : "Please give a reason", "reason");
   const time = body.time || null, endTime = body.end_time || null;
@@ -210,15 +212,37 @@ function validateAttendance(db, emp, type, date, body, today) {
       throw err(409, "overlap", "There is already a correction for this day");
   } else {
     if (date < addDays(today, -30)) throw err(400, "invalid", "A task more than 30 days ago can't be added", "date");
+    if (endDate < date) throw err(400, "invalid", "The last day must be on or after the first", "end_date");
+    const days = daysBetweenInclusive(date, endDate);
+    if (days > MISSION_MAX_DAYS) throw err(400, "invalid", `A task can cover at most ${MISSION_MAX_DAYS} days`, "end_date");
     if (!time || !endTime) throw err(400, "invalid", "Enter when the task starts and ends", !time ? "time" : "end_time");
-    try { minutes = requestMinutes(type, { time, endTime }); } catch (e) { throw err(400, "invalid", e.message, "end_time"); }
+    try { minutes = requestMinutes(type, { time, endTime }) * days; } catch (e) { throw err(400, "invalid", e.message, "end_time"); }
     const place = String(body.place || "").trim().slice(0, 200);
     if (!place) throw err(400, "invalid", "Where is the task (client or place)?", "place");
-    details = JSON.stringify({ place });
-    for (const o of db.prepare(`SELECT * FROM leave_requests WHERE employee_id=? AND type='mission' AND status IN ${ACTIVE} AND start_date=?`).all(emp.id, date))
+    const outside = !!body.outside_muscat;
+    const nights = body.overnight ? days - 1 : 0; // staying over between the days (HR can correct it)
+    details = JSON.stringify({ place, days, outside_muscat: outside, nights });
+    // no two tasks on the same day at the same hours
+    for (const o of db.prepare(`SELECT * FROM leave_requests WHERE employee_id=? AND type='mission' AND status IN ${ACTIVE} AND start_date<=? AND end_date>=?`).all(emp.id, endDate, date))
       if (clockMin(time) < clockMin(o.end_time) && clockMin(o.early_time) < clockMin(endTime)) throw err(409, "overlap", "These hours overlap another task on the same day");
+    // nor a task over days already taken as leave
+    if (db.prepare(`SELECT 1 FROM leave_requests WHERE employee_id=? AND type<>'comp_day' AND type NOT IN ${PERM_SQL} AND type NOT IN ${ATT_SQL} AND status IN ${ACTIVE} AND start_date<=? AND end_date>=?`).get(emp.id, endDate, date))
+      throw err(409, "overlap", "You have leave on one of these days");
+    return { type, start_date: date, end_date: endDate, early_time: time, end_time: endTime, minutes, relation: null, event_date: null, comp_choice: null, details };
   }
   return { type, start_date: date, end_date: date, early_time: time, end_time: endTime, minutes, relation: null, event_date: null, comp_choice: null, details };
+}
+
+/** The allowance of an external task from its days outside Muscat and its nights, at the rates of the day it is approved
+ * (kept with it, so later rate changes don't alter it). */
+export function missionAllowance(db, details) {
+  const d = { ...details };
+  const day = Number(getSetting(db, "mission_day_allowance", 0)) || 0, night = Number(getSetting(db, "mission_night_allowance", 0)) || 0;
+  d.days_outside = d.outside_muscat ? (d.days_outside ?? d.days ?? 1) : 0;
+  d.nights = d.outside_muscat ? d.nights || 0 : 0;
+  d.rates = { day, night };
+  d.allowance = Math.round((d.days_outside * day + d.nights * night) * 1000) / 1000;
+  return d;
 }
 
 function event(db, requestId, action, actorId, comment) {
@@ -229,7 +253,8 @@ const ownerUser = (db, empId) => (db.prepare("SELECT id FROM users WHERE employe
 
 function describe(r, emp) {
   const [ar, en] = TYPE_NAMES[r.type];
-  const when = isPermission(r.type) || TYPES[r.type].attendance ? `${dmy(r.start_date)} ${r.early_time || "…"}${r.end_time ? "–" + r.end_time : ""}` : r.start_date === r.end_date ? dmy(r.start_date) : `${dmy(r.start_date)} – ${dmy(r.end_date)}`;
+  const dates = r.start_date === r.end_date ? dmy(r.start_date) : `${dmy(r.start_date)} – ${dmy(r.end_date)}`;
+  const when = isPermission(r.type) || TYPES[r.type].attendance ? `${dates} ${r.early_time || "…"}${r.end_time ? "–" + r.end_time : ""}` : dates;
   const amount = isPermission(r.type) || r.type === "mission" ? `${r.minutes / 60} h` : r.type === "correction" ? "—" : `${fmtDays(r.minutes)} d`;
   return { ar: `${emp.name_ar || emp.name_en}: ${ar} · ${when} · ${amount}`, en: `${emp.name_en || emp.name_ar}: ${en} · ${when} · ${amount}` };
 }
@@ -396,6 +421,12 @@ export function registerRequests(api, ctx) {
       if (status !== "approved") db.prepare("DELETE FROM approver_cover WHERE request_id=?").run(r.id);
       db.prepare("UPDATE leave_requests SET status=?, decided_by=?, decided_at=?, decision_comment=coalesce(?,decision_comment) WHERE id=?")
         .run(status, sess.user.id, nowIso(), comment || null, r.id);
+      // an approved external task: its allowance, at today's rates
+      if (status === "approved" && r.type === "mission") {
+        const d = missionAllowance(db, JSON.parse(r.details || "{}"));
+        if (!d.days) d.days = daysBetweenInclusive(r.start_date, r.end_date);
+        db.prepare("UPDATE leave_requests SET details=? WHERE id=?").run(JSON.stringify(d), r.id);
+      }
       event(db, r.id, status, sess.user.id, comment);
       const after = getReq(db, r.id);
       audit(db, sess.user.id, `request.${action}`, "request", r.id, r, after);
@@ -424,6 +455,59 @@ export function registerRequests(api, ctx) {
         title_en: r.type === "correction" ? "Fingerprint correction awaiting HR" : "Permission awaiting HR classification", body_ar: d.ar, body_en: d.en, link: `#/leave/${r.id}` });
     send(req, res, 200, { request: r });
   }
+
+  // the month's external-task allowances, for Accounts: each approved task in the month it ends
+  api.get("/api/reports/mission-allowances", (req, res) => {
+    if (!["hr", "admin", "accounts", "ceo", "chairman"].includes(req.sess.user.role)) throw forbidden();
+    const month = /^\d{4}-\d{2}$/.test(req.query.get("month") || "") ? req.query.get("month") : ctx.today().slice(0, 7);
+    const rows = db.prepare(`SELECT r.*, e.emp_no, e.name_ar, e.name_en, d.name_ar dept_ar, d.name_en dept_en FROM leave_requests r
+      JOIN employees e ON e.id=r.employee_id LEFT JOIN departments d ON d.id=e.department_id
+      WHERE r.type='mission' AND r.status='approved' AND substr(r.end_date,1,7)=? ORDER BY e.name_ar, r.start_date`).all(month).map((r) => {
+      const x = JSON.parse(r.details || "{}");
+      return { id: r.id, employee: { id: r.employee_id, emp_no: r.emp_no, name_ar: r.name_ar, name_en: r.name_en, dept_ar: r.dept_ar, dept_en: r.dept_en },
+        start_date: r.start_date, end_date: r.end_date, time: r.early_time, end_time: r.end_time, place: x.place || "", days: x.days || daysBetweenInclusive(r.start_date, r.end_date),
+        outside_muscat: !!x.outside_muscat, days_outside: x.days_outside || 0, nights: x.nights || 0, rates: x.rates || null, allowance: Number(x.allowance || 0), note: x.allowance_note || null };
+    });
+    const total = Math.round(rows.reduce((a, x) => a + x.allowance, 0) * 1000) / 1000;
+    if (req.query.get("format") === "csv") {
+      const lines = [["Employee ID", "Name (Arabic)", "Name (English)", "Department", "From", "To", "Hours", "Place", "Days", "Outside Muscat", "Days outside Muscat", "Nights", "Day rate", "Night rate", "Allowance (OMR)", "HR note"].join(",")];
+      for (const x of rows) lines.push([x.employee.emp_no, x.employee.name_ar, x.employee.name_en, x.employee.dept_en || x.employee.dept_ar || "", x.start_date, x.end_date, `${x.time}-${x.end_time}`, x.place, x.days,
+        x.outside_muscat ? "Yes" : "No", x.days_outside, x.nights, x.rates ? x.rates.day : "", x.rates ? x.rates.night : "", x.allowance.toFixed(3), x.note || ""].map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","));
+      lines.push("", `"Total","","","","","","","","","","","","","","${total.toFixed(3)}",""`);
+      return sendRaw(req, res, 200, Buffer.from("\ufeff" + lines.join("\r\n"), "utf8"), "text/csv; charset=utf-8",
+        { "Content-Disposition": `attachment; filename="task-allowances-${month}.csv"`, "Cache-Control": "no-store" });
+    }
+    send(req, res, 200, { month, rows, total });
+  });
+
+  // HR / Admin correct an external task's allowance: days outside Muscat, nights, or the amount itself (with a note)
+  api.post("/api/requests/:id/allowance", async (req, res) => {
+    if (!["hr", "admin"].includes(req.sess.user.role)) throw forbidden();
+    const r = getReq(db, req.params.id);
+    if (!r || r.type !== "mission") throw new HttpError(404, "not_found", "Task not found");
+    const b = await readJson(req);
+    const note = String(b.note || "").trim().slice(0, 500);
+    if (!note) throw err(400, "invalid", "Please give a reason", "note");
+    const cur = JSON.parse(r.details || "{}"), days = daysBetweenInclusive(r.start_date, r.end_date);
+    const int = (v, max, field) => { const n = Number(v); if (!Number.isInteger(n) || n < 0 || n > max) throw err(400, "invalid", `Enter a whole number from 0 to ${max}`, field); return n; };
+    const next = { ...cur, days: cur.days || days };
+    if ("outside_muscat" in b) next.outside_muscat = !!b.outside_muscat;
+    if ("days_outside" in b) next.days_outside = int(b.days_outside, days, "days_outside");
+    if ("nights" in b) next.nights = int(b.nights, days, "nights");
+    let d = r.status === "approved" ? missionAllowance(db, { ...next, rates: undefined }) : next;
+    if (r.status === "approved" && cur.rates) { // keep the rates it was approved at
+      d.rates = cur.rates; d.allowance = Math.round(((d.days_outside || 0) * cur.rates.day + (d.nights || 0) * cur.rates.night) * 1000) / 1000;
+    }
+    if (b.amount !== undefined && b.amount !== null && b.amount !== "") {
+      const a = Number(b.amount);
+      if (!Number.isFinite(a) || a < 0 || a > 10000) throw err(400, "invalid", "Enter an amount from 0 to 10000 OMR", "amount");
+      d.allowance = Math.round(a * 1000) / 1000; d.amount_set = true;
+    }
+    d.allowance_note = note; d.allowance_by = req.sess.user.id; d.allowance_at = nowIso();
+    db.prepare("UPDATE leave_requests SET details=? WHERE id=?").run(JSON.stringify(d), r.id);
+    audit(db, req.sess.user.id, "request.allowance", "request", r.id, cur, d);
+    send(req, res, 200, { request: getReq(db, r.id) });
+  });
 
   // HR: classify an approved permission (§8) or confirm / refuse an approved fingerprint correction (§5).
   // "leave" takes the hours from annual leave; changing the classification undoes the earlier deduction.

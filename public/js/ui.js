@@ -46,7 +46,8 @@ export const amountText = (r) => (r.type === "correction" ? "—" : isPermission
 const permWhen = (r) => r.type === "late" ? t("arrive_at", { t: r.early_time }) : r.type === "break" || r.type === "mission" ? `${r.early_time}–${r.end_time}`
   : r.type === "correction" ? [r.early_time ? t("corr_in_at", { t: r.early_time }) : null, r.end_time ? t("corr_out_at", { t: r.end_time }) : null].filter(Boolean).join(" · ")
   : t("leave_at", { t: r.early_time });
-export const when = (r) => (isPermission(r.type) || isAttendanceReq(r.type) ? `${dmy(r.start_date)} · ${permWhen(r)}` : r.start_date === r.end_date ? dmy(r.start_date) : `${dmy(r.start_date)} – ${dmy(r.end_date)}`);
+const span = (r) => (r.start_date === r.end_date ? dmy(r.start_date) : `${dmy(r.start_date)} – ${dmy(r.end_date)}`);
+export const when = (r) => (isPermission(r.type) || isAttendanceReq(r.type) ? `${span(r)} · ${permWhen(r)}` : span(r)); // a task may run over several days
 /** Minutes after midnight → "HH:MM"; a duration in minutes → "1:05". */
 export const clockText = (m) => (m === null || m === undefined ? "—" : `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`);
 export const durText = (m) => (m ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}` : "—");

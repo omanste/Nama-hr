@@ -57,6 +57,9 @@ export function readSettings(db) {
     // online check-in: the work sites (a point and a radius) and the minutes of grace before someone counts as late
     att_sites: getSetting(db, "att_sites", []),
     late_grace_min: getSetting(db, "late_grace_min", 15),
+    // external tasks: the allowance for each day outside Muscat and each overnight stay (OMR; HR sets them)
+    mission_day_allowance: getSetting(db, "mission_day_allowance", 0),
+    mission_night_allowance: getSetting(db, "mission_night_allowance", 0),
     contract_types: getSetting(db, "contract_types", DEFAULT_CONTRACT_TYPES),
     shift_1_start: S[1].start, shift_1_end: S[1].end, shift_2_start: S[2].start, shift_2_end: S[2].end, shift_3_start: S[3].start, shift_3_end: S[3].end,
     ramadan_start: getSetting(db, "ramadan_start", null),
@@ -122,6 +125,21 @@ export function registerAdmin(api, ctx) {
 
   // ---- settings
   api.get("/api/settings", (req, res) => send(req, res, 200, readSettings(db)));
+  // HR (and Admin) set the external-task allowance rates
+  api.put("/api/settings/allowances", async (req, res) => {
+    if (!["hr", "admin"].includes(req.sess.user.role)) throw new HttpError(403, "forbidden", "You do not have permission for this");
+    const b = await readJson(req), out = {};
+    for (const k of ["mission_day_allowance", "mission_night_allowance"]) {
+      if (!(k in b)) continue;
+      const v = Number(b[k]);
+      if (!Number.isFinite(v) || v < 0 || v > 1000) throw invalid(k, "Enter an amount from 0 to 1000 OMR");
+      out[k] = Math.round(v * 1000) / 1000;
+    }
+    const before = { mission_day_allowance: getSetting(db, "mission_day_allowance", 0), mission_night_allowance: getSetting(db, "mission_night_allowance", 0) };
+    for (const [k, v] of Object.entries(out)) setSetting(db, k, v);
+    audit(db, req.sess.user.id, "settings.allowances", "settings", null, before, out);
+    send(req, res, 200, readSettings(db));
+  });
   api.put("/api/settings", async (req, res) => {
     need(req.sess, "settings.edit");
     const b = await readJson(req);

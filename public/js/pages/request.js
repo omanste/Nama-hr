@@ -1,6 +1,6 @@
 import { api } from "../api.js";
 import { t, nm } from "../i18n.js";
-import { h, badge, when, amountText, dateTime, daysText, confirm, toast, errText, backLink, dmy, field, isPermission, isAttendanceReq, viewFile } from "../ui.js";
+import { h, badge, when, amountText, dateTime, daysText, confirm, toast, errText, backLink, dmy, field, isPermission, isAttendanceReq, viewFile, num } from "../ui.js";
 import { render as rerender, refreshMe } from "../app.js";
 
 export async function decide(id, action) {
@@ -57,6 +57,7 @@ export async function render(el, params, { me, can }) {
       row("employee", can.staffList() ? h("a", { href: `#/staff/${r.employee_id}` }, nm(r)) : nm(r)),
       row("date", when(r)), r.type === "correction" ? null : row("amount", amountText(r)),
       r.type === "mission" && r.details ? row("mission_place", JSON.parse(r.details).place) : null,
+      ...(r.type === "mission" ? missionRows(r, row, can) : []),
       d.classes ? row(r.type === "correction" ? "hr_confirmation" : "hr_classification", r.hr_class ? h("span", { class: `badge ${r.hr_class === "refused" ? "b-rejected" : "b-approved"}` }, t("pc_" + r.hr_class))
         : r.status === "approved" ? h("span", { class: "badge b-pending" }, t("att_awaiting_hr")) : "—") : null,
       ["annual", "emergency"].includes(r.type) ? row("current_balance", daysText(r.balance)) : null,
@@ -88,4 +89,40 @@ export async function render(el, params, { me, can }) {
       h("ol", { class: "timeline" }, d.events.map((e) => h("li", null, h("div", null,
         h("div", null, h("b", null, (e.actor_name && (nm({ name_ar: e.actor_name, name_en: e.actor_name_en }))) || e.actor_username || "—"), " · ", t("ev_" + e.action)),
         h("div", { class: "sub" }, dateTime(e.at)), e.comment ? h("div", null, e.comment) : null))))));
+}
+
+/** An external task's days, outside Muscat, nights and allowance; HR/Admin may correct the allowance. */
+function missionRows(r, row, can) {
+  const x = JSON.parse(r.details || "{}"), days = x.days || 1;
+  const out = [row("allow_days", t("allow_n_days", { n: num(days) })), row("mission_outside_muscat", x.outside_muscat ? t("yes") : t("no"))];
+  if (x.outside_muscat) out.push(row("allow_nights", num(x.nights || 0)));
+  if (r.status === "approved") out.push(row("allow_amount", h("span", null, h("b", null, `${Number(x.allowance || 0).toFixed(3)} ${t("omr")}`),
+    // how it was worked out, on its own line, left to right: "3 days × 5 + 2 nights × 12.5"
+    x.rates ? h("div", { class: "muted", style: { unicodeBidi: "isolate" } }, h("bdi", null, `${num(x.days_outside || 0)} ${t("allow_days_short")} × ${x.rates.day}`), " + ", h("bdi", null, `${num(x.nights || 0)} ${t("allow_nights_short")} × ${x.rates.night}`)) : null,
+    x.allowance_note ? h("div", { class: "muted" }, "✎ ", x.allowance_note) : null,
+    can.edit() ? h("button", { class: "btn small", type: "button", style: { marginInlineStart: "8px" }, onclick: () => allowanceDialog(r, x) }, t("allow_correct")) : null)));
+  return out;
+}
+function allowanceDialog(r, x) {
+  const outside = h("input", { type: "checkbox", checked: !!x.outside_muscat });
+  const days = h("input", { type: "number", min: "0", step: "1", value: x.days_outside ?? x.days ?? 1 });
+  const nights = h("input", { type: "number", min: "0", step: "1", value: x.nights || 0 });
+  const amount = h("input", { type: "number", min: "0", step: "0.001", placeholder: t("allow_amount_auto") });
+  const note = h("textarea", { rows: 2, required: true });
+  const errBox = h("div", { class: "form-error" });
+  const dlg = h("dialog", { class: "dialog" }, h("form", { class: "form", onsubmit: async (ev) => {
+    ev.preventDefault();
+    if (!note.value.trim()) { errBox.textContent = t("required"); return; }
+    try {
+      await api.post(`/api/requests/${r.id}/allowance`, { outside_muscat: outside.checked, days_outside: Number(days.value || 0), nights: Number(nights.value || 0), amount: amount.value === "" ? null : Number(amount.value), note: note.value.trim() });
+      dlg.close(); toast(t("saved")); rerender();
+    } catch (er) { errBox.textContent = errText(er); }
+  } },
+    h("h2", null, t("allow_correct")),
+    h("label", { class: "row", style: { gap: "8px", alignItems: "center" } }, outside, t("mission_outside_muscat")),
+    h("div", { class: "fields" }, field(t("allow_days_out"), days), field(t("allow_nights"), nights), field(t("allow_amount_manual"), amount, { hint: t("allow_amount_manual_hint") })),
+    field(t("adjust_reason"), note, { full: true }), errBox,
+    h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), h("button", { class: "btn primary", type: "submit" }, t("save")))));
+  dlg.addEventListener("close", () => dlg.remove());
+  document.body.append(dlg); dlg.showModal();
 }

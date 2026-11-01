@@ -217,3 +217,53 @@ test("shift 3 (10:00–17:00) is a special case only HR/Admin assign; the day is
   assert.equal((await admin.get("/api/settings")).data.shift_3_start, "10:30");
   await hr.c.put(`/api/employees/${s.emp.id}`, { shift: 2 });
 });
+
+test("a task over several days (a distant site): every day is work; the allowance is worked out at approval; HR corrects it; Accounts' month report", async () => {
+  // HR sets the rates: 5 OMR a day outside Muscat, 10 OMR a night
+  assert.equal((await s.c.put("/api/settings/allowances", { mission_day_allowance: 5 })).status, 403, "staff can't");
+  assert.equal((await hr.c.put("/api/settings/allowances", { mission_day_allowance: 5, mission_night_allowance: 10 })).status, 200);
+  assert.equal((await hr.c.put("/api/settings/allowances", { mission_day_allowance: -1 })).status, 400);
+  const body = { type: "mission", date: "2026-10-25", end_date: "2026-10-27", time: "08:00", end_time: "17:00", reason: "إشراف على موقع المشروع", place: "صلالة — موقع المشروع", outside_muscat: true, overnight: true };
+  assert.equal((await s.c.post("/api/requests", { ...body, end_date: "2026-10-24" })).status, 400, "the last day before the first");
+  assert.equal((await s.c.post("/api/requests", { ...body, end_date: "2026-11-20" })).status, 400, "at most 14 days");
+  const m = await s.c.post("/api/requests", body);
+  assert.equal(m.status, 201); assert.equal(m.data.request.end_date, "2026-10-27"); assert.equal(m.data.request.minutes, 3 * 540);
+  assert.deepEqual(JSON.parse(m.data.request.details), { place: "صلالة — موقع المشروع", days: 3, outside_muscat: true, nights: 2 });
+  // no second task over the same hours on any of those days
+  assert.equal((await s.c.post("/api/requests", { ...body, date: "2026-10-26", end_date: "2026-10-26" })).status, 409);
+  await mgr.c.post(`/api/requests/${m.data.request.id}/approve`, {});
+  const got = (await s.c.get(`/api/requests/${m.data.request.id}`)).data.request;
+  assert.equal(got.status, "approved");
+  const x = JSON.parse(got.details);
+  assert.equal(x.days_outside, 3); assert.equal(x.nights, 2); assert.deepEqual(x.rates, { day: 5, night: 10 }); assert.equal(x.allowance, 35);
+  // every day of it is work on the sheet
+  const days = (await s.c.get(`/api/attendance/employee/${s.emp.id}?month=2026-10`)).data.days.filter((d) => d.date >= "2026-10-25" && d.date <= "2026-10-27");
+  assert.equal(days.length, 3);
+  assert.ok(days.every((d) => ["mission", "present"].includes(d.status)), "worked: a task day (or present, where the machine also recorded them)");
+  assert.ok(days.every((d) => d.requests.some((r) => r.id === got.id)), "the task shows on each of its days");
+  // a rate change later doesn't alter it; HR corrects it with a reason
+  await hr.c.put("/api/settings/allowances", { mission_day_allowance: 8 });
+  assert.equal((await hr.c.post(`/api/requests/${got.id}/allowance`, { nights: 1 })).status, 400, "a reason is needed");
+  assert.equal((await s.c.post(`/api/requests/${got.id}/allowance`, { nights: 1, note: "x" })).status, 403);
+  const c = await hr.c.post(`/api/requests/${got.id}/allowance`, { nights: 1, note: "عاد في اليوم الثالث مساءً" });
+  assert.equal(JSON.parse(c.data.request.details).allowance, 25, "3 × 5 + 1 × 10 at the approved rates");
+  // the month's report for Accounts (and its CSV); staff can't open it
+  const acc = await makePerson(t.base, admin, { emp_no: "AC1", name_ar: "حسابات" }, "accounts");
+  const rep = (await acc.c.get("/api/reports/mission-allowances?month=2026-10")).data;
+  const row = rep.rows.find((r) => r.id === got.id);
+  assert.equal(row.allowance, 25); assert.equal(row.days_outside, 3); assert.equal(row.nights, 1); assert.ok(rep.total >= 25);
+  const csv = String((await acc.c.get("/api/reports/mission-allowances?month=2026-10&format=csv")).data);
+  assert.match(csv, /Allowance \(OMR\)/); assert.match(csv, /"25\.000"/);
+  assert.equal((await s.c.get("/api/reports/mission-allowances?month=2026-10")).status, 403);
+  // a task inside Muscat has no allowance
+  const inMuscat = await s.c.post("/api/requests", { ...body, date: "2026-10-22", end_date: "2026-10-22", outside_muscat: false, overnight: false, place: "مسقط" });
+  await mgr.c.post(`/api/requests/${inMuscat.data.request.id}/approve`, {});
+  assert.equal(JSON.parse((await s.c.get(`/api/requests/${inMuscat.data.request.id}`)).data.request.details).allowance, 0);
+});
+
+test("HR sets a balance to an exact number: the difference is recorded as an adjustment", async () => {
+  const cur = (await hr.c.get(`/api/employees/${s.emp.id}`)).data.leave.remaining;
+  const target = 18.5 * 480;
+  assert.equal((await hr.c.post(`/api/employees/${s.emp.id}/adjust`, { minutes: target - cur, note: "تصحيح الرصيد حسب السجل الورقي" })).status, 200);
+  assert.equal((await hr.c.get(`/api/employees/${s.emp.id}`)).data.leave.remaining, target);
+});
