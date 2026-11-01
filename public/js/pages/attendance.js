@@ -4,6 +4,7 @@ import { api } from "../api.js";
 import { t, nm, getLang, tx } from "../i18n.js";
 import { h, select, pageHead, empty, num, dmy, todayIso, toast, errText, confirm, clockText, durText, dateTime, viewFile } from "../ui.js";
 import { render as rerender } from "../app.js";
+import { checkinPlace } from "../checkin.js";
 
 const pad = (n) => String(n).padStart(2, "0");
 const loc = () => (getLang() === "ar" ? "ar-OM-u-nu-latn" : "en-GB");
@@ -31,12 +32,8 @@ export function summaryTiles(s) {
 }
 
 /** One online check-in on the sheet: time, site (or outside, with the reason), the photo and the place on a map. */
-const checkinChip = (c) => h("div", { class: `ci-chip ${c.outside ? "outside" : ""}` },
-  h("b", null, c.kind === "in" ? "⏱ " : "🏁 ", c.time), " ",
-  c.outside ? h("span", { class: "bad-text", title: c.reason || "" }, t("ci_outside"), c.reason ? ` — ${c.reason}` : "") : h("span", null, "📍 ", getLang() === "en" ? c.site_en || c.site_ar : c.site_ar || c.site_en),
-  c.approval ? h("span", { class: `badge ${c.approval === "approved" ? "b-approved" : c.approval === "rejected" ? "b-rejected" : "b-pending"}`, title: c.decision_note || "" }, t("ci_appr_" + c.approval)) : null,
-  c.photo_file_id ? h("button", { class: "linkish", type: "button", title: t("ci_photo"), "aria-label": t("ci_photo"), onclick: () => viewFile({ id: c.photo_file_id, name: `${t("ci_photo")} · ${c.time}`, mime: "image/jpeg" }) }, "📷") : null,
-  c.lat !== null && c.lat !== undefined ? h("a", { href: `https://maps.google.com/?q=${c.lat},${c.lng}`, target: "_blank", rel: "noopener", title: t("ci_map") + (c.accuracy ? ` (±${c.accuracy} m)` : "") }, "🗺") : null);
+// one online check-in in the day's full list: ⏱/🏁 time, then the place, the manager's decision, 📷 and 🗺
+const checkinChip = (c) => h("div", { class: `ci-chip ${c.outside ? "outside" : ""}` }, h("b", null, c.kind === "in" ? "⏱ " : "🏁 ", c.time), " ", checkinPlace(c));
 
 export async function render(el, _p, { me, query, can }) {
   const empId = Number(query.get("emp")) || (me.employee && me.employee.id);
@@ -66,15 +63,32 @@ export async function render(el, _p, { me, query, can }) {
     const ask = canAsk && (x.status === "missing" || x.status === "absent")
       ? h("a", { class: "btn small", href: `#/attendance/correction?date=${x.date}` }, t("att_ask_correction")) : null;
     const status = x.status === "leave" ? t("lt_" + x.leave) : x.status === "missing" ? t(x.missing === "in" ? "as_missing_in" : "as_missing_out") : t("as_" + x.status);
-    const row = h("tr", { class: ["rest", "holiday", "no_data"].includes(x.status) ? "muted-row" : null },
+    // In / Out: the time, then where it came from — an online check-in (📍 place or outside + the manager's decision, 📷, 🗺),
+    // a fingerprint or an approved correction. A check-in still waiting for (or refused by) the manager shows too.
+    const cis = x.checkins || [];
+    const corrected = x.requests.some((r) => r.type === "correction" && r.status === "approved");
+    const punchCell = (min, kind) => {
+      const list = cis.filter((c) => c.kind === kind), c = kind === "in" ? list[0] : list[list.length - 1];
+      const shown = min !== null && min !== undefined ? clockText(min) : c && c.approval && c.approval !== "approved" ? c.time : null;
+      if (!shown) return h("td", { class: "num", "data-label": "" });
+      // the check-in behind this time: one that counts (not waiting / refused) at that minute, else this kind's own
+      const counts = (k) => k.approval !== "pending" && k.approval !== "rejected";
+      const online = (min !== null && min !== undefined && cis.find((k) => k.time === shown && counts(k))) || (c && c.time === shown ? c : null);
+      return h("td", { class: "num punch" }, h("b", null, shown),
+        online ? h("div", { class: "punch-src" }, checkinPlace(online, { reason: false }))
+          : h("div", { class: "punch-src muted" }, corrected ? t("att_src_corrected") : t("att_src_machine")));
+    };
+    const more = cis.length > 2 ? h("details", { class: "ci-more" }, h("summary", null, t("ci_all_n", { n: num(cis.length) })),
+      h("div", { class: "ci-day" }, cis.map(checkinChip))) : null;
+    const quiet = ["rest", "holiday", "no_data"].includes(x.status);
+    return h("tr", { class: quiet ? "muted-row" : null },
       h("td", null, h("b", null, dmy(x.date).slice(0, 5)), " ", h("span", { class: "muted" }, weekday(x.date)), x.holiday ? h("div", { class: "muted" }, tx(x.holiday)) : null),
-      h("td", { class: "num" }, clockText(x.in)), h("td", { class: "num" }, clockText(x.out)), h("td", { class: "num" }, durText(x.onSite)),
-      h("td", { class: "num" }, x.late ? h("span", { class: "bad-text" }, durText(x.late)) : "—"),
-      h("td", { class: "num" }, x.early ? h("span", { class: "bad-text" }, durText(x.early)) : "—"),
+      punchCell(x.in, "in"), punchCell(x.out, "out"),
+      h("td", { class: "num" }, x.onSite ? durText(x.onSite) : quiet ? "" : "—"),
+      h("td", { class: "num" }, x.late ? h("span", { class: "bad-text" }, durText(x.late)) : quiet ? "" : "—"),
+      h("td", { class: "num" }, x.early ? h("span", { class: "bad-text" }, durText(x.early)) : quiet ? "" : "—"),
       h("td", null, h("span", { class: `badge ${STATUS_CLASS[x.status] || ""}` }, status), x.info && ["absent", "missing"].includes(x.status) ? h("span", { class: "muted" }, " ", t("att_info_only")) : null),
-      h("td", null, reqLinks, ask));
-    // the day's online check-ins on a full-width line under it (where, the photo, the map)
-    return x.checkins ? [row, h("tr", { class: "ci-row" }, h("td", { colspan: 8 }, h("div", { class: "ci-day" }, x.checkins.map(checkinChip))))] : row;
+      reqLinks.length || ask || more ? h("td", null, reqLinks, ask, more) : h("td", { "data-label": "" }));
   });
 
   const reviewBox = h("section", { class: "card" }, h("h2", null, t("att_review_title")),
@@ -100,7 +114,7 @@ export async function render(el, _p, { me, query, can }) {
     summaryTiles(d.summary),
     h("section", { class: "card", style: { marginTop: "16px" } },
       h("div", { class: "card-head" }, h("h2", null, t("att_days")), h("span", { class: "sub" }, t("att_policy_note", { n: d.grace ?? 15 }))),
-      rows.length ? h("div", { class: "table-wrap keep-table" }, h("table", { class: "att-table" },
+      rows.length ? h("div", { class: "table-wrap" }, h("table", { class: "att-table" },
         h("thead", null, h("tr", null, [t("date"), t("att_in"), t("att_out"), t("att_on_site"), t("att_late"), t("att_early"), t("status"), ""].map((x, i) => h("th", { class: i > 0 && i < 6 ? "num" : null }, x)))),
         h("tbody", null, rows))) : empty()),
     reviewBox);

@@ -2,7 +2,7 @@
 // the location, a photo taken live with the camera, and (outside every work site) a reason. The server keeps the time.
 import { api } from "./api.js";
 import { t, nm, getLang } from "./i18n.js";
-import { h, toast, errText } from "./ui.js";
+import { h, toast, errText, viewFile } from "./ui.js";
 import { render as rerender } from "./app.js";
 
 const DEVICE_KEY = "nama.device";
@@ -121,4 +121,17 @@ function reasonDialog(info) {
     dlg.addEventListener("close", () => { dlg.remove(); resolve(null); });
     document.body.append(dlg); dlg.showModal(); box.focus();
   });
+}
+
+/** One online check-in, compact: 📍 place (or "outside the work sites" with the reason and the manager's decision), then
+ * 📷 the photo and 🗺 the map. Takes a day's check-in (site_ar/site_en) or a log entry (site: {name_ar, name_en}). */
+export function checkinPlace(c, { reason = true } = {}) {
+  if (!c) return null;
+  const site = c.site || { name_ar: c.site_ar, name_en: c.site_en };
+  return h("span", { class: "ci-place" },
+    c.outside ? h("span", { class: "bad-text", title: c.reason || "" }, t("ci_outside"), reason && c.reason ? ` — ${c.reason}` : "")
+      : h("span", null, "📍 ", getLang() === "en" ? site.name_en || site.name_ar || "" : site.name_ar || site.name_en || ""),
+    c.approval ? h("span", { class: `badge ${c.approval === "approved" ? "b-approved" : c.approval === "rejected" ? "b-rejected" : "b-pending"}`, title: c.decision_note || "" }, t("ci_appr_" + c.approval)) : null,
+    c.photo_file_id ? h("button", { class: "linkish ci-ico", type: "button", title: t("ci_photo"), "aria-label": t("ci_photo"), onclick: () => viewFile({ id: c.photo_file_id, name: `${t("ci_photo")} · ${c.time || ""}`, mime: "image/jpeg" }) }, "📷") : null,
+    c.lat !== null && c.lat !== undefined ? h("a", { class: "ci-ico", href: `https://maps.google.com/?q=${c.lat},${c.lng}`, target: "_blank", rel: "noopener", title: t("ci_map") + (c.accuracy ? ` (±${c.accuracy} m)` : ""), "aria-label": t("ci_map") }, "🗺") : null);
 }

@@ -127,6 +127,27 @@ test("the monthly sheet: online check-ins are the day's punches (in within the g
   assert.ok(!(await hr.c.get(`/api/employees/${s.emp.id}`)).data.files.some((f) => f.id === id));
 });
 
+test("the online check-in log: one line per person per day, first in / last out, with place and approval; CSV too", async () => {
+  const r = await hr.c.get("/api/attendance/checkins?from=2026-11-01&to=2026-11-02");
+  assert.equal(r.status, 200);
+  const row = r.data.rows.find((x) => x.employee.id === s.emp.id && x.date === "2026-11-02");
+  assert.equal(row.in.time, "09:12"); assert.equal(row.in.site.name_en, "Head office"); assert.equal(row.in.outside, false);
+  assert.equal(row.out.time, "16:40"); assert.equal(row.out.outside, true); assert.equal(row.out.reason, "زيارة موقع عميل"); assert.equal(row.out.approval, "approved");
+  assert.equal(row.minutes, 448); assert.ok(row.in.photo_file_id && row.in.lat);
+  // filters: by person, by department
+  assert.ok((await hr.c.get(`/api/attendance/checkins?from=2026-11-01&to=2026-11-02&emp=${other.emp.id}`)).data.rows.every((x) => x.employee.id === other.emp.id));
+  // the manager sees their department; a staff member can't open it
+  assert.ok((await mgr.c.get("/api/attendance/checkins?from=2026-11-01&to=2026-11-02")).data.rows.some((x) => x.employee.id === s.emp.id));
+  assert.equal((await s.c.get("/api/attendance/checkins")).status, 403);
+  assert.equal((await hr.c.get("/api/attendance/checkins?from=2026-11-05&to=2026-11-01")).status, 400);
+  // the CSV
+  const csv = await hr.c.get("/api/attendance/checkins?from=2026-11-01&to=2026-11-02&format=csv");
+  assert.equal(csv.status, 200);
+  const lines = String(csv.data).replace(/^\ufeff/, "").split("\r\n");
+  assert.match(lines[0], /^Date,Employee ID/);
+  assert.ok(lines.some((l) => l.includes('"S1"') && l.includes('"09:12"') && l.includes("Outside the work sites")));
+});
+
 test("not for the CEO (outside the policy) or someone on the fingerprint machine only", async () => {
   assert.equal((await ceo.c.get("/api/attendance/checkin/today")).data.enabled, false);
   assert.equal((await ceo.c.post("/api/attendance/checkin/consent", {})).status, 403);

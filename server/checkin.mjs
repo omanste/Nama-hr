@@ -5,7 +5,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { tx, nowIso, getSetting } from "./db.mjs";
-import { send, readJson, HttpError } from "./http.mjs";
+import { send, sendRaw, readJson, HttpError } from "./http.mjs";
+import { isIsoDate, addDays } from "./leave.mjs";
 import { audit } from "./audit.mjs";
 import { notify } from "./notify.mjs";
 import { storeUpload } from "./files.mjs";
@@ -180,6 +181,59 @@ export function registerCheckin(api, ctx) {
   });
 
   // ---- check-ins outside the work sites: the manager approves or rejects (HR/Admin can too; never one's own)
+  // ---- the online check-in log: one row per person per day (first check-in, last check-out), for HR, top management,
+  // Accounts and the consultant (everyone), or an approver (their departments and the people who report to them)
+  const LOG_ALL = ["hr", "admin", "ceo", "chairman", "consultant", "accounts"];
+  api.get("/api/attendance/checkins", (req, res) => {
+    const sess = req.sess, q = req.query, today = ctx.today();
+    const mineDepts = approvedDepartments(db, sess.employee && sess.employee.id);
+    const all = LOG_ALL.includes(sess.user.role);
+    if (!all && !mineDepts.length && !(sess.employee && db.prepare("SELECT 1 FROM employees WHERE manager_employee_id=?").get(sess.employee.id)))
+      throw new HttpError(403, "forbidden", "You do not have permission for this");
+    const from = q.get("from") || today.slice(0, 8) + "01", to = q.get("to") || today;
+    if (!isIsoDate(from) || !isIsoDate(to) || to < from) throw new HttpError(400, "invalid", "Choose a valid period");
+    if (addDays(from, 400) < to) throw new HttpError(400, "invalid", "At most about a year at a time");
+    const where = ["substr(c.at,1,10) BETWEEN ? AND ?"], args = [from, to];
+    if (!all) {
+      where.push(`(e.manager_employee_id=? ${mineDepts.length ? `OR e.department_id IN (${mineDepts.map(() => "?").join(",")})` : ""})`);
+      args.push(sess.employee.id, ...mineDepts);
+    }
+    if (Number(q.get("dept"))) { where.push("e.department_id=?"); args.push(Number(q.get("dept"))); }
+    if (Number(q.get("emp"))) { where.push("e.id=?"); args.push(Number(q.get("emp"))); }
+    const list = db.prepare(`SELECT c.*, e.emp_no, e.name_ar, e.name_en, d.name_ar dept_ar, d.name_en dept_en FROM att_checkins c
+      JOIN employees e ON e.id=c.employee_id LEFT JOIN departments d ON d.id=e.department_id
+      WHERE ${where.join(" AND ")} ORDER BY c.at, c.id`).all(...args);
+    const sites = sitesNow(), siteName = (id) => sites.find((x) => x.id === id) || null;
+    const one = (c) => c && { id: c.id, time: c.at.slice(11, 16), site: c.site_id ? { name_ar: (siteName(c.site_id) || {}).name_ar || null, name_en: (siteName(c.site_id) || {}).name_en || null } : null,
+      outside: !!c.outside, reason: c.reason || null, approval: c.approval || null, decision_note: c.decision_note || null,
+      photo_file_id: c.photo_file_id || null, lat: c.lat, lng: c.lng, accuracy: c.accuracy_m };
+    const byKey = new Map();
+    for (const c of list) {
+      const k = `${c.employee_id}|${c.at.slice(0, 10)}`;
+      if (!byKey.has(k)) byKey.set(k, { employee: { id: c.employee_id, emp_no: c.emp_no, name_ar: c.name_ar, name_en: c.name_en, dept_ar: c.dept_ar, dept_en: c.dept_en }, date: c.at.slice(0, 10), all: [] });
+      byKey.get(k).all.push(c);
+    }
+    const toMin = (at) => Number(at.slice(11, 13)) * 60 + Number(at.slice(14, 16));
+    const rows = [...byKey.values()].map((r) => {
+      const inn = r.all.find((c) => c.kind === "in"), out = [...r.all].reverse().find((c) => c.kind === "out");
+      return { employee: r.employee, date: r.date, in: one(inn), out: one(out), count: r.all.length,
+        minutes: inn && out && out.at > inn.at ? toMin(out.at) - toMin(inn.at) : null };
+    }).sort((a, b) => (a.date === b.date ? String(a.employee.name_ar || a.employee.name_en).localeCompare(String(b.employee.name_ar || b.employee.name_en), "ar") : a.date < b.date ? 1 : -1));
+    if (q.get("format") === "csv") {
+      const place = (x) => (!x ? "" : x.outside ? `Outside the work sites${x.reason ? ` — ${x.reason}` : ""}` : (x.site && (x.site.name_en || x.site.name_ar)) || "");
+      const appr = (x) => (x && x.approval ? { pending: "Awaiting manager", approved: "Approved", rejected: "Rejected" }[x.approval] : "");
+      const map = (x) => (x && x.lat !== null && x.lat !== undefined ? `https://maps.google.com/?q=${x.lat},${x.lng}` : "");
+      const lines = [["Date", "Employee ID", "Name (Arabic)", "Name (English)", "Department", "Check-in", "Check-in place", "Check-in approval", "Check-in map",
+        "Check-out", "Check-out place", "Check-out approval", "Check-out map", "Hours", "Check-ins that day"].join(",")];
+      for (const r of rows) lines.push([r.date, r.employee.emp_no, r.employee.name_ar, r.employee.name_en, r.employee.dept_en || r.employee.dept_ar || "",
+        r.in ? r.in.time : "", place(r.in), appr(r.in), map(r.in), r.out ? r.out.time : "", place(r.out), appr(r.out), map(r.out),
+        r.minutes === null ? "" : (r.minutes / 60).toFixed(2), r.count].map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","));
+      return sendRaw(req, res, 200, Buffer.from("\ufeff" + lines.join("\r\n"), "utf8"), "text/csv; charset=utf-8",
+        { "Content-Disposition": `attachment; filename="online-checkins-${from}-to-${to}.csv"`, "Cache-Control": "no-store" });
+    }
+    send(req, res, 200, { from, to, rows });
+  });
+
   api.get("/api/attendance/checkins/pending", (req, res) => {
     const items = db.prepare(`SELECT c.*, e.emp_no, e.name_ar, e.name_en, e.photo_file_id emp_photo FROM att_checkins c JOIN employees e ON e.id=c.employee_id
       WHERE c.approval='pending' ORDER BY c.at`).all().filter((c) => mayDecideCheckin(db, req.sess, c));

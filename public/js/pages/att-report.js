@@ -73,7 +73,7 @@ export async function render(el, _p, { me, can, query }) {
   for (const i of [from, to]) i.addEventListener("change", () => { quick.value = "custom"; if (from.value && to.value && from.value <= to.value) load(); else toast(t("err_end_before_start"), "bad"); });
   if (dept) dept.addEventListener("change", load);
 
-  el.append(pageHead(t("nav_att_report"), can.edit() ? h("a", { class: "btn", href: "#/attendance/upload" }, "⬆ ", t("nav_att_upload")) : null, csv),
+  el.append(pageHead(t("nav_att_report"), h("a", { class: "btn", href: "#/attendance/online" }, "📍 ", t("nav_att_online")), can.edit() ? h("a", { class: "btn", href: "#/attendance/upload" }, "⬆ ", t("nav_att_upload")) : null, csv),
     h("section", { class: "card" }, h("div", { class: "fields" }, field(t("period"), quick), field(t("holiday_from"), from), field(t("holiday_to"), to), dept ? field(t("f_department"), dept) : null)),
     out, queue);
   await Promise.all([load(), loadQueue()]);
