@@ -117,3 +117,21 @@ test("the expected official holidays for a year are added only when asked, and d
   assert.ok((await s.c.get("/api/calendar?month=2027-03")).data.holidays.length >= 3);
   assert.equal((await admin.post("/api/calendar/import-oman", { year: 2027, holidays: true })).data.holidays, 0, "not twice");
 });
+
+test("HR and Admin edit any shared entry (name, dates, who sees it); staff only their own; holidays can be renamed", async () => {
+  const hr2 = await makePerson(t.base, admin, { emp_no: "CE1", name_ar: "موارد", join_date: "2020-01-01" }, "hr");
+  const st = await makePerson(t.base, admin, { emp_no: "CE2", name_ar: "موظف", join_date: "2022-01-01" }, "staff");
+  const ev = (await admin.post("/api/calendar/entries", { kind: "event", start: "2027-03-10", name: "حفل", visibility: "company" })).data.entry;
+  const r = await hr2.c.put(`/api/calendar/entries/${ev.id}`, { start: "2027-03-11", end: "2027-03-12", name: "حفل الموظفين" });
+  assert.equal(r.status, 200); assert.equal(r.data.entry.start_date, "2027-03-11"); assert.equal(r.data.entry.end_date, "2027-03-12"); assert.equal(r.data.entry.name, "حفل الموظفين");
+  assert.equal((await st.c.put(`/api/calendar/entries/${ev.id}`, { name: "x" })).status, 403);
+  assert.equal((await hr2.c.put(`/api/calendar/entries/${ev.id}`, { start: "2027-03-12", end: "2027-03-01" })).status, 400);
+  const mine = (await st.c.post("/api/calendar/entries", { kind: "event", start: "2027-03-15", name: "موعد", visibility: "personal" })).data.entry;
+  assert.equal((await st.c.put(`/api/calendar/entries/${mine.id}`, { name: "موعد طبيب", visibility: "company" })).data.entry.visibility, "company");
+  const blk = (await admin.post("/api/calendar/entries", { kind: "blocked", start: "2027-04-01", end: "2027-04-03", name: "جرد" })).data.entry;
+  assert.equal((await hr2.c.put(`/api/calendar/entries/${blk.id}`, { end: "2027-04-05" })).data.entry.end_date, "2027-04-05");
+  await admin.post("/api/calendar/entries", { kind: "holiday", start: "2027-05-20", name: "عطلة" });
+  assert.equal((await hr2.c.put("/api/calendar/holidays/2027-05-20", { name: "عطلة رسمية" })).status, 200);
+  assert.equal((await st.c.put("/api/calendar/holidays/2027-05-20", { name: "x" })).status, 403);
+  assert.ok((await hr2.c.get("/api/calendar?month=2027-05")).data.holidays.some((h) => h.name === "عطلة رسمية" || h.name_ar === "عطلة رسمية" || JSON.stringify(h).includes("عطلة رسمية")));
+});

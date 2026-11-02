@@ -4,6 +4,7 @@ import { registerEmployees } from "./employees.mjs";
 import { registerFiles } from "./files.mjs";
 import { registerAdmin } from "./admin.mjs";
 import { registerNotifications } from "./notify.mjs";
+import { registerPush } from "./push.mjs";
 import { registerRequests } from "./requests.mjs";
 import { registerJobs, registerCapReviews } from "./jobs.mjs";
 import { registerImport } from "./importer.mjs";
@@ -22,6 +23,7 @@ export async function registerModules(api, ctx) {
   registerFiles(api, ctx);
   registerAdmin(api, ctx);
   registerNotifications(api, ctx);
+  registerPush(api, ctx);
   registerRequests(api, ctx);
   registerJobs(api, ctx);
   registerCapReviews(api, ctx);

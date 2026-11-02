@@ -6,7 +6,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { tx, nowIso, getSetting } from "./db.mjs";
 import { send, sendRaw, readJson, HttpError } from "./http.mjs";
-import { isIsoDate, addDays } from "./leave.mjs";
+import { isIsoDate, addDays, clockMin, TYPES } from "./leave.mjs";
+import { shiftFor, isRestDay } from "./shifts.mjs";
+import { fileForPerson } from "./requests.mjs";
 import { audit } from "./audit.mjs";
 import { notify } from "./notify.mjs";
 import { storeUpload } from "./files.mjs";
@@ -32,6 +34,29 @@ export function siteOf(sites, p) {
   return { inside, nearest: near ? near.site : null, distance: near ? Math.round(near.d) : null };
 }
 
+/** Extra time is asked about this many minutes after the shift's end. */
+export const AFTER_HOURS_MIN = 30;
+const pad2 = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+/** Is this a working day for the person (not a rest day, an official holiday, approved leave or an external task)? */
+export function workingDay(db, emp, date) {
+  if (isRestDay(date)) return false;
+  if ((getSetting(db, "official_holidays", []) || []).some((x) => x.date === date)) return false;
+  const on = db.prepare("SELECT type FROM leave_requests WHERE employee_id=? AND status='approved' AND start_date<=? AND end_date>=?").all(emp.id, date, date);
+  return !on.some((r) => r.type === "mission" || (!TYPES[r.type].permission && !TYPES[r.type].attendance && r.type !== "comp_day"));
+}
+/** The last working day before today on which the person checked in online but never out (and asked no correction yet). */
+export function missedCheckout(db, emp, today) {
+  for (let k = 1, d = addDays(today, -1); k <= 7; k++, d = addDays(d, -1)) {
+    if (!workingDay(db, emp, d)) continue;
+    const last = db.prepare("SELECT kind FROM att_checkins WHERE employee_id=? AND substr(at,1,10)=? AND coalesce(approval,'approved')<>'rejected' ORDER BY at DESC, id DESC LIMIT 1").get(emp.id, d);
+    if (!last || last.kind !== "in") return null; // that working day is fine (or had no online check-in): look no further
+    if (db.prepare("SELECT 1 FROM leave_requests WHERE employee_id=? AND type='correction' AND start_date=? AND status IN ('pending','approved')").get(emp.id, d)) return null;
+    return { date: d };
+  }
+  return null;
+}
+/** Today's open "I'm still working" request (no end yet), if any. */
+export const openExtra = (db, empId, date) => db.prepare("SELECT * FROM leave_requests WHERE employee_id=? AND type='overtime' AND start_date=? AND status='pending' AND end_time IS NULL ORDER BY id DESC LIMIT 1").get(empId, date);
 /** May this person check in online? Not the CEO/Chairman (outside the policy), not someone on the fingerprint machine only. */
 export function canCheckIn(db, emp) {
   if (!emp) return { ok: false, why: "no_profile" };
@@ -61,6 +86,55 @@ export function mayDecideCheckin(db, sess, c) {
   const emp = db.prepare("SELECT manager_employee_id, department_id, reports_to_top FROM employees WHERE id=?").get(c.employee_id);
   if (emp && emp.reports_to_top && TOP_ROLES.includes(sess.user.role) && [sess.user.role, "both"].includes(emp.reports_to_top)) return true;
   return !!emp && (emp.manager_employee_id === sess.employee.id || approvedDepartments(db, sess.employee.id).includes(emp.department_id));
+}
+
+/* Reminders (every few minutes, from the job runner). Only for people who check in online — on "online", or on "both"
+ * with an online check-in in the last 14 days — on a working day, once a day each:
+ *   start + 30 min with no check-in → "you haven't checked in yet";
+ *   end + 30 min still checked in → "check out now, or tell us you're still working" (buttons on the pop-up);
+ *   23:00, said "still working" and still checked in → one last reminder;
+ *   from 09:00, each manager gets one list of their people with no check-out (or no check-in) on the last working day. */
+const once = (db, empId, date, kind) => db.prepare("INSERT OR IGNORE INTO att_reminders(employee_id,date,kind,sent_at) VALUES(?,?,?,?)").run(empId, date, kind, nowIso()).changes > 0;
+export function runReminders(ctx, today, now) {
+  const { db } = ctx;
+  const exempt = new Set(attendanceExempt(db)), since = addDays(today, -14);
+  const people = db.prepare(`SELECT e.*, u.id user_id FROM employees e JOIN users u ON u.employee_id=e.id AND u.active=1
+    WHERE e.status='active' AND coalesce(e.att_mode,'both')<>'machine'`).all()
+    .filter((e) => !exempt.has(e.id) && (e.att_mode === "online" || db.prepare("SELECT 1 FROM att_checkins WHERE employee_id=? AND at>=?").get(e.id, since)));
+  let sent = 0;
+  const lastOf = (id, d) => db.prepare("SELECT kind FROM att_checkins WHERE employee_id=? AND substr(at,1,10)=? AND coalesce(approval,'approved')<>'rejected' ORDER BY at DESC, id DESC LIMIT 1").get(id, d);
+  const missedBy = new Map(); // manager user → names
+  for (const e of people) {
+    const shift = shiftFor(db, e, today), last = lastOf(e.id, today);
+    if (workingDay(db, e, today)) {
+      if (!last && now >= shift.start + AFTER_HOURS_MIN && now < shift.end && once(db, e.id, today, "in")) {
+        notify(ctx, [e.user_id], { title_ar: "لم تسجّل حضورك بعد", title_en: "You haven't checked in yet", body_ar: `بدأ دوامك الساعة ${pad2(shift.start)}`, body_en: `Your shift started at ${pad2(shift.start)}`, link: "#/", inAppOnly: true, tag: "ci-in" });
+        sent++;
+      }
+      const open = openExtra(db, e.id, today);
+      if (last && last.kind === "in" && !open && now >= shift.end + AFTER_HOURS_MIN && once(db, e.id, today, "out")) {
+        notify(ctx, [e.user_id], { title_ar: "لم تسجّل انصرافك", title_en: "You haven't checked out", body_ar: `انتهى دوامك الساعة ${pad2(shift.end)} — سجّل انصرافك، أو أخبرنا إن كنت ما زلت في العمل`,
+          body_en: `Your shift ended at ${pad2(shift.end)} — check out, or tell us you're still working`, link: "#/?ci=out", inAppOnly: true, tag: "ci-out",
+          actions: [{ action: "#/?ci=out", title_ar: "انصراف الآن", title_en: "Check out now" }, { action: "#/?ci=stay", title_ar: "ما زلت في العمل", title_en: "I'm still working" }] });
+        sent++;
+      }
+      if (last && last.kind === "in" && open && now >= 23 * 60 && once(db, e.id, today, "late")) {
+        notify(ctx, [e.user_id], { title_ar: "ما زلت مسجّلاً في العمل", title_en: "You're still checked in", body_ar: "سجّل انصرافك عند الانتهاء", body_en: "Check out when you finish", link: "#/?ci=out", inAppOnly: true, tag: "ci-out" });
+        sent++;
+      }
+    }
+    // the managers' morning list: the last working day without a check-out
+    if (now >= 9 * 60) {
+      const m = missedCheckout(db, e, today);
+      if (m) for (const to of approversOf(db, e)) { if (!missedBy.has(to)) missedBy.set(to, []); missedBy.get(to).push(e.name_ar || e.name_en); }
+    }
+  }
+  for (const [to, names] of missedBy) {
+    if (!once(db, -to, today, "mgr")) continue; // keyed by the manager (a negative id: not an employee)
+    notify(ctx, [to], { title_ar: `لم يسجّلوا الانصراف: ${names.length}`, title_en: `Didn't check out: ${names.length}`, body_ar: names.join("، "), body_en: names.join(", "), link: "#/attendance/report", inAppOnly: true });
+    sent++;
+  }
+  return sent;
 }
 
 /** Delete check-in photos older than 90 days and clear locations older than 12 months (privacy; audited). */
@@ -130,8 +204,14 @@ export function registerCheckin(api, ctx) {
     if (!may.ok) return send(req, res, 200, { enabled: false, why: may.why });
     const items = today(sess);
     const sites = sitesNow();
+    const emp = sess.employee, day = ctx.today(), now = clockMin(ctx.clock()), shift = shiftFor(db, emp, day);
+    const next = items.length && items[items.length - 1].kind === "in" ? "out" : "in";
+    const open = openExtra(db, emp.id, day);
     send(req, res, 200, { enabled: true, consent: !!sess.user.checkin_consent_at, items: items.map((c) => ({ ...c, site: sites.find((s) => s.id === c.site_id) || null })),
-      next: items.length && items[items.length - 1].kind === "in" ? "out" : "in", sites: sites.length });
+      next, sites: sites.length, shift_end: pad2(shift.end),
+      // 30 minutes after the shift and still checked in: "check out now" or "I'm still working" (with a reason)
+      after_hours: next === "out" && workingDay(db, emp, day) && now > shift.end + AFTER_HOURS_MIN, staying: open ? { reason: open.reason } : null,
+      missed: missedCheckout(db, emp, day) });
   });
 
   // Settings › Work sites: a Google Maps link (or "lat, lng") → the coordinates (Admin)
@@ -167,8 +247,15 @@ export function registerCheckin(api, ctx) {
     const where = siteOf(sitesNow(), { lat, lng });
     const reason = String(q.get("reason") || "").trim().slice(0, 300);
     if (!where.inside && !reason) throw Object.assign(bad("reason", "You're outside every work site — say why"), { extra: { outside: true, nearest: where.nearest, distance: where.distance } });
+    // leaving more than 30 minutes after the shift on a working day: why (the extra time goes to the manager, then HR)
+    const today = ctx.today(), now = clockMin(ctx.clock()), shift = shiftFor(db, emp, today);
+    const lateOut = kind === "out" && workingDay(db, emp, today) && now > shift.end + AFTER_HOURS_MIN;
+    const open = lateOut ? openExtra(db, emp.id, today) : null;
+    const extraReason = String(q.get("extra_reason") || "").trim().slice(0, 300) || (open && open.reason) || "";
+    if (lateOut && !extraReason)
+      throw Object.assign(bad("extra_reason", "You're leaving after your working hours — say why"), { extra: { after_hours: true, shift_end: pad2(shift.end) } });
     const photo = await storeUpload(ctx, req, { employeeId: emp.id, kind: "checkin" });
-    const at = `${ctx.today()} ${ctx.clock()}`;
+    const at = `${today} ${ctx.clock()}`;
     const row = tx(db, () => {
       const r = db.prepare(`INSERT INTO att_checkins(employee_id,kind,at,lat,lng,accuracy_m,site_id,outside,reason,photo_file_id,device_id,ip,user_agent,created_at)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(emp.id, kind, at, lat, lng, Number.isFinite(acc) ? Math.round(acc) : null, where.inside ? where.inside.id : null,
@@ -186,7 +273,31 @@ export function registerCheckin(api, ctx) {
         title_ar: `${kind === "in" ? "تسجيل حضور" : "تسجيل انصراف"} خارج مواقع العمل بانتظار موافقتك`, title_en: `${kind === "in" ? "Check-in" : "Check-out"} outside the work sites awaiting your approval`,
         body_ar: `${emp.name_ar || emp.name_en} · ${at.slice(11)} — ${reason}`, body_en: `${emp.name_en || emp.name_ar} · ${at.slice(11)} — ${reason}`, link: "#/approvals" });
     }
-    send(req, res, 201, { checkin: { id: row.id, kind: row.kind, at: row.at, outside: !!row.outside, approval: row.approval, site: where.inside } });
+    let extra = null;
+    if (lateOut) {
+      const v = { start_date: today, end_date: today, early_time: pad2(shift.end), end_time: pad2(now), minutes: now - shift.end };
+      if (open) { // they said "I'm still working": the request gets its end now
+        db.prepare("UPDATE leave_requests SET end_time=?, minutes=?, reason=? WHERE id=?").run(v.end_time, v.minutes, extraReason, open.id);
+        extra = db.prepare("SELECT * FROM leave_requests WHERE id=?").get(open.id);
+      } else extra = fileForPerson(ctx, emp, sess.user.id, { type: "overtime", ...v, reason: extraReason, details: { source: "checkout", checkin_id: row.id } });
+    }
+    send(req, res, 201, { checkin: { id: row.id, kind: row.kind, at: row.at, outside: !!row.outside, approval: row.approval, site: where.inside }, extra: extra && { id: extra.id, minutes: extra.minutes } });
+  });
+
+  // "I'm still working" (asked 30 minutes after the shift): a reason; the extra time goes to the manager once they check out
+  api.post("/api/attendance/checkin/stay", async (req, res) => {
+    const sess = req.sess, emp = sess.employee;
+    if (!canCheckIn(db, emp).ok) throw new HttpError(403, "forbidden", "Online check-in isn't on for you");
+    const reason = String((await readJson(req)).reason || "").trim().slice(0, 300);
+    if (!reason) throw bad("reason", "Say why you're staying after your working hours");
+    const today = ctx.today(), last = db.prepare("SELECT kind FROM att_checkins WHERE employee_id=? AND substr(at,1,10)=? ORDER BY at DESC, id DESC LIMIT 1").get(emp.id, today);
+    if (!last || last.kind !== "in") throw new HttpError(409, "not_checked_in", "You haven't checked in today");
+    const shift = shiftFor(db, emp, today), open = openExtra(db, emp.id, today);
+    const r = open
+      ? (db.prepare("UPDATE leave_requests SET reason=? WHERE id=?").run(reason, open.id), db.prepare("SELECT * FROM leave_requests WHERE id=?").get(open.id))
+      : fileForPerson(ctx, emp, sess.user.id, { type: "overtime", start_date: today, end_date: today, early_time: pad2(shift.end), end_time: null, minutes: 0, reason, details: { source: "staying" } });
+    db.prepare("INSERT OR IGNORE INTO att_reminders(employee_id,date,kind,sent_at) VALUES(?,?,?,?)").run(emp.id, today, "stay", nowIso());
+    send(req, res, 200, { request: { id: r.id } });
   });
 
   // ---- check-ins outside the work sites: the manager approves or rejects (HR/Admin can too; never one's own)

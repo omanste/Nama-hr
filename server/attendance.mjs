@@ -147,7 +147,10 @@ export function employeeDays(db, emp, from, to, today, source = "all", nowMin = 
     day.info = !start || date < start; // before the policy applies: for information only (§17)
     if (holidays.has(date)) day.holiday = holidays.get(date);
     if (useOnline && byDay.has(date)) day.checkins = byDay.get(date);
-    day.requests = on.map((r) => ({ id: r.id, type: r.type, status: r.status, hr_class: r.hr_class }));
+    day.requests = on.map((r) => ({ id: r.id, type: r.type, status: r.status, hr_class: r.hr_class, minutes: r.minutes, end_time: r.end_time }));
+    // extra time after hours approved by the manager and confirmed by HR (what counts as overtime is decided later)
+    const extra = on.filter((r) => r.type === "overtime" && r.status === "approved" && r.hr_class === "confirmed").reduce((a, r) => a + (r.minutes || 0), 0);
+    if (extra) day.extra = extra;
     // the correction waits on the manager or HR
     const pc = on.find((r) => r.type === "correction" && (r.status === "pending" || !r.hr_class));
     if (pc) day.correctionPending = pc.id;
@@ -158,11 +161,12 @@ export function employeeDays(db, emp, from, to, today, source = "all", nowMin = 
 
 /** Totals over days (policy §18: approved leave and tasks are left out of the compliance rate). */
 export function summarize(days) {
-  const s = { outside: 0, workDays: 0, present: 0, onTime: 0, late: 0, lateMin: 0, early: 0, earlyMin: 0, missing: 0, absent: 0, pending: 0, leave: 0, mission: 0, restWorked: 0, onSite: 0, onSiteDays: 0, compliance: null };
+  const s = { extraMin: 0, outside: 0, workDays: 0, present: 0, onTime: 0, late: 0, lateMin: 0, early: 0, earlyMin: 0, missing: 0, absent: 0, pending: 0, leave: 0, mission: 0, restWorked: 0, onSite: 0, onSiteDays: 0, compliance: null };
   for (const d of days) {
     if (["rest_worked", "holiday_worked"].includes(d.status)) s.restWorked++;
     if (d.status === "leave") s.leave++;
     if (d.status === "mission") s.mission++;
+    if (d.extra) s.extraMin += d.extra;
     if (d.status === "on_duty" && d.late) { s.late++; s.lateMin += d.late; } // today's lateness shows already; the day counts once over
     if (["present", "missing", "absent", "pending"].includes(d.status)) s.workDays++;
     if (d.status === "present" || d.status === "missing") {
@@ -389,8 +393,8 @@ export function registerAttendance(api, ctx) {
     r.source = source;
     if (req.query.get("format") === "csv") {
       const h = (m) => (m / 60).toFixed(1);
-      const head = ["Work days", "On time", "Compliance %", "Late (times)", "Late (hours)", "Left early (times)", "Left early (hours)", "Missing punch", "Absent (unexcused)", "Absence pending a request", "Leave days", "External task days", "Worked on a rest day", "Outside work sites (days)"];
-      const vals = (s) => [s.workDays, s.onTime, s.compliance ?? "", s.late, h(s.lateMin), s.early, h(s.earlyMin), s.missing, s.absent, s.pending, s.leave, s.mission, s.restWorked, s.outside || 0];
+      const head = ["Work days", "On time", "Compliance %", "Late (times)", "Late (hours)", "Left early (times)", "Left early (hours)", "Missing punch", "Absent (unexcused)", "Absence pending a request", "Leave days", "External task days", "Worked on a rest day", "Outside work sites (days)", "Approved extra time (hours)"];
+      const vals = (s) => [s.workDays, s.onTime, s.compliance ?? "", s.late, h(s.lateMin), s.early, h(s.earlyMin), s.missing, s.absent, s.pending, s.leave, s.mission, s.restWorked, s.outside || 0, h(s.extraMin || 0)];
       const lines = [["Department", "Staff", ...head].join(",")];
       for (const d of r.departments) lines.push([d.name_en || d.name_ar || "—", d.staff, ...vals(d)].join(","));
       if (r.people.length) {

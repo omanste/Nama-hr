@@ -2,6 +2,7 @@
 import { api } from "./api.js";
 import { t, setLang, getLang, nm, has } from "./i18n.js";
 import { h, clear, errText, empty } from "./ui.js";
+import { refreshPush } from "./push.js";
 
 const ROUTES = [
   ["/login", "login", { bare: true }],
@@ -97,8 +98,12 @@ export const icon = (name, size = 20) => {
   return svg;
 };
 
+let pushChecked = false;
+// a tapped pop-up that couldn't navigate the open window asks it to go there
+if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", (e) => { if (e.data && e.data.go) location.hash = e.data.go; });
 export async function loadMe() {
   state.me = await api.get("/api/me");
+  if (!pushChecked) { pushChecked = true; refreshPush(); } // keep this device's pop-ups current
   if (state.me.user.lang && state.me.user.lang !== getLang()) setLang(state.me.user.lang);
   return state.me;
 }

@@ -164,6 +164,11 @@ const MIGRATIONS = [
   // 30: people who report straight to top management — their requests go to the CEO, the Chairman, or both (either one decides)
   `ALTER TABLE employees ADD COLUMN reports_to_top TEXT CHECK(reports_to_top IN ('ceo','chairman','both'));
    ALTER TABLE leave_requests ADD COLUMN alt_approver_user_id INTEGER REFERENCES users(id);`,
+  // 31: reminders already sent (once a day each), and the devices that receive pop-up notifications (Web Push)
+  `CREATE TABLE att_reminders(employee_id INTEGER NOT NULL, date TEXT NOT NULL, kind TEXT NOT NULL, sent_at TEXT NOT NULL, PRIMARY KEY(employee_id, date, kind));
+   CREATE TABLE push_subs(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, endpoint TEXT NOT NULL UNIQUE,
+     p256dh TEXT NOT NULL, auth TEXT NOT NULL, lang TEXT NOT NULL DEFAULT 'ar', user_agent TEXT, created_at TEXT NOT NULL);
+   CREATE INDEX ps_user ON push_subs(user_id);`,
 ];
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */

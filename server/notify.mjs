@@ -28,6 +28,7 @@ export function notify(ctx, userIds, msg) {
   const ids = [...new Set(userIds.filter(Boolean))];
   const ins = db.prepare("INSERT INTO notifications(user_id,title_ar,title_en,body_ar,body_en,link,created_at) VALUES(?,?,?,?,?,?,?)");
   for (const id of ids) ins.run(id, msg.title_ar, msg.title_en, msg.body_ar || "", msg.body_en || "", msg.link || null, nowIso());
+  if (ctx.push && ids.length) ctx.push(ids, msg); // a pop-up on the devices they turned notifications on for
   const fn = override !== undefined ? override : transport;
   if (!fn || msg.inAppOnly) return;
   const tag = ctx.appEnv === "production" ? "" : `[${ctx.appEnv}] `;

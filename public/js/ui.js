@@ -40,10 +40,10 @@ export const daysText = (min) => t("days", { n: num(daysOf(min)) });
 export const PERMISSIONS = ["early", "late", "break"];
 export const isPermission = (type) => PERMISSIONS.includes(type);
 /** Attendance requests: a fingerprint correction and an external work task (one day, with times). */
-export const ATTENDANCE_REQS = ["correction", "mission"];
+export const ATTENDANCE_REQS = ["correction", "mission", "overtime"];
 export const isAttendanceReq = (type) => ATTENDANCE_REQS.includes(type);
-export const amountText = (r) => (r.type === "correction" ? "—" : isPermission(r.type) || r.type === "mission" ? t("hours", { n: num(r.minutes / 60) }) : daysText(r.minutes));
-const permWhen = (r) => r.type === "late" ? t("arrive_at", { t: r.early_time }) : r.type === "break" || r.type === "mission" ? `${r.early_time}–${r.end_time}`
+export const amountText = (r) => (r.type === "correction" ? "—" : r.type === "overtime" ? durText(r.minutes) : isPermission(r.type) || r.type === "mission" ? t("hours", { n: num(r.minutes / 60) }) : daysText(r.minutes));
+const permWhen = (r) => r.type === "late" ? t("arrive_at", { t: r.early_time }) : r.type === "break" || r.type === "mission" || r.type === "overtime" ? `${r.early_time}–${r.end_time || "…"}`
   : r.type === "correction" ? [r.early_time ? t("corr_in_at", { t: r.early_time }) : null, r.end_time ? t("corr_out_at", { t: r.end_time }) : null].filter(Boolean).join(" · ")
   : t("leave_at", { t: r.early_time });
 const span = (r) => (r.start_date === r.end_date ? dmy(r.start_date) : `${dmy(r.start_date)} – ${dmy(r.end_date)}`);

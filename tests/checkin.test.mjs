@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { boot, adminClient, makePerson } from "./helpers.mjs";
 import { computeDay } from "../server/attendance.mjs";
-import { metres, siteOf, runCheckinRetention } from "../server/checkin.mjs";
+import { metres, siteOf, runCheckinRetention, runReminders } from "../server/checkin.mjs";
 
 // made-up places: an office and a point about 2 km away
 const OFFICE = { lat: 23.588, lng: 58.3829 }, FAR = { lat: 23.6, lng: 58.4 };
@@ -238,4 +238,86 @@ test("every sign-in is logged; the browser adds its location; HR sees a person's
   assert.ok(items.length >= 2); assert.equal(items[0].lat, OFFICE.lat); assert.equal(items[0].accuracy_m, 30); assert.ok(items[0].ip);
   assert.equal((await mgr.c.get(`/api/employees/${s.emp.id}/logins`)).status, 403);
   assert.equal((await s.c.get(`/api/employees/${s.emp.id}/logins`)).status, 403);
+});
+
+test("leaving after hours: a reason; the extra time goes to the manager (who may adjust the end), then HR confirms; \"still working\"", async () => {
+  const w = await makePerson(t.base, admin, { emp_no: "OT1", name_ar: "إضافي", join_date: "2022-01-01", department_id: dept.id, shift: 2 }, "staff");
+  await w.c.post("/api/attendance/checkin/consent", {});
+  const day = "2026-11-03"; // a Tuesday
+  t.app.ctx.fakeToday = day;
+  t.app.ctx.fakeClock = "08:55"; assert.equal((await ci(w, "in")).status, 201);
+  // 18:20 (shift 2 ends 18:00): within 30 minutes — no question
+  // 18:45: the card offers "I'm still working"
+  t.app.ctx.fakeClock = "18:45";
+  let st = (await w.c.get("/api/attendance/checkin/today")).data;
+  assert.equal(st.after_hours, true); assert.equal(st.shift_end, "18:00"); assert.equal(st.staying, null);
+  assert.equal((await w.c.post("/api/attendance/checkin/stay", {})).status, 400, "a reason is needed");
+  assert.equal((await w.c.post("/api/attendance/checkin/stay", { reason: "إغلاق تقرير المشروع" })).status, 200);
+  assert.equal((await w.c.get("/api/attendance/checkin/today")).data.staying.reason, "إغلاق تقرير المشروع");
+  // checking out at 21:10: the open request gets its end (no second question)
+  t.app.ctx.fakeClock = "21:10";
+  const out = await ci(w, "out");
+  assert.equal(out.status, 201); assert.ok(out.data.extra);
+  let r = t.db.prepare("SELECT * FROM leave_requests WHERE employee_id=? AND type='overtime'").get(w.emp.id);
+  assert.equal(r.early_time, "18:00"); assert.equal(r.end_time, "21:10"); assert.equal(r.minutes, 190); assert.equal(r.status, "pending");
+  // the manager approves it, ending it at 19:30
+  assert.equal((await w.c.post("/api/requests", { type: "overtime", date: day })).status, 400, "not filed by hand");
+  const a = await mgr.c.post(`/api/requests/${r.id}/approve`, { end_time: "19:30" });
+  assert.equal(a.status, 200); assert.equal(a.data.request.status, "approved"); assert.equal(a.data.request.minutes, 90);
+  // HR confirms (adjusting to 19:45)
+  assert.equal((await hr.c.post(`/api/requests/${r.id}/hr`, { class: "confirmed", end_time: "19:45" })).status, 200);
+  r = t.db.prepare("SELECT * FROM leave_requests WHERE id=?").get(r.id);
+  assert.equal(r.hr_class, "confirmed"); assert.equal(r.minutes, 105);
+  // the sheet and the report show the approved extra time
+  t.app.ctx.fakeClock = "23:59";
+  const sheet = (await hr.c.get(`/api/attendance/employee/${w.emp.id}?month=2026-11&source=online`)).data;
+  assert.equal(sheet.days.find((x) => x.date === day).extra, 105); assert.equal(sheet.summary.extraMin, 105);
+  // another day: leaving at 19:00 without having said anything — asked why, then filed
+  const day2 = "2026-11-04"; t.app.ctx.fakeToday = day2;
+  t.app.ctx.fakeClock = "08:58"; await ci(w, "in");
+  t.app.ctx.fakeClock = "19:00";
+  const q = await ci(w, "out");
+  assert.equal(q.status, 400); assert.equal(q.data.after_hours, true); assert.equal(q.data.field, "extra_reason");
+  const ok = await ci(w, "out", OFFICE, "&extra_reason=" + encodeURIComponent("اجتماع مع العميل"));
+  assert.equal(ok.status, 201);
+  const r2 = t.db.prepare("SELECT * FROM leave_requests WHERE employee_id=? AND type='overtime' AND start_date=?").get(w.emp.id, day2);
+  assert.equal(r2.minutes, 60); assert.equal(r2.reason, "اجتماع مع العميل");
+  assert.ok((await mgr.c.get("/api/requests?scope=approvals")).data.items.some((x) => x.id === r2.id));
+  // a check-out within 30 minutes of the end asks nothing
+  const day3 = "2026-11-05"; t.app.ctx.fakeToday = day3;
+  t.app.ctx.fakeClock = "09:00"; await ci(w, "in"); t.app.ctx.fakeClock = "18:25";
+  assert.equal((await ci(w, "out")).status, 201);
+  // the next morning: no missed check-out; a day without one shows on the card
+  const day4 = "2026-11-08"; t.app.ctx.fakeToday = day4; t.app.ctx.fakeClock = "09:00"; await ci(w, "in"); // Sunday, never checked out
+  t.app.ctx.fakeToday = "2026-11-09"; t.app.ctx.fakeClock = "08:00";
+  assert.deepEqual((await w.c.get("/api/attendance/checkin/today")).data.missed, { date: day4 });
+  t.app.ctx.fakeToday = "2026-11-02"; t.app.ctx.fakeClock = "23:30";
+});
+
+test("reminders: not checked in by start + 30, not out by end + 30 (with the two buttons), once each; the manager's morning list", async () => {
+  const r = await makePerson(t.base, admin, { emp_no: "RM1", name_ar: "تذكير", join_date: "2022-01-01", department_id: dept.id, shift: 2, att_mode: "online" }, "staff");
+  const fp = await makePerson(t.base, admin, { emp_no: "RM2", name_ar: "بصمة فقط", join_date: "2022-01-01", department_id: dept.id, att_mode: "machine" }, "staff");
+  const notes = async (p) => (await p.c.get("/api/notifications")).data.items;
+  const day = "2026-11-10"; // Tuesday
+  runReminders(t.app.ctx, day, 9 * 60 + 20); // 09:20: shift 2 starts 09:00 — not yet
+  assert.ok(!(await notes(r)).some((n) => /haven't checked in/.test(n.title_en)));
+  runReminders(t.app.ctx, day, 9 * 60 + 35); runReminders(t.app.ctx, day, 9 * 60 + 40);
+  assert.equal((await notes(r)).filter((n) => /haven't checked in/.test(n.title_en)).length, 1, "once");
+  assert.ok(!(await notes(fp)).some((n) => /checked in/.test(n.title_en)), "not for fingerprint-only staff");
+  // checked in; 18:35 → the check-out question
+  await r.c.post("/api/attendance/checkin/consent", {});
+  t.app.ctx.fakeToday = day; t.app.ctx.fakeClock = "09:50"; await ci(r, "in");
+  runReminders(t.app.ctx, day, 18 * 60 + 20);
+  assert.ok(!(await notes(r)).some((n) => /haven't checked out/.test(n.title_en)));
+  runReminders(t.app.ctx, day, 18 * 60 + 35);
+  const out = (await notes(r)).find((n) => /haven't checked out/.test(n.title_en));
+  assert.ok(out); assert.equal(out.link, "#/?ci=out");
+  // not on a rest day
+  runReminders(t.app.ctx, "2026-11-13", 10 * 60); // Friday
+  assert.equal((await notes(r)).filter((n) => /haven't checked in/.test(n.title_en)).length, 1);
+  // the next working morning: the manager gets the list (once)
+  runReminders(t.app.ctx, "2026-11-11", 9 * 60 + 5); runReminders(t.app.ctx, "2026-11-11", 9 * 60 + 10);
+  const m = (await notes(mgr)).filter((n) => /Didn't check out/.test(n.title_en));
+  assert.equal(m.length, 1); assert.match(m[0].body_ar, /تذكير/);
+  t.app.ctx.fakeToday = "2026-11-02"; t.app.ctx.fakeClock = "23:30";
 });

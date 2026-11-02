@@ -161,6 +161,40 @@ export function registerCalendar(api, ctx) {
     tx(db, () => { db.prepare("DELETE FROM calendar_events WHERE id=?").run(e.id); audit(db, req.sess.user.id, "calendar.delete", "calendar", e.id, e, null); });
     send(req, res, 200, { ok: true });
   });
+  // change an entry: its name, dates and (for an event) who sees it — HR/Admin any shared one, everyone their own events
+  api.put("/api/calendar/entries/:id", async (req, res) => {
+    const e = db.prepare("SELECT * FROM calendar_events WHERE id=?").get(Number(req.params.id));
+    if (!e || (e.visibility === "personal" && e.created_by !== req.sess.user.id)) throw new HttpError(404, "not_found", "Not found");
+    if (e.created_by !== req.sess.user.id) needEditor(req.sess);
+    const b = await readJson(req), editor = editors.includes(req.sess.user.role);
+    const start = b.start || e.start_date, end = b.end || (b.start ? b.start : e.end_date), name = b.name === undefined ? e.name : String(b.name || "").trim().slice(0, 100);
+    if (!isIsoDate(start)) throw bad("start", "A valid date is required");
+    if (!isIsoDate(end) || end < start) throw bad("end", "The end date is before the start");
+    if (addDays(start, 92) < end) throw bad("end", "At most 3 months at a time");
+    if (!name) throw bad("name", "A name is required");
+    let visibility = e.visibility;
+    if (e.kind === "event" && b.visibility) visibility = b.visibility === "personal" ? "personal" : b.visibility === "company" ? "company" : e.visibility;
+    if (visibility === "personal" && e.created_by !== req.sess.user.id) visibility = e.visibility; // someone else's event can't become private to them
+    if (!editor && visibility === "company" && e.visibility !== "company" && e.kind !== "event") throw new HttpError(403, "forbidden", "You do not have permission for this");
+    const after = tx(db, () => {
+      db.prepare("UPDATE calendar_events SET start_date=?, end_date=?, name=?, visibility=? WHERE id=?").run(start, end, name, visibility, e.id);
+      const a = db.prepare("SELECT * FROM calendar_events WHERE id=?").get(e.id);
+      audit(db, req.sess.user.id, "calendar.edit", "calendar", e.id, e, a);
+      return a;
+    });
+    send(req, res, 200, { entry: after });
+  });
+  // rename an official holiday (its date stays; to move it, delete it and add it again)
+  api.put("/api/calendar/holidays/:date", async (req, res) => {
+    needEditor(req.sess);
+    const date = req.params.date, name = String((await readJson(req)).name || "").trim().slice(0, 80);
+    if (!name) throw bad("name", "A name is required");
+    const list = getSetting(db, "official_holidays", []);
+    const h = list.find((x) => x.date === date);
+    if (!h) throw new HttpError(404, "not_found", "Not found");
+    tx(db, () => { const before = { ...h }; h.name = name; setSetting(db, "official_holidays", list); audit(db, req.sess.user.id, "calendar.edit_holiday", "calendar", date, before, h); });
+    send(req, res, 200, { ok: true });
+  });
   api.delete("/api/calendar/holidays/:date", (req, res) => {
     needEditor(req.sess);
     const date = req.params.date;

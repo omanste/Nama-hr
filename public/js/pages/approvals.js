@@ -63,7 +63,7 @@ export async function render(el, _p, { me }) {
         ["annual", "emergency"].includes(r.type) ? h("div", null, h("dt", null, t("current_balance")), h("dd", null, daysText(r.balance))) : null,
         r.reason ? h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("reason")), h("dd", null, r.reason)) : null),
       h("div", { class: "row", style: { marginTop: "14px" } },
-        h("button", { class: "btn ok", type: "button", onclick: async () => { if (await decide(r.id, "approve")) rerender(); } }, t("approve")),
+        h("button", { class: "btn ok", type: "button", onclick: async () => { if (await decide(r.id, "approve", r)) rerender(); } }, t("approve")),
         h("button", { class: "btn danger", type: "button", onclick: async () => { if (await decide(r.id, "reject")) rerender(); } }, t("reject")))))) : empty(t("no_approvals")),
     coverSection(cover, me));
 }

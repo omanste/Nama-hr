@@ -33,6 +33,8 @@ export const TYPES = {
   // attendance requests (policy §5, §10): a forgotten fingerprint (manager verifies, HR confirms) and an external task (counts as work)
   correction: { effect: "record", attendance: true },
   mission: { effect: "record", attendance: true },
+  // staying after the shift (asked at check-out, or "I'm still working"): the manager approves or adjusts the end, HR confirms
+  overtime: { effect: "record", attendance: true },
 };
 export const ATTENDANCE_TYPES = Object.keys(TYPES).filter((k) => TYPES[k].attendance);
 /** How HR classifies an approved permission (§8), and confirms a fingerprint correction (§5). */

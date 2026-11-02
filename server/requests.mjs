@@ -16,7 +16,7 @@ import { shiftFor, isRestDay } from "./shifts.mjs";
 export const TYPE_NAMES = {
   annual: ["إجازة سنوية", "Annual leave"], early: ["مغادرة مبكرة", "Early leave"], late: ["تأخير في الحضور", "Late arrival"], break: ["استئذان خلال الدوام", "Personal break"], emergency: ["إجازة اضطرارية", "Emergency leave"],
   bereavement: ["إجازة وفاة", "Bereavement leave"], sick: ["إجازة مرضية", "Sick leave"], comp_day: ["عمل في يوم عطلة", "Worked on a holiday"],
-  marriage: ["إجازة زواج", "Marriage leave"], paternity: ["إجازة أبوة", "Paternity leave"], maternity: ["إجازة أمومة", "Maternity leave"],
+  overtime: ["عمل بعد الدوام", "Extra time after hours"], marriage: ["إجازة زواج", "Marriage leave"], paternity: ["إجازة أبوة", "Paternity leave"], maternity: ["إجازة أمومة", "Maternity leave"],
   hajj: ["إجازة الحج", "Hajj leave"], exam: ["إجازة امتحانات", "Exam leave"], patient_care: ["إجازة مرافقة مريض", "Accompanying a patient"],
   childcare: ["إجازة رعاية طفل (بدون أجر)", "Child-care leave (unpaid)"], unpaid: ["إجازة خاصة بدون أجر", "Special unpaid leave"],
   correction: ["تصحيح بصمة", "Fingerprint correction"], mission: ["مهمة عمل خارجية", "External work task"],
@@ -76,7 +76,7 @@ export function mayDecide(db, sess, r, today) {
 
 /** Leave of every kind goes to HR after the direct manager (permissions and fingerprint corrections already have their own
  * HR step after approval; external missions are an attendance matter). */
-export const needsHrStep = (type) => !isPermission(type) && !["correction", "mission"].includes(type);
+export const needsHrStep = (type) => !isPermission(type) && !TYPES[type].attendance;
 const hrUsers = (db) => db.prepare("SELECT id FROM users WHERE role='hr' AND active=1").all().map((u) => u.id);
 
 /** Undo whatever a request took from (or added to) the balance — the net per leave year, so it can run more than once. */
@@ -150,6 +150,7 @@ export function validateRequest(db, emp, body, today) {
     if (!String(body.reason || "").trim()) throw err(400, "invalid", "Please give a reason", "reason");
     if (holidaySet(db).has(start)) throw err(400, "invalid", "This day is an official holiday", "date");
   }
+  if (type === "overtime") throw err(400, "invalid", "Extra time is recorded from the check-out (or \"I'm still working\")", "type");
   if (TYPES[type].attendance) return validateAttendance(db, emp, type, start, body, today, end);
   let minutes;
   const sh = shiftFor(db, emp, start), dayStart = sh.start, dayEnd = sh.end;
@@ -251,6 +252,22 @@ export function missionAllowance(db, details) {
   d.rates = { day, night };
   d.allowance = Math.round((d.days_outside * day + d.nights * night) * 1000) / 1000;
   return d;
+}
+
+/** File a request on the person's behalf (extra time after hours, from their check-out): routed like any request, the
+ * approver is told. v: {type, start_date, end_date, early_time, end_time, minutes, reason, details}. Returns the row. */
+export function fileForPerson(ctx, emp, byUserId, v) {
+  const { db } = ctx;
+  const route = routeFor(db, emp, ctx.today());
+  const id = Number(db.prepare(`INSERT INTO leave_requests(employee_id,type,start_date,end_date,early_time,minutes,reason,status,approver_user_id,route_reason,created_by,created_at,end_time,details,alt_approver_user_id)
+    VALUES(?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?)`).run(emp.id, v.type, v.start_date, v.end_date, v.early_time, v.minutes || 0, v.reason || null, route.userId, route.reason, byUserId, nowIso(),
+    v.end_time || null, v.details ? JSON.stringify(v.details) : null, route.altUserId || null).lastInsertRowid);
+  event(db, id, "submitted", byUserId, v.reason || null);
+  const r = getReq(db, id);
+  audit(db, byUserId, "request.submit", "request", id, null, r);
+  const d = describe(r, emp);
+  notify(ctx, [r.approver_user_id, r.alt_approver_user_id], { title_ar: `${TYPE_NAMES[v.type][0]} بانتظار موافقتك`, title_en: `${TYPE_NAMES[v.type][1]} awaiting your approval`, body_ar: d.ar, body_en: d.en, link: `#/leave/${id}` });
+  return r;
 }
 
 function event(db, requestId, action, actorId, comment) {
@@ -359,7 +376,7 @@ export function registerRequests(api, ctx) {
       sickPay = sickPayBands(prior, daysBetweenInclusive(r.start_date, r.end_date));
     }
     const deducted = -db.prepare("SELECT coalesce(sum(minutes),0) n FROM leave_ledger WHERE request_id=?").get(r.id).n;
-    const classes = isPermission(r.type) ? PERM_CLASSES : r.type === "correction" ? CORRECTION_CLASSES : null;
+    const classes = isPermission(r.type) ? PERM_CLASSES : ["correction", "overtime"].includes(r.type) ? CORRECTION_CLASSES : null;
     send(req, res, 200, { request: r, events, approver, altApprover, decider, files, sickPay, deducted, classes, canClassify: !!classes && r.status === "approved" && can(req.sess, "employee.edit") && !(req.sess.employee && req.sess.employee.id === r.employee_id), needsProof: !!TYPES[r.type].proof && !files.length,
       canDecide: r.status === "pending" && mayDecide(db, req.sess, r, ctx.today()), canPostpone: r.status === "pending" && r.type === "annual" && mayDecide(db, req.sess, r, ctx.today()) });
   });
@@ -377,6 +394,17 @@ export function registerRequests(api, ctx) {
         if (!mayDecide(db, sess, r, ctx.today())) throw forbidden();
         if (r.status !== "pending") throw err(409, "not_pending", "This request has already been decided");
         if (action === "reject" && !comment) throw err(400, "invalid", "Please give a reason for the rejection", "comment");
+        if (action === "approve" && r.type === "overtime") {
+          // extra time after hours: the manager may approve a different end than the check-out (e.g. 19:30 instead of 21:10)
+          const end = body.end_time ? String(body.end_time) : r.end_time;
+          if (!end) throw err(409, "still_open", "They haven't checked out yet — approve once the end time is known, or enter it", "end_time");
+          if (clockMin(end) === null || clockMin(end) <= clockMin(r.early_time)) throw err(400, "invalid", "The end must be after the shift's end", "end_time");
+          if (end !== r.end_time) {
+            db.prepare("UPDATE leave_requests SET end_time=?, minutes=? WHERE id=?").run(end, clockMin(end) - clockMin(r.early_time), r.id);
+            event(db, r.id, "adjusted", sess.user.id, `${r.end_time || "…"} → ${end}`);
+            Object.assign(r, getReq(db, r.id));
+          }
+        }
         if (action === "approve") {
           if (TYPES[r.type].proof && !db.prepare("SELECT 1 FROM files WHERE request_id=?").get(r.id))
             throw err(409, "proof_required", "Attach the supporting document (e.g. medical certificate) before approval");
@@ -459,9 +487,9 @@ export function registerRequests(api, ctx) {
     const to = [ownerUser(db, r.employee_id), r.approver_user_id, r.alt_approver_user_id].filter((id) => id && id !== sess.user.id); // with two approvers the other is told too
     notify(ctx, to, { title_ar: T[0], title_en: T[1], body_ar: d.ar + extra.ar, body_en: d.en + extra.en, link: `#/leave/${r.id}` });
     // §5, §8: after the manager, HR classifies a permission or confirms a fingerprint correction
-    if (r.status === "approved" && (isPermission(r.type) || r.type === "correction"))
-      notify(ctx, hrUsers(db).filter((id) => id !== sess.user.id), { title_ar: r.type === "correction" ? "تصحيح بصمة بانتظار اعتماد الموارد البشرية" : "استئذان بانتظار تصنيف الموارد البشرية",
-        title_en: r.type === "correction" ? "Fingerprint correction awaiting HR" : "Permission awaiting HR classification", body_ar: d.ar, body_en: d.en, link: `#/leave/${r.id}` });
+    if (r.status === "approved" && (isPermission(r.type) || r.type === "correction" || r.type === "overtime"))
+      notify(ctx, hrUsers(db).filter((id) => id !== sess.user.id), { title_ar: r.type === "correction" ? "تصحيح بصمة بانتظار اعتماد الموارد البشرية" : r.type === "overtime" ? "عمل بعد الدوام بانتظار اعتماد الموارد البشرية" : "استئذان بانتظار تصنيف الموارد البشرية",
+        title_en: r.type === "correction" ? "Fingerprint correction awaiting HR" : r.type === "overtime" ? "Extra time after hours awaiting HR" : "Permission awaiting HR classification", body_ar: d.ar, body_en: d.en, link: `#/leave/${r.id}` });
     send(req, res, 200, { request: r });
   }
 
@@ -528,8 +556,13 @@ export function registerRequests(api, ctx) {
       const r = getReq(db, req.params.id);
       if (!r) throw new HttpError(404, "not_found", "Request not found");
       if (sess.employee && sess.employee.id === r.employee_id) throw forbidden();
-      const classes = isPermission(r.type) ? PERM_CLASSES : r.type === "correction" ? CORRECTION_CLASSES : null;
+      const classes = isPermission(r.type) ? PERM_CLASSES : ["correction", "overtime"].includes(r.type) ? CORRECTION_CLASSES : null;
       if (!classes) throw err(400, "invalid", "This request has no HR classification");
+      if (r.type === "overtime" && b.end_time && b.end_time !== r.end_time) { // HR adjusts the approved end again
+        if (clockMin(b.end_time) === null || clockMin(b.end_time) <= clockMin(r.early_time)) throw err(400, "invalid", "The end must be after the shift's end", "end_time");
+        db.prepare("UPDATE leave_requests SET end_time=?, minutes=? WHERE id=?").run(b.end_time, clockMin(b.end_time) - clockMin(r.early_time), r.id);
+        event(db, r.id, "adjusted", sess.user.id, `${r.end_time} → ${b.end_time}`);
+      }
       if (r.status !== "approved") throw err(409, "not_approved", "The manager must approve it first");
       if (!classes.includes(b.class)) throw err(400, "invalid", "Choose a classification", "class");
       const emp = getEmployee(db, r.employee_id);

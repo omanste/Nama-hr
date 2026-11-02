@@ -3,13 +3,31 @@ import { t, nm, getLang } from "../i18n.js";
 import { h, badge, when, amountText, dateTime, daysText, confirm, toast, errText, backLink, dmy, field, isPermission, isAttendanceReq, viewFile, num } from "../ui.js";
 import { render as rerender, refreshMe } from "../app.js";
 
-export async function decide(id, action) {
-  let comment = "";
-  if (action === "reject") { comment = await confirm(t("reject"), { input: t("reject_reason"), required: true, okText: t("reject"), danger: true }); if (comment === null) return false; }
+/** Extra time after hours: approve as it is, or with a different end time (the manager — or HR — adjusts it). */
+function endTimeDialog(r, title) {
+  return new Promise((resolve) => {
+    const end = h("input", { type: "time", value: r.end_time || "", required: true });
+    const note = h("input", { maxlength: 500, placeholder: t("comment_optional") });
+    const err = h("div", { class: "form-error" });
+    const dlg = h("dialog", { class: "dialog" }, h("form", { class: "form", onsubmit: (ev) => { ev.preventDefault(); if (!end.value) { err.textContent = t("required"); return; } const v = { end_time: end.value, comment: note.value.trim() }; dlg.close(); resolve(v); } },
+      h("h2", null, title), h("p", { class: "sub" }, t("ot_from", { t: r.early_time }), r.reason ? h("div", null, "“", r.reason, "”") : null),
+      field(t("ot_end_approved"), end, { hint: t("ot_end_hint") }), field(t("comment_optional"), note), err,
+      h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), h("button", { class: "btn primary", type: "submit" }, t("save")))));
+    dlg.addEventListener("close", () => { dlg.remove(); resolve(null); });
+    document.body.append(dlg); dlg.showModal();
+  });
+}
+export async function decide(id, action, req = null) {
+  let comment = "", extra = {};
+  if (action === "approve" && req && req.type === "overtime") {
+    const v = await endTimeDialog(req, t("approve")); if (!v) return false;
+    comment = v.comment; extra = { end_time: v.end_time };
+  }
+  else if (action === "reject") { comment = await confirm(t("reject"), { input: t("reject_reason"), required: true, okText: t("reject"), danger: true }); if (comment === null) return false; }
   else if (action === "approve") { comment = await confirm(t("approve_q"), { input: t("comment_optional"), okText: t("approve") }); if (comment === null) return false; }
   else { comment = await confirm(t("cancel_q"), { input: t("cancel_reason"), okText: t("cancel_request"), danger: true }); if (comment === null) return false; }
   try {
-    await api.post(`/api/requests/${id}/${action}`, { comment });
+    await api.post(`/api/requests/${id}/${action}`, { comment, ...extra });
     toast(t({ approve: "approved_ok", reject: "rejected_ok", cancel: "cancelled_ok" }[action]));
     await refreshMe();
     return true;
@@ -35,10 +53,13 @@ function classifyBox(r, classes) {
   const comment = h("input", { placeholder: t("comment_optional"), maxlength: 500 });
   const pick = (c) => async () => {
     if (c === "leave" && !(await confirm(t("pc_leave_q"), { okText: t("confirm") }))) return;
-    try { await api.post(`/api/requests/${r.id}/hr`, { class: c, comment: comment.value.trim() }); toast(t("saved")); await refreshMe(); rerender(); } catch (e) { toast(errText(e), "bad"); }
+    try { await api.post(`/api/requests/${r.id}/hr`, { class: c, comment: comment.value.trim(), ...(end && end.value ? { end_time: end.value } : {}) }); toast(t("saved")); await refreshMe(); rerender(); } catch (e) { toast(errText(e), "bad"); }
   };
-  return h("section", { class: "card" }, h("h2", null, t(r.type === "correction" ? "hr_confirm_title" : "hr_classify_title")),
-    h("p", { class: "sub" }, t(r.type === "correction" ? "hr_confirm_hint" : "hr_classify_hint")),
+  const end = r.type === "overtime" ? h("input", { type: "time", value: r.end_time || "" }) : null;
+  const confirmKind = ["correction", "overtime"].includes(r.type);
+  return h("section", { class: "card" }, h("h2", null, t(confirmKind ? "hr_confirm_title" : "hr_classify_title")),
+    h("p", { class: "sub" }, t(r.type === "overtime" ? "ot_hr_hint" : confirmKind ? "hr_confirm_hint" : "hr_classify_hint")),
+    end ? field(t("ot_end_approved"), end) : null,
     h("div", { class: "row" }, classes.map((c) => h("button", { class: `btn ${r.hr_class === c ? "primary" : c === "refused" ? "danger" : ""}`, type: "button", "aria-pressed": String(r.hr_class === c), onclick: pick(c) }, t("pc_" + c)))),
     h("div", { style: { marginTop: "10px" } }, comment));
 }
@@ -48,7 +69,7 @@ export async function render(el, params, { me, can }) {
   const r = d.request;
   const own = me.employee && me.employee.id === r.employee_id;
   const canCancel = (r.status === "pending" && (own || can.edit())) || (r.status === "approved" && (can.admin() || r.approver_user_id === me.user.id));
-  const act = (action) => async () => { if (await decide(r.id, action)) rerender(); };
+  const act = (action) => async () => { if (await decide(r.id, action, r)) rerender(); };
   const row = (k, v) => h("div", null, h("dt", null, t(k)), h("dd", null, v || "—"));
   el.append(
     backLink(own ? (isAttendanceReq(r.type) ? "#/attendance" : isPermission(r.type) ? "#/permissions" : "#/leave") : d.canDecide ? "#/approvals" : "#/requests"),
@@ -58,7 +79,7 @@ export async function render(el, params, { me, can }) {
       row("date", when(r)), r.type === "correction" ? null : row("amount", amountText(r)),
       r.type === "mission" && r.details ? row("mission_place", JSON.parse(r.details).place) : null,
       ...(r.type === "mission" ? missionRows(r, row, can) : []),
-      d.classes ? row(r.type === "correction" ? "hr_confirmation" : "hr_classification", r.hr_class ? h("span", { class: `badge ${r.hr_class === "refused" ? "b-rejected" : "b-approved"}` }, t("pc_" + r.hr_class))
+      d.classes ? row(["correction", "overtime"].includes(r.type) ? "hr_confirmation" : "hr_classification", r.hr_class ? h("span", { class: `badge ${r.hr_class === "refused" ? "b-rejected" : "b-approved"}` }, t("pc_" + r.hr_class))
         : r.status === "approved" ? h("span", { class: "badge b-pending" }, t("att_awaiting_hr")) : "—") : null,
       ["annual", "emergency"].includes(r.type) ? row("current_balance", daysText(r.balance)) : null,
       isPermission(r.type) && d.deducted > 0 ? row("deducted_from_annual", t("hours", { n: d.deducted / 60 })) : null,

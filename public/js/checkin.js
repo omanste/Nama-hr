@@ -22,12 +22,32 @@ export async function checkinCard() {
     c.outside ? h("span", { class: "bad-text" }, t("ci_outside")) : h("span", null, "📍 ", siteName(c.site)),
     c.approval ? h("span", { class: `badge ${c.approval === "approved" ? "b-approved" : c.approval === "rejected" ? "b-rejected" : "b-pending"}`, title: c.decision_note || "", style: { marginInlineStart: "6px" } }, t("ci_appr_" + c.approval)) : null);
   const next = st.next;
-  return h("section", { class: `card checkin-card ${next === "out" ? "is-in" : ""}` },
+  const mainBtn = h("button", { class: `btn ${next === "in" ? "primary" : "gold"} ci-btn`, type: "button", onclick: (ev) => start(next, st, ev.currentTarget) },
+    next === "in" ? "⏱ " : "🏁 ", t(next === "in" ? "ci_check_in" : "ci_check_out"));
+  // 30 minutes after the shift and still checked in: check out now, or say why you're staying (the manager reviews it)
+  const stayBtn = st.after_hours && !st.staying ? h("button", { class: "btn ci-btn", type: "button", onclick: () => stay() }, "🕘 ", t("ci_still_working")) : null;
+  const card = h("section", { class: `card checkin-card ${next === "out" ? "is-in" : ""}` },
     h("div", { class: "card-head" }, h("h2", null, t("ci_title")), last ? h("span", { class: `badge ${last.kind === "in" ? "b-approved" : ""}` }, t(last.kind === "in" ? "ci_state_in" : "ci_state_out")) : null),
+    // yesterday (or the last working day) without a check-out: no hours count until a correction is approved
+    st.missed ? h("div", { class: "note warn ci-missed" }, t("ci_missed", { d: dmyShort(st.missed.date) }), " ",
+      h("a", { class: "btn small", href: `#/attendance/correction?date=${st.missed.date}` }, t("att_ask_correction"))) : null,
     st.items.length ? h("div", { class: "ci-lines" }, st.items.map(line)) : h("p", { class: "sub" }, t("ci_none_today")),
     !st.sites ? h("p", { class: "sub" }, t("ci_no_sites")) : null,
-    h("button", { class: `btn ${next === "in" ? "primary" : "gold"} ci-btn`, type: "button", onclick: (ev) => start(next, st, ev.currentTarget) },
-      next === "in" ? "⏱ " : "🏁 ", t(next === "in" ? "ci_check_in" : "ci_check_out")));
+    st.after_hours ? h("p", { class: "note" }, st.staying ? [t("ci_staying"), st.staying.reason ? ` — “${st.staying.reason}”` : ""] : t("ci_after_hours", { t: st.shift_end })) : null,
+    mainBtn, stayBtn);
+  // opened from a reminder's buttons ("check out now" / "I'm still working")
+  const want = new URLSearchParams(location.hash.split("?")[1] || "").get("ci");
+  if (want && (want === "out" ? next === "out" : stayBtn)) setTimeout(() => (want === "out" ? start("out", st, mainBtn) : stay()), 300);
+  return card;
+}
+const dmyShort = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+
+/** "I'm still working": a reason (required); the extra time goes to the manager once you check out. */
+async function stay() {
+  const why = await reasonDialog(null, { title: t("ci_stay_title"), hint: t("ci_stay_hint") });
+  if (!why) return;
+  try { await api.post("/api/attendance/checkin/stay", { reason: why }); toast(t("ci_stay_saved")); rerender(); }
+  catch (e) { toast(errText(e), "bad"); }
 }
 
 async function start(kind, st, btn) {
@@ -43,18 +63,26 @@ async function start(kind, st, btn) {
   finally { btn.disabled = false; }
 }
 
-async function send(kind, pos, photo, reason) {
+async function send(kind, pos, photo, reason, extraReason = "") {
   const qs = new URLSearchParams({ kind, lat: pos.coords.latitude, lng: pos.coords.longitude, acc: Math.round(pos.coords.accuracy || 0), device: deviceId(), name: `checkin-${kind}.jpg` });
   if (reason) qs.set("reason", reason);
+  if (extraReason) qs.set("extra_reason", extraReason);
   try {
     const r = await api.upload(`/api/attendance/checkin?${qs}`, photo);
     toast(r.checkin.site ? `${t(kind === "in" ? "ci_done_in" : "ci_done_out", { time: r.checkin.at.slice(11, 16) })} · ${siteName(r.checkin.site)}` : t("ci_outside_needs_ok"));
+    if (r.extra) setTimeout(() => toast(t("ci_extra_sent")), 2500);
     rerender();
   } catch (e) {
     // outside every work site: ask why, then send again with the same photo and location
     if (e.outside) {
       const why = await reasonDialog(e);
-      if (why) return send(kind, pos, photo, why);
+      if (why) return send(kind, pos, photo, why, extraReason);
+      return;
+    }
+    // leaving well after the shift: why (the extra time goes to the manager, then HR)
+    if (e.after_hours) {
+      const why = await reasonDialog(null, { title: t("ci_extra_title"), hint: t("ci_extra_hint", { t: e.shift_end }) });
+      if (why) return send(kind, pos, photo, reason, why);
       return;
     }
     throw e;
@@ -110,12 +138,12 @@ function camera() {
 }
 
 /** Outside every work site: why (shown to the manager). */
-function reasonDialog(info) {
+function reasonDialog(info, { title = t("ci_outside_title"), hint = t("ci_outside_hint") } = {}) {
   return new Promise((resolve) => {
     const box = h("textarea", { rows: 3, maxlength: 300, required: true, dir: "auto" });
-    const near = info.nearest ? t("ci_nearest", { name: siteName(info.nearest), km: (info.distance / 1000).toFixed(1) }) : "";
+    const near = info && info.nearest ? t("ci_nearest", { name: siteName(info.nearest), km: (info.distance / 1000).toFixed(1) }) : "";
     const dlg = h("dialog", { class: "dialog" }, h("form", { class: "form", onsubmit: (e) => { e.preventDefault(); if (!box.value.trim()) return; const v = box.value.trim(); dlg.close(); resolve(v); } },
-      h("h2", null, t("ci_outside_title")), h("p", { class: "sub" }, t("ci_outside_hint"), near ? ` ${near}` : ""), box,
+      h("h2", null, title), h("p", { class: "sub" }, hint, near ? ` ${near}` : ""), box,
       h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")),
         h("button", { class: "btn primary", type: "submit" }, t("send")))));
     dlg.addEventListener("close", () => { dlg.remove(); resolve(null); });

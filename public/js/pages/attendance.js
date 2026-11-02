@@ -28,6 +28,7 @@ export function summaryTiles(s) {
     tile(num(s.leave), t("att_leave_days")),
     tile(num(s.mission), t("att_mission_days")),
     s.restWorked ? tile(num(s.restWorked), t("att_rest_worked")) : null,
+    s.extraMin ? tile(durText(s.extraMin), t("att_extra")) : null,
     tile(s.onSiteDays ? durText(Math.round(s.onSite / s.onSiteDays)) : "—", t("att_avg_on_site")));
 }
 
@@ -61,7 +62,9 @@ export async function render(el, _p, { me, query, can }) {
   if (d.dataTo) notes.push(h("p", { class: "sub" }, t("att_data_to", { d: dmy(d.dataTo) }), " · ", t("att_shift_now"), ": ", h("b", null, t("shift_" + (d.employee.shift || 2)))));
 
   const rows = d.days.filter((x) => x.status !== "no_data" || x.date <= todayIso()).map((x) => {
-    const reqLinks = x.requests.filter((r) => r.type !== "comp_day").map((r) => h("a", { class: "chip", href: `#/leave/${r.id}` }, t("lt_" + r.type), r.status === "pending" ? ` · ${t("rs_pending")}` : r.hr_class === null && ["correction", "early", "late", "break"].includes(r.type) ? ` · ${t("att_awaiting_hr")}` : ""));
+    const reqLinks = x.requests.filter((r) => r.type !== "comp_day").map((r) => h("a", { class: "chip", href: `#/leave/${r.id}` }, t("lt_" + r.type),
+      r.type === "overtime" && r.minutes ? ` ${durText(r.minutes)}` : "",
+      r.status === "pending" ? ` · ${t("rs_pending")}` : r.hr_class === null && ["correction", "overtime", "early", "late", "break"].includes(r.type) ? ` · ${t("att_awaiting_hr")}` : r.type === "overtime" && r.hr_class === "confirmed" ? ` · ${t("att_extra_ok")}` : ""));
     const canAsk = own && !x.info && x.date <= todayIso() && !x.correctionPending;
     const ask = canAsk && (x.status === "missing" || x.status === "absent")
       ? h("a", { class: "btn small", href: `#/attendance/correction?date=${x.date}` }, t("att_ask_correction")) : null;
