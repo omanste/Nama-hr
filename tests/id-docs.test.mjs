@@ -331,3 +331,36 @@ test("photos are sent small where they are shown small; the original for a downl
   // someone who may not see it still can't, small or not
   assert.equal((await fetch(`${t.base}/api/files/${id}?w=96`)).status, 401);
 });
+
+test("the name in the <<< lines stops at the filler, even when a scanner read part of it as K / L", () => {
+  const td1 = (name) => parseMrz(`IDOMN12345678<4<<<<<<<<<<<<<<<\n9001011F3001011OMN<<<<<<<<<<<0\n${name.padEnd(30, "<").slice(0, 30)}`).name_en;
+  assert.equal(td1("SAMPLE<PERSON<TESTA<K<LK<K<<L"), "Sample Person Testa");
+  assert.equal(td1("SAMPLE<PERSON<TESTA<K<<<<<K<L"), "Sample Person Testa");
+  assert.equal(td1("SAMPLE<PERSON<AL<TEST<<<<<<<<<"), "Sample Person Al Test");
+  assert.equal(td1("ALI<IL<TEST"), "Ali Il Test", "a real short name stays");
+  const p = parseMrz("P<OMNTESTA<<SAMPLE<PERSON<L<K<LK<K<<<<<<<<<<<<<\nA123456780OMN9001011F3001011<<<<<<<<<<<<<<00");
+  assert.equal(p.name_en, "Sample Person Testa");
+});
+
+test("an email typed on a phone (spaces, invisible direction marks, capitals) is saved clean; a bad one is refused", async () => {
+  const e = await makePerson(t.base, admin, { emp_no: "EM1", name_ar: "بريد", join_date: "2022-01-01" });
+  const r = await admin.put(`/api/employees/${e.emp.id}/contact`, { personal_email: " Sample.Person@Gmail.com‏" });
+  assert.equal(r.status, 200); assert.equal(r.data.employee.personal_email, "sample.person@gmail.com");
+  assert.equal((await admin.put(`/api/employees/${e.emp.id}/contact`, { personal_email: "‎sample＠gmail.com" })).data.employee.personal_email, "sample@gmail.com");
+  assert.equal((await admin.put(`/api/employees/${e.emp.id}/contact`, { personal_email: "sample@gmail" })).status, 400);
+});
+
+test("today as an expiry date must be confirmed (a phone's date picker fills in today); other dates as before", async () => {
+  const e = await makePerson(t.base, admin, { emp_no: "EX1", name_ar: "انتهاء", join_date: "2022-01-01" });
+  const today = t.app.ctx.today();
+  const a = await admin.put(`/api/employees/${e.emp.id}/identity`, { civil_id_expiry: today });
+  assert.equal(a.status, 409); assert.equal(a.data.error, "expiry_today");
+  assert.equal((await admin.put(`/api/employees/${e.emp.id}/identity`, { civil_id_expiry: today, confirm_past: true })).status, 200);
+  assert.equal((await admin.put(`/api/employees/${e.emp.id}/identity`, { passport_expiry: "2020-01-01" })).status, 200, "an old date: fine");
+  const up = await admin.upload(`/api/employees/${e.emp.id}/files?kind=doc&doc_type=visa&name=v.pdf&expiry=${today}`, Buffer.from("%PDF-1.4 v"), "application/pdf");
+  assert.equal(up.data.file.expiry, null, "today on upload is left for the person to confirm");
+  const f = up.data.file.id;
+  assert.equal((await admin.put(`/api/files/${f}`, { expiry: today })).data.error, "expiry_today");
+  assert.equal((await admin.put(`/api/files/${f}`, { expiry: today, confirm_past: true })).data.file.expiry, today);
+  assert.equal((await admin.put(`/api/files/${f}`, { expiry: "2028-05-01" })).data.file.expiry, "2028-05-01");
+});

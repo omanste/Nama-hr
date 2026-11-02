@@ -53,6 +53,15 @@ function yymmdd(s, future) {
 }
 const letters = (s) => s.replace(/0/g, "O").replace(/1/g, "I").replace(/5/g, "S").replace(/8/g, "B");
 const words = (s) => s.split("<").filter(Boolean).map((w) => w[0] + w.slice(1).toLowerCase()).join(" ");
+/* The name in the "<<<" lines ends at the filler. A scanner often reads part of that filler as letters it confuses with
+ * "<" (K, L, C, I, E, X, 1): "FATHA<K<LK<K<K<L". The name stops at "<<<" or at two or more pieces made only of those
+ * letters, and a last one- or two-letter word made only of them is dropped too. */
+const NOISE = "[KLCIEX1]{1,2}";
+export function nameField(line) {
+  let s = String(line).replace(/<{3,}.*$/, "").replace(new RegExp(`(?:<+${NOISE}){2,}<*$`), "").replace(/<+$/, "");
+  for (let k = 0; k < 3; k++) s = s.replace(new RegExp(`<+${NOISE}$`), "");
+  return s;
+}
 // ICAO 9303 nationality codes (ISO 3166 alpha-3, plus the few ICAO-only ones) → the alpha-2 codes nationality is stored as
 const COUNTRY3 = Object.fromEntries(("OMN:OM ARE:AE SAU:SA KWT:KW QAT:QA BHR:BH YEM:YE EGY:EG JOR:JO SYR:SY LBN:LB IRQ:IQ PSE:PS SDN:SD LBY:LY TUN:TN " +
   "DZA:DZ MAR:MA MRT:MR SOM:SO DJI:DJ COM:KM IND:IN PAK:PK BGD:BD LKA:LK NPL:NP PHL:PH IDN:ID MYS:MY AFG:AF IRN:IR TUR:TR " +
@@ -80,7 +89,7 @@ export function parseMrz(text) {
   if (td3 >= 0) {
     const l1 = L[td3].padEnd(44, "<").slice(0, 44), l2 = L[td3 + 1].padEnd(44, "<").slice(0, 44);
     out.kind = l1[0] === "V" ? "visa" : "passport";
-    const [sur, given = ""] = l1.slice(5).replace(/<{3,}.*$/, "").split("<<");
+    const [sur, given = ""] = nameField(l1.slice(5)).split("<<");
     out.name_en = words(`${given}<${sur}`);
     const no = l2.slice(0, 9);
     if (check(no) === fixDigits(l2[9])) out.passport_no = no.replace(/</g, "");
@@ -111,7 +120,7 @@ export function parseMrz(text) {
     out.nationality = COUNTRY3[letters(l2.slice(15, 18))] || undefined;
     // the name: Omani cards write it in its usual order (given names, then the family name); others put the surname first
     // the name ends at the filler: anything after "<<<" is a phone scanner's noise (a "«" read as a letter), not a name
-    const nameLine = l3.replace(/<{3,}.*$/, "");
+    const nameLine = nameField(l3);
     if (nameLine.replace(/</g, "")) {
       if (letters(l1.slice(2, 5)) === "OMN") out.name_en = words(nameLine);
       else { const [sur, given = ""] = nameLine.split("<<"); out.name_en = words(`${given}<${sur}`); }

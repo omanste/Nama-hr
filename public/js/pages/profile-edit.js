@@ -1,7 +1,7 @@
 import { api } from "../api.js";
 import { t, nm, getLang, splitLangs, joinLangs, tx } from "../i18n.js";
 import { countryOptions, countryName } from "../countries.js";
-import { h, field, select, toast, errText, showFieldError, backLink } from "../ui.js";
+import { h, field, select, toast, errText, showFieldError, backLink, emailInput, saveWithExpiryCheck } from "../ui.js";
 
 const STATUSES = ["active", "on_leave", "resigned", "terminated", "disabled"];
 
@@ -36,7 +36,7 @@ export async function render(el, params, { can, query }) {
       field(t("f_passport_no"), inp("passport_no", { dir: "ltr" })), field(t("f_passport_expiry"), date("passport_expiry")), field(t("f_visa_expiry"), date("visa_expiry")))),
     h("section", { class: "card", id: "sec-contact" }, h("h2", null, t("sec_contact")), h("div", { class: "fields" },
       field(t("f_mobile"), inp("mobile", { type: "tel", dir: "ltr" })),
-      field(t("f_email"), inp("email", { type: "email", dir: "ltr" })),
+      field(t("f_email"), emailInput("email", e.email)),
       field(t("f_address"), inp("address"), { full: true }),
       field(t("f_emergency_name"), inp("emergency_name")),
       field(t("f_emergency_relation"), inp("emergency_relation")),
@@ -83,7 +83,7 @@ async function save(ev, form, isNew, e) {
   for (const k of ["department_id", "manager_employee_id"]) data[k] = data[k] ? Number(data[k]) : null;
   const btn = form.querySelector("button[type=submit]"); btn.disabled = true;
   try {
-    const r = isNew ? await api.post("/api/employees", data) : await api.put(`/api/employees/${e.id}`, data);
+    const r = await saveWithExpiryCheck((ok) => (isNew ? api.post("/api/employees", { ...data, confirm_past: ok }) : api.put(`/api/employees/${e.id}`, { ...data, confirm_past: ok })));
     toast(t("saved"));
     location.hash = isNew ? `#/staff/${r.employee.id}` : form.dataset.home || `#/staff/${r.employee.id}`;
   } catch (er) {

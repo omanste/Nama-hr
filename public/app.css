@@ -485,3 +485,4 @@ input[type="checkbox"],input[type="radio"]{width:20px;height:20px;flex:none;marg
   .att-table tr.muted-row td{background:none}
 }
 .att-src{margin:0 0 12px}
+@media (max-width:640px){.hide-phone{display:none!important}}

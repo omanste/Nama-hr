@@ -37,6 +37,10 @@ const DATES = ["civil_id_expiry", "passport_expiry", "visa_expiry", "dob", "join
 export const LONG = ["education", "specialization", "experience", "languages", "skills", "certifications", "main_tasks"];
 export const FIELDS = ["emp_no", ...TEXT, ...LONG, "email", ...DATES, "department_id", "manager_employee_id", "status", "gender", "shift", "shift_locked", "att_mode", "reports_to_top", "personal_email", "personal_phone", "perm_wilayat", "current_area", ...BANK];
 export const GENDERS = ["male", "female"];
+const EXPIRIES = ["civil_id_expiry", "passport_expiry", "visa_expiry"];
+/** An email as typed on any keyboard: without invisible direction marks, zero-width characters and spaces, in lower case. */
+export const cleanEmail = (v) => String(v ?? "").replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF\s]/g, "").replace(/＠/g, "@").replace(/。|．/g, ".").toLowerCase();
+export const EMAIL_RE = /^[a-z0-9._%+'-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}$/;
 
 const bad = (field, message) => Object.assign(new HttpError(400, "invalid", message), { field });
 
@@ -47,7 +51,7 @@ export function nextEmpNo(db) {
 }
 
 /** Validate and clean a profile payload; `cur` is the existing row on update. */
-export function cleanEmployee(db, body, cur = null) {
+export function cleanEmployee(db, body, cur = null, { today = null } = {}) {
   const out = {};
   for (const k of FIELDS) {
     if (!(k in body)) continue;
@@ -55,7 +59,13 @@ export function cleanEmployee(db, body, cur = null) {
     if (typeof v === "string") v = v.trim();
     if (v === "" || v === undefined) v = null;
     if (DATES.includes(k) && v !== null && !isIsoDate(v)) throw bad(k, `${k} must be a valid date (YYYY-MM-DD)`);
-    if ((k === "email" || k === "personal_email") && v !== null && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) throw bad(k, "email is not valid");
+    // an ID / passport / visa expiring today is nearly always a phone's date picker filling in today: it must be confirmed
+    if (today && EXPIRIES.includes(k) && v === today && (!cur || cur[k] !== v) && !body.confirm_past)
+      throw Object.assign(new HttpError(409, "expiry_today", "Today as the expiry date? Check the date on the document"), { field: k });
+    if ((k === "email" || k === "personal_email") && v !== null) {
+      v = cleanEmail(v) || null; // invisible marks a phone keyboard adds, spaces, a full-width ＠
+      if (v !== null && !EMAIL_RE.test(v)) throw bad(k, "email is not valid");
+    }
     if (k === "bank_account" && v !== null) { v = v.replace(/[\s-]/g, ""); if (!/^\d{6,20}$/.test(v)) throw bad(k, "The account number is 6–20 digits"); }
     if (k === "bank_iban" && v !== null) { v = v.replace(/\s/g, "").toUpperCase(); if (!validIban(v)) throw bad(k, "Not a valid Oman IBAN (OM + 21 characters)"); }
     if (k === "status" && !STATUSES.includes(v ?? "active")) throw bad(k, "unknown status");
@@ -175,7 +185,7 @@ export function registerEmployees(api, ctx) {
       if (!Number.isFinite(opening) || opening < 0) throw bad("opening_days", "Opening balance must be a number of days, 0 or more");
     }
     const emp = tx(db, () => {
-      const e = insertEmployee(db, cleanEmployee(db, body), req.sess.user.id);
+      const e = insertEmployee(db, cleanEmployee(db, body, null, { today: ctx.today() }), req.sess.user.id);
       const today = ctx.today();
       if (opening !== null) postLedger(db, e, { kind: "opening", minutes: Math.round(opening * DAY), date: today, note: "Opening balance", by: req.sess.user.id });
       else if (e.join_date) postLedger(db, e, { kind: "annual_credit", minutes: ANNUAL, date: today, yearStart: yearStartFor(e, today), note: "Yearly entitlement", by: req.sess.user.id });
@@ -193,7 +203,7 @@ export function registerEmployees(api, ctx) {
     if (!can(req.sess, "employee.edit") && cur.id !== req.sess.user.employee_id) throw new HttpError(403, "forbidden", "You do not have permission for this");
     const b = await readJson(req);
     const body = Object.fromEntries(fields.filter((k) => k in b).map((k) => [k, b[k]]));
-    const values = cleanEmployee(db, body, cur);
+    const values = cleanEmployee(db, { ...body, confirm_past: !!b.confirm_past }, cur, { today: ctx.today() });
     const emp = tx(db, () => {
       const cols = Object.keys(values);
       if (cols.length) db.prepare(`UPDATE employees SET ${cols.map((c) => `${c}=?`).join(",")},updated_at=? WHERE id=?`).run(...cols.map((c) => values[c]), nowIso(), cur.id);
@@ -229,7 +239,7 @@ export function registerEmployees(api, ctx) {
     need(req.sess, "employee.edit");
     const cur = getEmployee(db, req.params.id);
     if (!cur) throw new HttpError(404, "not_found", "Employee not found");
-    const values = cleanEmployee(db, await readJson(req), cur);
+    const values = cleanEmployee(db, await readJson(req), cur, { today: ctx.today() });
     if (GONE.includes(values.status) && req.sess.user.role !== "admin"
       && db.prepare("SELECT 1 FROM users WHERE employee_id=? AND role IN ('admin','ceo','chairman')").get(cur.id))
       throw new HttpError(403, "forbidden", "Only Admin can end the service of an Admin or CEO");

@@ -295,6 +295,9 @@ const D = {
   my_leave: ["إجازاتي", "My leave"], leave_taken: ["الإجازات المأخوذة", "Leave taken"], year: ["السنة", "Year"], month: ["الشهر", "Month"],
   times_n: ["{n} مرة", "{n} times"], pending_n: ["{n} قيد الموافقة", "{n} pending"],
   // years of service
+  expiry_today_q: ["تاريخ الانتهاء هو اليوم — هل المستند منتهي فعلاً؟ (تحقق من التاريخ المكتوب في المستند)", "The expiry date is today — is the document really expired? (Check the date written on it)"],
+  expiry_today_yes: ["نعم، منتهي اليوم", "Yes, it expires today"], expiry_check_doc: ["انقل تاريخ الانتهاء كما هو مكتوب في المستند.", "Copy the expiry date as written on the document."],
+  err_expiry_today: ["تاريخ الانتهاء هو اليوم — تحقق منه", "The expiry date is today — please check it"],
   age: ["العمر", "Age"], show_all_types: ["عرض كل الأنواع (+{n})", "Show all types (+{n})"], service_length: ["مدة الخدمة", "Years of service"], one_year: ["سنة واحدة", "1 year"], n_years: ["{n} سنوات", "{n} years"],
   one_month: ["شهر واحد", "1 month"], n_months: ["{n} أشهر", "{n} months"],
   two_years: ["سنتان", "2 years"], two_months: ["شهران", "2 months"], n_years_11: ["{n} سنة", "{n} years"], n_months_11: ["{n} شهراً", "{n} months"], and_sep: [" و", " and "],

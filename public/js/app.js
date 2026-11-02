@@ -129,6 +129,7 @@ function header() {
       h("button", { class: "hbtn", type: "button", onclick: toggleLang, lang: getLang() === "ar" ? "en" : "ar" }, t("lang_toggle")),
       h("div", { class: "who" },
         h("span", { class: "who-name" }, nm(me.employee) || me.user.username, h("span", { class: "role" }, t("role_" + me.user.role))),
+        h("a", { class: "hbtn hide-phone", href: "#/password", title: t("change_password"), "aria-label": t("change_password") }, "🔑"),
         h("button", { class: "hbtn", type: "button", onclick: signOut }, t("sign_out")))));
 }
 

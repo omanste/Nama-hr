@@ -39,8 +39,9 @@ export async function storeUpload(ctx, req, { employeeId, requestId = null, voic
   const q = req.query;
   const docType = image ? null : q.get("doc_type") || "other";
   if (docType && !DOC_TYPES.includes(docType)) throw new HttpError(400, "invalid", "unknown document type");
-  const expiry = q.get("expiry") || null;
+  let expiry = q.get("expiry") || null;
   if (expiry && !isIsoDate(expiry)) throw new HttpError(400, "invalid", "expiry must be a valid date");
+  if (expiry && expiry === ctx.today() && !q.get("confirm_past")) expiry = null; // a phone's date picker filling in today: asked again after the upload
   const name = String(q.get("name") || (image ? "photo" : "document")).replace(/[\\/\r\n"]/g, "_").slice(0, 120);
   const { db } = ctx;
   const r = db.prepare("INSERT INTO files(employee_id,request_id,voice_id,kind,doc_type,name,mime,size,expiry,note,uploaded_by,uploaded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)")
@@ -113,6 +114,8 @@ export function registerFiles(api, ctx) {
       const read = r && Object.keys(r.found).some((k) => k !== "verified" && k !== "kind") ? r.found : null;
       if (read) {
         db.prepare("UPDATE files SET extracted=? WHERE id=?").run(JSON.stringify(read), file.id);
+        // a date read only from the printed front (not check-digit verified) that is today or earlier, or before the birth date, is a misread
+        if (read.expiry && !(read.verified || []).includes("expiry") && (read.expiry <= ctx.today() || (read.dob && read.expiry <= read.dob))) delete read.expiry;
         if (read.expiry && !file.expiry) { db.prepare("UPDATE files SET expiry=? WHERE id=?").run(read.expiry, file.id); file.expiry = read.expiry; }
       }
       return read;
@@ -216,6 +219,9 @@ export function registerFiles(api, ctx) {
     const b = await readJson(req);
     const expiry = b.expiry || null;
     if (expiry !== null && !isIsoDate(expiry)) throw Object.assign(new HttpError(400, "invalid", "Choose a valid date"), { field: "expiry" });
+    // today as the expiry is nearly always a phone's date picker filling in today: it must be confirmed
+    if (expiry !== null && expiry === ctx.today() && expiry !== f.expiry && !b.confirm_past)
+      throw Object.assign(new HttpError(409, "expiry_today", "Today as the expiry date? Check the date on the document"), { field: "expiry" });
     tx(db, () => {
       db.prepare("UPDATE files SET expiry=? WHERE id=?").run(expiry, f.id);
       audit(db, req.sess.user.id, "file.expiry", "employee", f.employee_id, { file_id: f.id, expiry: f.expiry }, { file_id: f.id, expiry });

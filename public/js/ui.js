@@ -91,6 +91,23 @@ export const errText = (e) => {
 };
 
 /** Small confirmation dialog. With {input:"label"} it returns the typed text, else true; null when cancelled. */
+/** An email box: plain text (the browser's own email check refuses invisible marks a phone keyboard adds), cleaned as
+ * it's typed — no spaces, no direction marks, lower case. */
+export const cleanEmail = (v) => String(v ?? "").replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF\s]/g, "").replace(/＠/g, "@").toLowerCase();
+export function emailInput(name, value) {
+  const i = h("input", { name, value: value || "", type: "text", inputmode: "email", autocomplete: "email", autocapitalize: "off", spellcheck: "false", dir: "ltr", maxlength: 200 });
+  i.addEventListener("change", () => { i.value = cleanEmail(i.value); });
+  return i;
+}
+/** Save something with an expiry date: if the server asks whether today really is the expiry (a phone's date picker fills
+ * in today), ask the person, and save again with their confirmation. save(confirmPast) → promise. */
+export async function saveWithExpiryCheck(save) {
+  try { return await save(false); }
+  catch (e) {
+    if (e && e.error === "expiry_today" && await confirm(t("expiry_today_q"), { okText: t("expiry_today_yes") })) return save(true);
+    throw e;
+  }
+}
 export function confirm(message, { input = null, required = false, okText = t("confirm"), danger = false } = {}) {
   return new Promise((resolve) => {
     const field = input ? h("textarea", { rows: 3, "aria-label": input, placeholder: input }) : null;

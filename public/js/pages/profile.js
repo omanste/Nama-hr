@@ -3,7 +3,7 @@ import { t, nm, getLang, tx, splitLangs, joinLangs } from "../i18n.js";
 import { BANKS, bankName, ibanText, validIban } from "../banks.js";
 import { GOVERNORATES, MUSCAT_GROUPS, wilayatName, areaName, isWilayat, isArea } from "../places.js";
 import { countryName } from "../countries.js";
-import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, errText, confirm, select, field, backLink, todayIso, isPermission, isAttendanceReq, durText, viewFile, busy } from "../ui.js";
+import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, errText, confirm, select, field, backLink, todayIso, isPermission, isAttendanceReq, durText, viewFile, busy, saveWithExpiryCheck, emailInput } from "../ui.js";
 import { balanceHero, requestItem } from "./home.js";
 import { render as rerender, refreshMe } from "../app.js";
 
@@ -47,7 +47,7 @@ async function identityDialog(e, why = null) {
   let saved = null; // resolves with what was saved (null if cancelled)
   return new Promise((resolve) => {
     simpleDialog(t("sec_identity"), [why ? h("div", { class: "note", style: { gridColumn: "1/-1" } }, t(why)) : null, ...F.map(([k]) => field(t("f_" + k), inputs[k]))].filter(Boolean),
-      async () => { const body = Object.fromEntries(F.map(([k]) => [k, inputs[k].value.trim() || null])); await api.put(`/api/employees/${e.id}/identity`, body); saved = body; },
+      async () => { const body = Object.fromEntries(F.map(([k]) => [k, inputs[k].value.trim() || null])); await saveWithExpiryCheck((ok) => api.put(`/api/employees/${e.id}/identity`, { ...body, confirm_past: ok })); saved = body; },
       t("verify_note"), false, () => resolve(saved));
   });
 }
@@ -61,11 +61,12 @@ function expiryDialog(f, missing = false) {
     const dlg = h("dialog", { class: "dialog" }, h("form", { class: "form", onsubmit: async (ev) => {
       ev.preventDefault();
       if (!input.value) { err.textContent = t("required"); return; }
-      try { await api.put(`/api/files/${f.id}`, { expiry: input.value }); toast(t("saved")); dlg.close(); } catch (er) { err.textContent = errText(er); }
+      try { await saveWithExpiryCheck((ok) => api.put(`/api/files/${f.id}`, { expiry: input.value, confirm_past: ok })); toast(t("saved")); dlg.close(); }
+      catch (er) { if (er && er.error === "expiry_today") { input.focus(); return; } err.textContent = errText(er); }
     } },
       h("h2", null, t("doc_expiry"), " · ", t("dt_" + (f.doc_type || "other"))),
       h("p", { class: "sub" }, t(missing ? "expiry_missing" : "expiry_hint")),
-      field(t("doc_expiry"), input), err,
+      field(t("doc_expiry"), input, { hint: t("expiry_check_doc") }), err,
       h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t(missing ? "later" : "cancel")), h("button", { class: "btn primary", type: "submit" }, t("save")))));
     dlg.addEventListener("close", () => { dlg.remove(); resolve(); });
     document.body.append(dlg); dlg.showModal(); input.focus();
@@ -172,7 +173,8 @@ export async function render(el, params, { me, can, opts }) {
         can.edit() && !own ? h("button", { class: e.status === "disabled" ? "btn" : "btn danger", type: "button", onclick: () => setDisabled(e, e.status !== "disabled") }, t(e.status === "disabled" ? "staff_enable" : "staff_disable")) : null,
         can.admin() && !own ? h("button", { class: "btn danger", type: "button", onclick: () => deleteStaff(e) }, t("staff_delete")) : null,
         // my own profile: change my password (current password needed)
-        own ? h("a", { class: "btn", href: "#/password?back=me" }, "🔑 ", t("change_password")) : null)),
+        // changing my password: in the top bar (computer) and under More (phone) — not on the profile
+        null)),
     e.status === "disabled" ? h("div", { class: "note bad" }, t("disabled_note")) : null,
     attendanceCard(e),
 
@@ -563,7 +565,7 @@ function contactDialog(e) {
   const inp = (k, attrs = {}) => h("input", { name: k, value: e[k] || "", ...attrs });
   const tel = { type: "tel", dir: "ltr", inputmode: "tel" };
   const inputs = {
-    mobile: inp("mobile", tel), personal_phone: inp("personal_phone", tel), personal_email: inp("personal_email", { type: "email", dir: "ltr", autocomplete: "email" }),
+    mobile: inp("mobile", tel), personal_phone: inp("personal_phone", tel), personal_email: emailInput("personal_email", e.personal_email),
     address: inp("address", { placeholder: t("address_hint") }), emergency_name: inp("emergency_name"), emergency_relation: inp("emergency_relation"), emergency_phone: inp("emergency_phone", tel),
   };
   const perm = placePicker("perm_wilayat", GOVERNORATES.map(([gEn, gAr, ws]) => [ar ? gAr : gEn, ws.map(([en, a]) => [en, ar ? a : en])]), e.perm_wilayat, isWilayat);
