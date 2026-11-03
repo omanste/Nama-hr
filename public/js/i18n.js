@@ -531,6 +531,8 @@ const D = {
   push_unsupported: ["هذا المتصفح لا يدعم الإشعارات المنبثقة.", "This browser doesn't support pop-up notifications."],
   push_enable: ["تفعيل الإشعارات", "Turn on notifications"], push_disable: ["إيقاف", "Turn off"], push_test: ["إرسال تجربة", "Send a test"],
   push_on_ok: ["فُعّلت الإشعارات على هذا الجهاز", "Notifications are on for this device"], push_test_sent: ["أُرسل إشعار تجريبي", "A test notification was sent"],
+  cal_national_delete_q: ["حذف هذه المناسبة الوطنية من التقويم لكل السنوات؟", "Remove this national day from the calendar for every year?"],
+  cal_national_edit_hint: ["تُعدَّل مناسبة هذه السنة فقط؛ السنوات الأخرى تبقى كما هي.", "Only this year's is changed; other years stay as they are."],
   cal_edit: ["تعديل المناسبة", "Edit the entry"], cal_rename_holiday: ["اسم العطلة الرسمية (لتغيير التاريخ احذفها وأضفها من جديد)", "The official holiday's name (to move it, delete it and add it again)"],
   nav_allowances: ["علاوات المهام الخارجية", "Task allowances"], omr: ["ر.ع", "OMR"],
   allow_rates: ["أسعار العلاوة", "Allowance rates"], allow_rates_hint: ["تُطبّق على المهام الخارجية خارج محافظة مسقط عند اعتمادها، ويبقى لكل مهمة السعر الذي اعتُمدت به.", "Applied to external tasks outside Muscat when approved; each task keeps the rate it was approved at."],

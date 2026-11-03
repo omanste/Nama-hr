@@ -81,8 +81,11 @@ export function registerCalendar(api, ctx) {
     const events = db.prepare(`SELECT c.*, c.created_by=? mine, e.name_ar by_ar, e.name_en by_en FROM calendar_events c LEFT JOIN users u ON u.id=c.created_by LEFT JOIN employees e ON e.id=u.employee_id
       WHERE c.start_date<=? AND c.end_date>=? AND (c.visibility='company' OR c.created_by=?) ORDER BY c.start_date`).all(sess.user.id, last, first, sess.user.id);
     // Oman's national days fall on the same date every year: always on everyone's calendar (unless one was also added by hand)
+    // (HR/Admin may remove one for every year, or change one year's — stored as overrides)
+    const hiddenMd = new Set(getSetting(db, "national_hidden", [])), hiddenDates = new Set(getSetting(db, "national_hidden_dates", []));
     for (const [md, name] of NATIONAL) {
       const date = `${month.slice(0, 4)}-${md}`;
+      if (hiddenMd.has(md) || hiddenDates.has(date)) continue;
       if (date >= first && date <= last && !events.some((e) => e.kind === "national" && e.start_date === date))
         events.push({ id: null, kind: "national", start_date: date, end_date: date, name, visibility: "company", fixed: true });
     }
@@ -184,6 +187,34 @@ export function registerCalendar(api, ctx) {
     });
     send(req, res, 200, { entry: after });
   });
+  // the built-in national days (same date every year): HR/Admin change one year's (it becomes an entry of its own) or
+  // remove it from the calendar for every year
+  const nationalOf = (date) => { const n = NATIONAL.find(([md]) => md === String(date).slice(5)); if (!isIsoDate(date) || !n) throw new HttpError(404, "not_found", "Not found"); return n; };
+  api.put("/api/calendar/national/:date", async (req, res) => {
+    needEditor(req.sess);
+    const date = req.params.date, [, builtIn] = nationalOf(date), b = await readJson(req);
+    const start = b.start || date, end = b.end || start, name = String(b.name || "").trim().slice(0, 100);
+    if (!isIsoDate(start)) throw bad("start", "A valid date is required");
+    if (!isIsoDate(end) || end < start) throw bad("end", "The end date is before the start");
+    if (!name) throw bad("name", "A name is required");
+    const out = tx(db, () => {
+      const list = getSetting(db, "national_hidden_dates", []);
+      if (!list.includes(date)) setSetting(db, "national_hidden_dates", [...list, date].sort());
+      const r = db.prepare("INSERT INTO calendar_events(kind,start_date,end_date,name,created_by,created_at,visibility) VALUES('national',?,?,?,?,?,'company')").run(start, end, name, req.sess.user.id, nowIso());
+      const e = db.prepare("SELECT * FROM calendar_events WHERE id=?").get(r.lastInsertRowid);
+      audit(db, req.sess.user.id, "calendar.edit_national", "calendar", e.id, { date, name: builtIn }, e);
+      return e;
+    });
+    send(req, res, 200, { entry: out });
+  });
+  api.delete("/api/calendar/national/:date", (req, res) => {
+    needEditor(req.sess);
+    const date = req.params.date, [md, name] = nationalOf(date);
+    const list = getSetting(db, "national_hidden", []);
+    tx(db, () => { if (!list.includes(md)) setSetting(db, "national_hidden", [...list, md].sort()); audit(db, req.sess.user.id, "calendar.hide_national", "calendar", md, { md, name }, null); });
+    send(req, res, 200, { ok: true });
+  });
+
   // rename an official holiday (its date stays; to move it, delete it and add it again)
   api.put("/api/calendar/holidays/:date", async (req, res) => {
     needEditor(req.sess);

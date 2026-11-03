@@ -135,3 +135,24 @@ test("HR and Admin edit any shared entry (name, dates, who sees it); staff only 
   assert.equal((await st.c.put("/api/calendar/holidays/2027-05-20", { name: "x" })).status, 403);
   assert.ok((await hr2.c.get("/api/calendar?month=2027-05")).data.holidays.some((h) => h.name === "عطلة رسمية" || h.name_ar === "عطلة رسمية" || JSON.stringify(h).includes("عطلة رسمية")));
 });
+
+test("HR and Admin change a built-in national day for one year, or remove it for every year; staff can't", async () => {
+  const hr3 = await makePerson(t.base, admin, { emp_no: "ND1", name_ar: "موارد", join_date: "2020-01-01" }, "hr");
+  const st = await makePerson(t.base, admin, { emp_no: "ND2", name_ar: "موظف", join_date: "2022-01-01" }, "staff");
+  const nat = async (c, m) => (await c.get(`/api/calendar?month=${m}`)).data.events.filter((e) => e.kind === "national");
+  assert.ok((await nat(hr3.c, "2027-02")).some((e) => e.start_date === "2027-02-24" && e.fixed));
+  assert.equal((await st.c.put("/api/calendar/national/2027-02-24", { name: "x" })).status, 403);
+  assert.equal((await hr3.c.put("/api/calendar/national/2027-02-25", { name: "x" })).status, 404, "not a national day");
+  // this year's teacher's day moved and renamed
+  const r = await hr3.c.put("/api/calendar/national/2027-02-24", { name: "يوم المعلم — احتفال", start: "2027-02-25" });
+  assert.equal(r.status, 200);
+  let feb = await nat(hr3.c, "2027-02");
+  assert.ok(!feb.some((e) => e.start_date === "2027-02-24"), "the built-in one is gone that year");
+  assert.ok(feb.some((e) => e.start_date === "2027-02-25" && e.name === "يوم المعلم — احتفال" && e.id));
+  assert.ok((await nat(hr3.c, "2028-02")).some((e) => e.start_date === "2028-02-24" && e.fixed), "other years unchanged");
+  // removed for every year
+  assert.equal((await st.c.del("/api/calendar/national/2027-07-23")).status, 403);
+  assert.equal((await hr3.c.del("/api/calendar/national/2027-07-23")).status, 200);
+  assert.ok(!(await nat(hr3.c, "2027-07")).some((e) => e.start_date === "2027-07-23"));
+  assert.ok(!(await nat(hr3.c, "2030-07")).some((e) => e.start_date === "2030-07-23"));
+});
