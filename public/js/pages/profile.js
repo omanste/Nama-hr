@@ -207,7 +207,7 @@ export async function render(el, params, { me, can, opts }) {
           ["emergency_person", e.emergency_name], ["f_emergency_relation", e.emergency_relation], ["f_emergency_phone", e.emergency_phone && h("a", { href: `tel:${e.emergency_phone}`, dir: "ltr" }, e.emergency_phone)]]))),
       h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_job")), can.edit() ? editLink(e, "job", !!opts.me) : null), facts([
         ["f_department_id", nm(p.department)], ["f_job_title", tx(e.job_title)], ["f_manager_employee_id", nm(p.manager)], ["f_join_date", dmy(e.join_date)], ["f_status", t("st_" + e.status)],
-        ["f_shift", h("span", null, t(`shift_${[1, 2, 3].includes(e.shift) ? e.shift : 2}_full`), " ", p.shiftSelf ? h("button", { class: "btn small", type: "button", onclick: () => shiftDialog(e) }, t("shift_change")) : null)]])),
+        ["f_shift", h("span", null, t(`shift_${[1, 2, 3, 4].includes(e.shift) ? e.shift : 2}_full`), " ", p.shiftSelf ? h("button", { class: "btn small", type: "button", onclick: () => shiftDialog(e) }, t("shift_change")) : null)]])),
       h("section", { class: "card", style: { gridColumn: "1 / -1" } }, h("div", { class: "card-head" }, h("h2", null, t("sec_contract")), can.edit() ? editLink(e, "contract", !!opts.me) : null), facts([
         ["f_join_date", dmy(e.join_date)], ["probation_end", dmy(p.leave.probationEnd)], ["service_length", serviceLength(e.join_date)],
         ["f_contract_type", tx(e.contract_type)], ["f_contract_end", e.contract_end ? h("span", null, dmy(e.contract_end), " ", expiryBadge(e.contract_end)) : null]]),

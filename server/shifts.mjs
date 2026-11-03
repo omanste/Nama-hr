@@ -1,10 +1,10 @@
 /* Work schedules (attendance policy §3): two shifts of 8 actual hours with a one-hour unpaid break, Sunday–Thursday,
- * and a special shift 3 (10:00–17:00) that only HR/Admin assign. HR assigns each person a shift on their profile. In Ramadan the day is shorter (6 hours by default, no break). */
+ * and special shifts 3 (10:00–17:00) and 4 (10:00–18:00) that only HR/Admin assign. HR assigns each person a shift on their profile. In Ramadan the day is shorter (6 hours by default, no break). */
 import { getSetting } from "./db.mjs";
 
-export const SHIFTS = [1, 2, 3];
-export const SELF_SHIFTS = [1, 2]; // the ones staff may pick themselves; 3 is a special case HR assigns
-export const SHIFT_DEFAULTS = { 1: ["08:30", "17:30"], 2: ["09:00", "18:00"], 3: ["10:00", "17:00"] };
+export const SHIFTS = [1, 2, 3, 4];
+export const SELF_SHIFTS = [1, 2]; // the ones staff may pick themselves; 3 and 4 are special cases HR/Admin assign
+export const SHIFT_DEFAULTS = { 1: ["08:30", "17:30"], 2: ["09:00", "18:00"], 3: ["10:00", "17:00"], 4: ["10:00", "18:00"] };
 export const REST_DAYS = [5, 6]; // Friday, Saturday
 const hm = (s) => { const [h, m] = String(s).split(":").map(Number); return h * 60 + m; };
 

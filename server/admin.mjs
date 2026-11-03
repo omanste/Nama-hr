@@ -61,7 +61,7 @@ export function readSettings(db) {
     mission_day_allowance: getSetting(db, "mission_day_allowance", 0),
     mission_night_allowance: getSetting(db, "mission_night_allowance", 0),
     contract_types: getSetting(db, "contract_types", DEFAULT_CONTRACT_TYPES),
-    shift_1_start: S[1].start, shift_1_end: S[1].end, shift_2_start: S[2].start, shift_2_end: S[2].end, shift_3_start: S[3].start, shift_3_end: S[3].end,
+    shift_1_start: S[1].start, shift_1_end: S[1].end, shift_2_start: S[2].start, shift_2_end: S[2].end, shift_3_start: S[3].start, shift_3_end: S[3].end, shift_4_start: S[4].start, shift_4_end: S[4].end,
     ramadan_start: getSetting(db, "ramadan_start", null),
     ramadan_end: getSetting(db, "ramadan_end", null),
     ramadan_hours: getSetting(db, "ramadan_hours", 6),
@@ -143,7 +143,7 @@ export function registerAdmin(api, ctx) {
   api.put("/api/settings", async (req, res) => {
     need(req.sess, "settings.edit");
     const b = await readJson(req);
-    const allowed = ["managers_approver_employee_id", "managers_approver_title", "chairman_employee_id", "ceo_final_types", "att_sites", "late_grace_min", "contract_types", "shift_1_start", "shift_1_end", "shift_2_start", "shift_2_end", "shift_3_start", "shift_3_end", "ramadan_start", "ramadan_end", "ramadan_hours", "attendance_start", "shift_self_select", "official_holidays"];
+    const allowed = ["managers_approver_employee_id", "managers_approver_title", "chairman_employee_id", "ceo_final_types", "att_sites", "late_grace_min", "contract_types", "shift_1_start", "shift_1_end", "shift_2_start", "shift_2_end", "shift_3_start", "shift_3_end", "shift_4_start", "shift_4_end", "ramadan_start", "ramadan_end", "ramadan_hours", "attendance_start", "shift_self_select", "official_holidays"];
     if ("official_holidays" in b) {
       if (!Array.isArray(b.official_holidays) || !b.official_holidays.every((x) => x && isIsoDate(x.date))) throw invalid("official_holidays", "each holiday needs a valid date");
       b.official_holidays = b.official_holidays.map((x) => ({ date: x.date, name: String(x.name || "").trim().slice(0, 80) })).sort((x, y) => (x.date < y.date ? -1 : 1));

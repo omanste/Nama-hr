@@ -183,7 +183,7 @@ test("permission times follow the person's shift", async () => {
   const r = await other.c.post("/api/requests", { type: "early", date: "2026-11-02", time: "16:30", reason: "موعد" });
   assert.equal(r.status, 201); assert.equal(r.data.request.minutes, 60);
   assert.equal((await other.c.post("/api/requests", { type: "late", date: "2026-11-03", time: "09:00", reason: "موعد" })).data.request.minutes, 30);
-  assert.equal((await hr.c.put(`/api/employees/${other.emp.id}`, { shift: 4 })).status, 400);
+  assert.equal((await hr.c.put(`/api/employees/${other.emp.id}`, { shift: 5 })).status, 400);
 });
 
 test("staff choose their own shift until HR locks it (one person) or Admin switches it off (everyone)", async () => {
@@ -266,4 +266,22 @@ test("HR sets a balance to an exact number: the difference is recorded as an adj
   const target = 18.5 * 480;
   assert.equal((await hr.c.post(`/api/employees/${s.emp.id}/adjust`, { minutes: target - cur, note: "تصحيح الرصيد حسب السجل الورقي" })).status, 200);
   assert.equal((await hr.c.get(`/api/employees/${s.emp.id}`)).data.leave.remaining, target);
+});
+
+test("shift 4 (10:00–18:00): HR/Admin assign it, staff can't pick it; lateness and leaving early follow its times", async () => {
+  const p = await makePerson(t.base, admin, { emp_no: "SH4", name_ar: "وردية رابعة", join_date: "2022-01-01", shift: 4 }, "staff");
+  assert.equal((await hr.c.get(`/api/employees/${p.emp.id}`)).data.employee.shift, 4);
+  assert.equal((await hr.c.put(`/api/employees/${p.emp.id}`, { shift: 5 })).status, 400);
+  assert.equal((await p.c.put(`/api/employees/${p.emp.id}/shift`, { shift: 1 })).status, 403, "someone on shift 4 can't move themselves off it");
+  const st = (await admin.get("/api/settings")).data;
+  assert.equal(st.shift_4_start, "10:00"); assert.equal(st.shift_4_end, "18:00");
+  assert.equal((await admin.put("/api/settings", { shift_4_start: "10:30" })).data.shift_4_start, "10:30");
+  await admin.put("/api/settings", { shift_4_start: "10:00" });
+  const { shiftFor } = await import("../server/shifts.mjs");
+  const sh = shiftFor(t.db, { shift: 4 }, "2026-11-10");
+  assert.deepEqual([sh.start, sh.end], [600, 1080]);
+  const d = (o) => computeDay({ shift: sh, covered: true, rest: false, holiday: false, leave: null, pending: false, punches: [], excused: [], missions: [], correction: null, grace: 15, ...o });
+  assert.equal(d({ punches: [612, 1080] }).late, 0, "10:12 within the grace");
+  assert.equal(d({ punches: [620, 1080] }).late, 20, "10:20 → 20 minutes late");
+  assert.equal(d({ punches: [600, 1050] }).early, 30, "17:30 → 30 minutes early");
 });

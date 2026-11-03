@@ -71,7 +71,7 @@ export function cleanEmployee(db, body, cur = null, { today = null } = {}) {
     if (k === "status" && !STATUSES.includes(v ?? "active")) throw bad(k, "unknown status");
     if (k === "status" && v === null) v = "active";
     if (k === "gender" && v !== null && !GENDERS.includes(v)) throw bad(k, "gender must be male or female");
-    if (k === "shift") { if (v === null) continue; v = Number(v); if (!SHIFTS.includes(v)) throw bad(k, "shift must be 1, 2 or 3"); }
+    if (k === "shift") { if (v === null) continue; v = Number(v); if (!SHIFTS.includes(v)) throw bad(k, "shift must be 1, 2, 3 or 4"); }
     if (k === "shift_locked") v = v === true || v === 1 || v === "1" || v === "on" ? 1 : 0;
     if (k === "reports_to_top" && v !== null && !["ceo", "chairman", "both"].includes(v)) throw bad(k, "reports to must be the CEO, the Chairman or both");
     if (k === "att_mode") { if (v === null) v = "both"; if (!["machine", "online", "both"].includes(v)) throw bad(k, "attendance method must be machine, online or both"); }
