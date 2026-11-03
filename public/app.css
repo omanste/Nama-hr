@@ -486,3 +486,7 @@ input[type="checkbox"],input[type="radio"]{width:20px;height:20px;flex:none;marg
 }
 .att-src{margin:0 0 12px}
 @media (max-width:640px){.hide-phone{display:none!important}}
+/* the "turn on notifications" window after sign-in */
+dialog.push-ask{max-width:min(400px,calc(100vw - 24px));text-align:center}
+dialog.push-ask .push-ask-icon{font-size:44px;line-height:1}
+dialog.push-ask .row.end{justify-content:center}

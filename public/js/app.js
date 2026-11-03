@@ -2,7 +2,7 @@
 import { api } from "./api.js";
 import { t, setLang, getLang, nm, has } from "./i18n.js";
 import { h, clear, errText, empty } from "./ui.js";
-import { refreshPush } from "./push.js";
+import { refreshPush, maybeAskForPush } from "./push.js";
 
 const ROUTES = [
   ["/login", "login", { bare: true }],
@@ -104,6 +104,8 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("mess
 export async function loadMe() {
   state.me = await api.get("/api/me");
   if (!pushChecked) { pushChecked = true; refreshPush(); } // keep this device's pop-ups current
+  // not on for this device yet: offer it (after the page has drawn; not while the password must be changed)
+  if (!state.me.user.mustChange) setTimeout(() => maybeAskForPush(), 1500);
   if (state.me.user.lang && state.me.user.lang !== getLang()) setLang(state.me.user.lang);
   return state.me;
 }
