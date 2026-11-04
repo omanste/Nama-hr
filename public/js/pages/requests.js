@@ -10,7 +10,7 @@ const pad = (n) => String(n).padStart(2, "0");
 const monthName = (m) => new Intl.DateTimeFormat(getLang() === "ar" ? "ar-OM-u-nu-latn" : "en-GB", { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2026, m - 1, 1)));
 
 // every leave type, in the order staff think of them (permissions have their own page)
-const LEAVE_TYPES = ["annual", "emergency", "sick", "bereavement", "marriage", "paternity", "maternity", "hajj", "exam", "patient_care", "childcare", "unpaid", "comp_day"];
+const LEAVE_TYPES = ["annual", "emergency", "sick", "bereavement", "marriage", "paternity", "maternity", "hajj", "umrah", "exam", "patient_care", "childcare", "unpaid", "comp_day"];
 /** Leave types that can apply to this person (by gender and nationality), as on the request form. */
 const leaveTypesFor = (emp) => LEAVE_TYPES.filter((k) => !(emp && emp.gender === "male" && ["maternity", "childcare"].includes(k))
   && !(emp && emp.gender === "female" && k === "paternity") && !(["exam", "patient_care"].includes(k) && emp && emp.nationality && !isOmani(emp.nationality)));

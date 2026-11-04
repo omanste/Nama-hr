@@ -13,7 +13,7 @@ import { overtimeRates } from "./overtime.mjs";
 export const DEFAULT_CONTRACT_TYPES = ["Unlimited", "Limited", "Probation", "Part-time"];
 /** Leave that needs the CEO's final approval after the manager's (exceptions to the normal policy). */
 export const DEFAULT_CEO_FINAL = ["unpaid"];
-const FINAL_OK = ["annual", "emergency", "sick", "bereavement", "marriage", "paternity", "maternity", "hajj", "exam", "patient_care", "childcare", "unpaid", "comp_day"];
+const FINAL_OK = ["annual", "emergency", "sick", "bereavement", "marriage", "paternity", "maternity", "hajj", "umrah", "exam", "patient_care", "childcare", "unpaid", "comp_day"];
 /** Top management and the consultant sit in the Management department: the CEO and the Chairman named in Settings, and
  * anyone with the CEO, Chairman or Consultant login. Returns the people moved (for the audit log). */
 export function placeInManagement(db) {

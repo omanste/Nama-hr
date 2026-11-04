@@ -9,11 +9,11 @@ const RULES = {
   annual: { range: true, deduct: true }, early: { hours: true }, sick: { range: true, proof: true }, emergency: { range: true, deduct: true },
   bereavement: { range: true, proof: true, relation: "list", event: "death" }, marriage: { range: true, proof: true, max: 3 },
   paternity: { range: true, proof: true, max: 7, gender: "male", event: true }, maternity: { range: true, proof: true, max: 98, gender: "female", event: true },
-  hajj: { range: true, proof: true, max: 15 }, exam: { range: true, proof: true, max: 15, omani: true },
+  hajj: { range: true, proof: true, max: 15 }, umrah: { range: true, proof: true, deduct: true, max: 7 }, exam: { range: true, proof: true, max: 15, omani: true },
   patient_care: { range: true, proof: true, max: 15, omani: true, relation: "text" },
   childcare: { range: true, gender: "female", unpaid: true, event: "child" }, unpaid: { range: true, unpaid: true }, comp_day: {},
 };
-const GROUPS = [["grp_main", ["annual", "sick", "comp_day"]], ["grp_special", ["bereavement", "marriage", "paternity", "maternity", "hajj", "exam", "patient_care"]], ["grp_unpaid", ["childcare", "unpaid"]]];
+const GROUPS = [["grp_main", ["annual", "umrah", "sick", "comp_day"]], ["grp_special", ["bereavement", "marriage", "paternity", "maternity", "hajj", "exam", "patient_care"]], ["grp_unpaid", ["childcare", "unpaid"]]];
 const BEREAVEMENT = { wife: 10, son: 10, daughter: 10, father: 3, mother: 3, grandfather: 3, grandmother: 3, brother: 3, sister: 3, uncle: 2, aunt: 2, husband_muslim: 130, husband_other: 14 };
 const hm = (s) => { const [a, b] = String(s).split(":").map(Number); return a * 60 + b; };
 const clock = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;

@@ -18,7 +18,7 @@ export const TYPE_NAMES = {
   annual: ["إجازة سنوية", "Annual leave"], early: ["مغادرة مبكرة", "Early leave"], late: ["تأخير في الحضور", "Late arrival"], break: ["استئذان خلال الدوام", "Personal break"], emergency: ["إجازة اضطرارية", "Emergency leave"],
   bereavement: ["إجازة وفاة", "Bereavement leave"], sick: ["إجازة مرضية", "Sick leave"], comp_day: ["عمل في يوم عطلة", "Worked on a holiday"],
   overtime: ["عمل بعد الدوام", "Extra time after hours"], marriage: ["إجازة زواج", "Marriage leave"], paternity: ["إجازة أبوة", "Paternity leave"], maternity: ["إجازة أمومة", "Maternity leave"],
-  hajj: ["إجازة الحج", "Hajj leave"], exam: ["إجازة امتحانات", "Exam leave"], patient_care: ["إجازة مرافقة مريض", "Accompanying a patient"],
+  hajj: ["إجازة الحج", "Hajj leave"], umrah: ["إجازة لأداء العمرة", "Umrah leave"], exam: ["إجازة امتحانات", "Exam leave"], patient_care: ["إجازة مرافقة مريض", "Accompanying a patient"],
   childcare: ["إجازة رعاية طفل (بدون أجر)", "Child-care leave (unpaid)"], unpaid: ["إجازة خاصة بدون أجر", "Special unpaid leave"],
   correction: ["تصحيح بصمة", "Fingerprint correction"], mission: ["مهمة عمل خارجية", "External work task"],
 };
@@ -302,7 +302,7 @@ export function registerRequests(api, ctx) {
     const emp = sess.employee;
     if (sess.user.role === "chairman" || getSetting(db, "chairman_employee_id", null) === emp.id) throw err(400, "no_leave", "The Chairman has no leave in the portal");
     // Company policy: an approver taking planned leave names a deputy for those dates
-    const needsDeputy = ["annual", "emergency"].includes(body.type) && (sess.isApprover || sess.user.role === "ceo"
+    const needsDeputy = ["annual", "emergency", "umrah"].includes(body.type) && (sess.isApprover || sess.user.role === "ceo"
       || getSetting(db, "managers_approver_employee_id", null) === emp.id);
     const deputyId = Number(body.deputy_user_id) || 0;
     if (needsDeputy && (!deputyId || deputyId === sess.user.id || !db.prepare("SELECT 1 FROM users WHERE id=? AND active=1").get(deputyId)))

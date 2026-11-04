@@ -81,7 +81,7 @@ export async function render(el, params, { me, can }) {
       ...(r.type === "mission" ? missionRows(r, row, can) : []),
       d.classes ? row(["correction", "overtime"].includes(r.type) ? "hr_confirmation" : "hr_classification", r.hr_class ? h("span", { class: `badge ${r.hr_class === "refused" ? "b-rejected" : "b-approved"}` }, t("pc_" + r.hr_class))
         : r.status === "approved" ? h("span", { class: "badge b-pending" }, t("att_awaiting_hr")) : "—") : null,
-      ["annual", "emergency"].includes(r.type) ? row("current_balance", daysText(r.balance)) : null,
+      ["annual", "emergency", "umrah"].includes(r.type) ? row("current_balance", daysText(r.balance)) : null,
       isPermission(r.type) && d.deducted > 0 ? row("deducted_from_annual", t("hours", { n: d.deducted / 60 })) : null,
       r.type === "comp_day" ? row("comp_choice", t(r.comp_choice === "pay" ? "comp_pay" : "comp_leave")) : null,
       r.relation ? row(r.type === "patient_care" ? "patient_relation" : "relation", r.type === "bereavement" ? t("rel_" + r.relation) : r.relation) : null,

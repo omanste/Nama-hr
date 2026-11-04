@@ -89,6 +89,23 @@ test("Hajj: 15 days once, after a continuous year of service", async () => {
   assert.equal((await ask(expat, { type: "hajj", start: "2028-05-20", end: "2028-05-21" })).data.error, "already_taken");
 });
 
+test("Umrah (company policy, not in the law): from the annual balance, up to 7 days, once a year, proof, manager then HR", async () => {
+  assert.equal((await ask(expat, { type: "umrah", start: "2027-01-10", end: "2027-01-17" })).data.error, "too_long");
+  const before = await remaining(expat.emp.id);
+  const r = await ask(expat, { type: "umrah", start: "2027-01-10", end: "2027-01-16" });
+  assert.equal(r.status, 201); assert.equal(r.data.request.minutes, days(7));
+  const id = r.data.request.id;
+  assert.equal((await mgr.c.post(`/api/requests/${id}/approve`, {})).data.error, "proof_required");
+  assert.equal((await proof(expat, id)).status, 201);
+  const a = await mgr.c.post(`/api/requests/${id}/approve`, {});
+  assert.equal(a.status, 200); assert.equal(a.data.request.status, "pending"); assert.equal(a.data.request.route_reason, "hr_final");
+  assert.equal((await hr.c.post(`/api/requests/${id}/approve`, {})).data.request.status, "approved");
+  assert.equal(await remaining(expat.emp.id), before - days(7), "taken from the annual balance");
+  assert.equal((await ask(expat, { type: "umrah", start: "2027-04-04", end: "2027-04-05" })).data.error, "year_limit");
+  assert.equal((await ask(expat, { type: "umrah", start: "2028-01-09", end: "2028-01-10" })).status, 201, "next year again");
+  assert.equal((await ask(junior, { type: "umrah", start: "2026-11-15", end: "2026-11-16" })).data.error, "not_eligible_yet", "like annual leave: after 6 months");
+});
+
 test("exam and patient-care leave: Omani staff only, 15 days a year each", async () => {
   assert.equal((await ask(expat, { type: "exam", start: "2027-01-05", end: "2027-01-06" })).data.error, "not_entitled");
   assert.equal((await ask(man, { type: "exam", start: "2027-01-05", end: "2027-01-14" })).status, 201);

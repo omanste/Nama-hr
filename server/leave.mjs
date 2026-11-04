@@ -9,7 +9,7 @@ export const DAY_END = 17 * 60;    // 17:00
 
 /** Leave types. effect: "deduct" reduces the annual balance, "credit" adds to it, "record" is history only.
  * Limits follow Oman's Labour Law (Royal Decree 53/2023, articles 78–84) — see docs/compliance/.
- *   maxDays: per request (per birth for maternity/paternity) · yearCap: per calendar year · once: once in the whole service
+ *   maxDays: per request (per birth for maternity/paternity) · yearCap: per calendar year · once: once in the whole service · yearOnce: once a calendar year
  *   proof: a document must be attached before approval (Art. 84; Art. 47 for sickness) · paid: false = without wage */
 export const TYPES = {
   annual: { effect: "deduct", range: true, maxDays: 60 },
@@ -25,6 +25,8 @@ export const TYPES = {
   paternity: { effect: "record", range: true, proof: true, maxDays: 7, gender: "male", event: "birth" },
   maternity: { effect: "record", range: true, proof: true, maxDays: 98, gender: "female", event: "birth" },
   hajj: { effect: "record", range: true, proof: true, maxDays: 15, once: true, minServiceMonths: 12 },
+  // Umrah: not in the 2023 law (Art. 84 has Hajj only) — company policy: from the annual balance, up to 7 days, once a year, with proof
+  umrah: { effect: "deduct", range: true, proof: true, maxDays: 7, yearOnce: true },
   exam: { effect: "record", range: true, proof: true, yearCap: 15, maxDays: 15, omani: true },
   patient_care: { effect: "record", range: true, proof: true, yearCap: 15, maxDays: 15, omani: true, relation: "text" },
   childcare: { effect: "record", range: true, maxDays: 365, gender: "female", paid: false, event: "child" },
@@ -98,6 +100,7 @@ export function checkLeaveRules(type, { emp, start, end, relation, eventDate, us
   if (max && days > max) throw new RuleError("too_long", `At most ${max} days`, "end");
   // yearInfo: the calendar year this request strains most — {used: days already requested in it, add: this request's days in it}
   const yi = used.yearInfo || { used: used.inYear || 0, add: days };
+  if (T.yearOnce && yi.used > 0) throw new RuleError("year_limit", "This leave can be taken once a year", "start");
   if (T.yearCap && yi.used + yi.add > T.yearCap) throw new RuleError("year_limit", `At most ${T.yearCap} days a year (${Math.max(0, T.yearCap - yi.used)} left)`, "end");
   return days;
 }

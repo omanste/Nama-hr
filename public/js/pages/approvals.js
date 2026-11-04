@@ -5,7 +5,7 @@ import { render as rerender } from "../app.js";
 import { decide } from "./request.js";
 
 // leaves that need a supporting document before approval (Art. 47, 84)
-const PROOF = new Set(["sick", "bereavement", "marriage", "paternity", "maternity", "hajj", "exam", "patient_care"]);
+const PROOF = new Set(["sick", "bereavement", "marriage", "paternity", "maternity", "hajj", "umrah", "exam", "patient_care"]);
 
 /** Check-ins outside the work sites waiting for approval: who, when, why, the photo, the place; approve or reject. */
 function outsideSection(list) {
@@ -60,7 +60,7 @@ export async function render(el, _p, { me }) {
       h("dl", { class: "facts" },
         h("div", null, h("dt", null, t("date")), h("dd", null, when(r))),
         h("div", null, h("dt", null, t("amount")), h("dd", null, amountText(r))),
-        ["annual", "emergency"].includes(r.type) ? h("div", null, h("dt", null, t("current_balance")), h("dd", null, daysText(r.balance))) : null,
+        ["annual", "emergency", "umrah"].includes(r.type) ? h("div", null, h("dt", null, t("current_balance")), h("dd", null, daysText(r.balance))) : null,
         r.reason ? h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("reason")), h("dd", null, r.reason)) : null),
       h("div", { class: "row", style: { marginTop: "14px" } },
         h("button", { class: "btn ok", type: "button", onclick: async () => { if (await decide(r.id, "approve", r)) rerender(); } }, t("approve")),
