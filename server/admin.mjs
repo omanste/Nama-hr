@@ -8,6 +8,7 @@ import { tempPassword, setPassword } from "./auth.mjs";
 import { isIsoDate } from "./leave.mjs";
 import { rerouteFallbacks } from "./requests.mjs";
 import { shiftTimes, SHIFTS } from "./shifts.mjs";
+import { overtimeRates } from "./overtime.mjs";
 
 export const DEFAULT_CONTRACT_TYPES = ["Unlimited", "Limited", "Probation", "Part-time"];
 /** Leave that needs the CEO's final approval after the manager's (exceptions to the normal policy). */
@@ -60,6 +61,8 @@ export function readSettings(db) {
     // external tasks: the allowance for each day outside Muscat and each overnight stay (OMR; HR sets them)
     mission_day_allowance: getSetting(db, "mission_day_allowance", 0),
     mission_night_allowance: getSetting(db, "mission_night_allowance", 0),
+    // overtime pay: the multipliers of the hourly basic wage, and when night hours begin (HR sets them; Accounts pay)
+    ...overtimeRates(db),
     contract_types: getSetting(db, "contract_types", DEFAULT_CONTRACT_TYPES),
     shift_1_start: S[1].start, shift_1_end: S[1].end, shift_2_start: S[2].start, shift_2_end: S[2].end, shift_3_start: S[3].start, shift_3_end: S[3].end, shift_4_start: S[4].start, shift_4_end: S[4].end,
     ramadan_start: getSetting(db, "ramadan_start", null),
@@ -138,6 +141,25 @@ export function registerAdmin(api, ctx) {
     const before = { mission_day_allowance: getSetting(db, "mission_day_allowance", 0), mission_night_allowance: getSetting(db, "mission_night_allowance", 0) };
     for (const [k, v] of Object.entries(out)) setSetting(db, k, v);
     audit(db, req.sess.user.id, "settings.allowances", "settings", null, before, out);
+    send(req, res, 200, readSettings(db));
+  });
+  // HR (and Admin) set the overtime multipliers
+  api.put("/api/settings/overtime", async (req, res) => {
+    if (!["hr", "admin"].includes(req.sess.user.role)) throw new HttpError(403, "forbidden", "You do not have permission for this");
+    const b = await readJson(req), out = {};
+    for (const k of ["overtime_rate_day", "overtime_rate_night"]) {
+      if (!(k in b)) continue;
+      const v = Number(b[k]);
+      if (!Number.isFinite(v) || v < 1 || v > 5) throw invalid(k, "Enter a multiplier from 1 to 5");
+      out[k] = Math.round(v * 100) / 100;
+    }
+    if ("overtime_night_start" in b) {
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(b.overtime_night_start))) throw invalid("overtime_night_start", "Enter a time such as 21:00");
+      out.overtime_night_start = String(b.overtime_night_start);
+    }
+    const before = overtimeRates(db);
+    for (const [k, v] of Object.entries(out)) setSetting(db, k, v);
+    audit(db, req.sess.user.id, "settings.overtime", "settings", null, before, out);
     send(req, res, 200, readSettings(db));
   });
   api.put("/api/settings", async (req, res) => {

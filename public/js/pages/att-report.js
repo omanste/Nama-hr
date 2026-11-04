@@ -32,9 +32,9 @@ export async function render(el, _p, { me, can, query }) {
   const out = h("div"), queue = h("div");
   const csv = h("a", { class: "btn", href: "#" }, "⬇ ", t("download_excel"));
 
-  const head = [t("att_work_days"), t("att_compliance"), t("att_late"), t("att_early"), t("att_missing"), t("att_absent"), t("att_pending_abs"), t("att_leave_days"), t("att_mission_days"), t("ci_outside"), t("att_extra")];
+  const head = [t("att_work_days"), t("att_compliance"), t("att_late"), t("att_early"), t("att_missing"), t("att_absent"), t("att_pending_abs"), t("att_leave_days"), t("att_mission_days"), t("ci_outside"), t("att_after"), t("att_extra")];
   const cells = (s) => [num(s.workDays), pct(s.compliance), s.late ? `${num(s.late)} · ${durText(s.lateMin)}` : "—", s.early ? `${num(s.early)} · ${durText(s.earlyMin)}` : "—",
-    num(s.missing), num(s.absent), num(s.pending), num(s.leave), num(s.mission), num(s.outside || 0), s.extraMin ? durText(s.extraMin) : "—"].map((v) => h("td", { class: "num" }, v));
+    num(s.missing), num(s.absent), num(s.pending), num(s.leave), num(s.mission), num(s.outside || 0), s.afterMin ? `${num(s.afterDays)} · ${durText(s.afterMin)}` : "—", s.extraMin ? durText(s.extraMin) : "—"].map((v) => h("td", { class: "num" }, v));
 
   async function load() {
     const qs = new URLSearchParams({ from: from.value, to: to.value });
@@ -50,6 +50,7 @@ export async function render(el, _p, { me, can, query }) {
       h("div", { class: "grid tiles" },
         h("div", { class: `card tile ${T.compliance !== null && T.compliance < 80 ? "warn" : ""}` }, h("div", { class: "n" }, pct(T.compliance)), h("div", { class: "l" }, t("att_compliance"))),
         h("div", { class: "card tile" }, h("div", { class: "n" }, num(T.late || 0)), h("div", { class: "l" }, t("att_late"), " · ", durText(T.lateMin || 0))),
+        h("div", { class: "card tile" }, h("div", { class: "n" }, T.afterMin ? durText(T.afterMin) : "—"), h("div", { class: "l" }, t("att_after"), " · ", t("att_n_days", { n: num(T.afterDays || 0) }))),
         h("div", { class: "card tile" }, h("div", { class: "n" }, num(T.absent || 0)), h("div", { class: "l" }, t("att_absent"))),
         h("div", { class: "card tile" }, h("div", { class: "n" }, num(T.missing || 0)), h("div", { class: "l" }, t("att_missing"))),
         h("div", { class: "card tile" }, h("div", { class: "n" }, num(r.openRequests)), h("div", { class: "l" }, t("att_open_requests"))),
@@ -80,7 +81,7 @@ export async function render(el, _p, { me, can, query }) {
   for (const i of [from, to]) i.addEventListener("change", () => { quick.value = "custom"; if (from.value && to.value && from.value <= to.value) load(); else toast(t("err_end_before_start"), "bad"); });
   if (dept) dept.addEventListener("change", load);
 
-  el.append(pageHead(t("nav_att_report"), h("a", { class: "btn", href: "#/attendance/online" }, "📍 ", t("nav_att_online")), ["hr", "admin", "accounts", "ceo", "chairman"].includes(me.user.role) ? h("a", { class: "btn", href: "#/attendance/allowances" }, "💰 ", t("nav_allowances")) : null, can.edit() ? h("a", { class: "btn", href: "#/attendance/upload" }, "⬆ ", t("nav_att_upload")) : null, csv),
+  el.append(pageHead(t("nav_att_report"), h("a", { class: "btn", href: "#/attendance/online" }, "📍 ", t("nav_att_online")), ["hr", "admin", "accounts", "ceo", "chairman"].includes(me.user.role) ? h("a", { class: "btn", href: "#/attendance/allowances" }, "💰 ", t("nav_allowances")) : null, ["hr", "admin", "accounts", "ceo", "chairman"].includes(me.user.role) ? h("a", { class: "btn", href: "#/attendance/overtime" }, "⏱ ", t("nav_overtime")) : null, can.edit() ? h("a", { class: "btn", href: "#/attendance/upload" }, "⬆ ", t("nav_att_upload")) : null, csv),
     srcTabs,
     h("section", { class: "card" }, h("div", { class: "fields" }, field(t("period"), quick), field(t("holiday_from"), from), field(t("holiday_to"), to), dept ? field(t("f_department"), dept) : null)),
     out, queue);

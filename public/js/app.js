@@ -38,6 +38,7 @@ const ROUTES = [
   ["/attendance/report", "att-report"],
   ["/attendance/online", "att-online"],
   ["/attendance/allowances", "att-allow"],
+  ["/attendance/overtime", "att-overtime"],
   ["/attendance/upload", "att-upload"],
   ["/profile-changes", "profile-changes"],
   ["/menu", "menu"],
@@ -72,7 +73,7 @@ function navItems() {
   if (can.viewAll() || me.isApprover) items.push(["#/reports", "nav_reports", "chart"]);
   if (["hr", "admin", "ceo", "chairman", "consultant", "accounts"].includes(me.user.role) || me.isApprover) items.push(["#/attendance/report", "nav_att_report", "chart", me.pendingHr]);
   if (["hr", "admin", "ceo", "chairman", "consultant", "accounts"].includes(me.user.role) || me.isApprover || me.hasTeam) items.push(["#/attendance/online", "nav_att_online", "finger"]);
-  if (["hr", "admin", "accounts", "ceo", "chairman"].includes(me.user.role)) items.push(["#/attendance/allowances", "nav_allowances", "list"]);
+  if (["hr", "admin", "accounts", "ceo", "chairman"].includes(me.user.role)) items.push(["#/attendance/allowances", "nav_allowances", "list"], ["#/attendance/overtime", "nav_overtime", "clock"]);
   if (can.edit()) items.push(["#/profile-changes", "nav_profile_changes", "check", me.pendingProfileChanges], ["#/cap-reviews", "nav_cap_reviews", "clock", me.pendingCapReviews], ["#/import", "nav_import", "upload"]);
   if (can.admin()) items.push(["#/settings", "nav_settings", "gear"], ["#/users", "nav_users", "key"]);
   if (can.viewAll() && me.user.role !== "consultant") items.push(["#/audit", "nav_audit", "clock"]);

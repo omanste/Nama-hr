@@ -6,6 +6,7 @@ import path from "node:path";
 import { boot, adminClient, makePerson } from "./helpers.mjs";
 import { computeDay } from "../server/attendance.mjs";
 import { metres, siteOf, runCheckinRetention, runReminders } from "../server/checkin.mjs";
+import { overtimePay } from "../server/overtime.mjs";
 
 // made-up places: an office and a point about 2 km away
 const OFFICE = { lat: 23.588, lng: 58.3829 }, FAR = { lat: 23.6, lng: 58.4 };
@@ -35,6 +36,19 @@ test("the grace: arriving within 15 minutes is on time; after it, lateness count
   assert.equal(day(556, 1080).late, 16, "09:16");
   assert.equal(day(560, 1080).late, 20, "09:20");
   assert.equal(day(540, 1050).early, 30, "left 17:30");
+});
+
+test("overtime pay splits daytime and night hours; rest days and holidays are all at the night rate; after-hours time per day", () => {
+  const R = { day: 1.25, night: 1.5, night_start: "21:00" };
+  const p = overtimePay({ start_date: "2026-11-03", early_time: "18:00", end_time: "22:00" }, R, new Set());
+  assert.deepEqual([p.day_min, p.night_min, p.paid_min, p.off_day], [180, 60, 315, false]);
+  const fri = overtimePay({ start_date: "2026-11-06", early_time: "10:00", end_time: "12:00" }, R, new Set());
+  assert.deepEqual([fri.night_min, fri.paid_min, fri.off_day], [120, 180, true]);
+  assert.equal(overtimePay({ start_date: "2026-11-03", early_time: "18:00", end_time: "19:00" }, R, new Set(["2026-11-03"])).off_day, true);
+  const day = (punches, extra = {}) => computeDay({ shift: { start: 540, end: 1080 }, covered: true, rest: false, holiday: false, leave: null, pending: false, punches, excused: [], missions: [], correction: null, grace: 15, ...extra });
+  assert.equal(day([540, 1170]).after, 90, "left 19:30");
+  assert.equal(day([540, 1080]).after, undefined, "left on time");
+  assert.equal(day([600, 840], { rest: true }).after, 240, "a rest day: all of it");
 });
 
 test("online check-ins keep their own label: a check-out minutes after the check-in is still both, never one guessed punch", () => {
@@ -272,6 +286,23 @@ test("leaving after hours: a reason; the extra time goes to the manager (who may
   t.app.ctx.fakeClock = "23:59";
   const sheet = (await hr.c.get(`/api/attendance/employee/${w.emp.id}?month=2026-11&source=online`)).data;
   assert.equal(sheet.days.find((x) => x.date === day).extra, 105); assert.equal(sheet.summary.extraMin, 105);
+  // time after the official end is shown each day and totalled (21:10 − 18:00), whatever was approved
+  assert.equal(sheet.days.find((x) => x.date === day).after, 190); assert.equal(sheet.summary.afterMin, 190); assert.equal(sheet.summary.afterDays, 1);
+  const rep = (await hr.c.get(`/api/attendance/report?from=${day}&to=${day}&source=online`)).data;
+  assert.equal(rep.total.afterMin, 190);
+  // overtime pay: HR's multipliers are kept at confirmation; Accounts see the paid hours
+  assert.deepEqual(JSON.parse(r.details).ot_rates, { day: 1.25, night: 1.5, night_start: "21:00" });
+  assert.equal((await w.c.get("/api/reports/overtime?month=2026-11")).status, 403);
+  assert.equal((await mgr.c.put("/api/settings/overtime", { overtime_rate_day: 2 })).status, 403);
+  assert.equal((await hr.c.put("/api/settings/overtime", { overtime_rate_day: 0.5 })).status, 400);
+  assert.equal((await hr.c.put("/api/settings/overtime", { overtime_rate_day: 1.5, overtime_night_start: "20:00" })).status, 200);
+  const ot = (await hr.c.get("/api/reports/overtime?month=2026-11")).data;
+  const row = ot.rows.find((x) => x.id === r.id);
+  assert.equal(row.minutes, 105); assert.equal(row.day_min, 105); assert.equal(row.night_min, 0); assert.equal(row.paid_min, 131, "105 × 1.25, the rate it was confirmed at");
+  assert.equal(ot.rates.overtime_rate_day, 1.5);
+  const csvText = await (await fetch(`${t.base}/api/reports/overtime?month=2026-11&format=csv`, { headers: { cookie: hr.c.cookie } })).text();
+  assert.match(csvText, /OT1/); assert.match(csvText, /2\.18/);
+  await hr.c.put("/api/settings/overtime", { overtime_rate_day: 1.25, overtime_night_start: "21:00" });
   // another day: leaving at 19:00 without having said anything — asked why, then filed
   const day2 = "2026-11-04"; t.app.ctx.fakeToday = day2;
   t.app.ctx.fakeClock = "08:58"; await ci(w, "in");

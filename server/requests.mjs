@@ -12,6 +12,7 @@ import { getEmployee } from "./employees.mjs";
 import { storeUpload } from "./files.mjs";
 import { blockedOverlap } from "./calendar.mjs";
 import { shiftFor, isRestDay } from "./shifts.mjs";
+import { overtimeRates } from "./overtime.mjs";
 
 export const TYPE_NAMES = {
   annual: ["إجازة سنوية", "Annual leave"], early: ["مغادرة مبكرة", "Early leave"], late: ["تأخير في الحضور", "Late arrival"], break: ["استئذان خلال الدوام", "Personal break"], emergency: ["إجازة اضطرارية", "Emergency leave"],
@@ -573,6 +574,11 @@ export function registerRequests(api, ctx) {
         postLedger(db, emp, { kind: "early_leave", minutes: -r.minutes, date: r.start_date, requestId: r.id, note: "Permission taken from annual leave (HR)", by: sess.user.id });
       }
       db.prepare("UPDATE leave_requests SET hr_class=?, hr_by=?, hr_at=? WHERE id=?").run(b.class, sess.user.id, nowIso(), r.id);
+      if (r.type === "overtime" && b.class === "confirmed") { // keep the overtime multipliers it was confirmed at
+        const s = overtimeRates(db), d = JSON.parse(r.details || "{}");
+        d.ot_rates = { day: s.overtime_rate_day, night: s.overtime_rate_night, night_start: s.overtime_night_start };
+        db.prepare("UPDATE leave_requests SET details=? WHERE id=?").run(JSON.stringify(d), r.id);
+      }
       const comment = String(b.comment || "").trim().slice(0, 500);
       event(db, r.id, "hr_" + b.class, sess.user.id, comment || null);
       const after = getReq(db, r.id);

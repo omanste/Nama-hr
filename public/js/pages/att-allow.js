@@ -33,7 +33,7 @@ export async function render(el, _p, { me, query }) {
     // totals per person
     const per = new Map();
     for (const x of r.rows) { const p = per.get(x.employee.id) || { employee: x.employee, tasks: 0, days: 0, nights: 0, amount: 0 }; p.tasks++; p.days += x.days_outside; p.nights += x.nights; p.amount += x.allowance; per.set(x.employee.id, p); }
-    clear(out).append(
+    clear(out).append(...[
       h("div", { class: "grid tiles" },
         h("div", { class: "card tile" }, h("div", { class: "n" }, omr(r.total)), h("div", { class: "l" }, t("allow_total"))),
         h("div", { class: "card tile" }, h("div", { class: "n" }, num(r.rows.length)), h("div", { class: "l" }, t("allow_tasks"))),
@@ -52,7 +52,7 @@ export async function render(el, _p, { me, query }) {
             h("td", null, h("a", { href: `#/leave/${x.id}` }, x.start_date === x.end_date ? dmy(x.start_date) : `${dmy(x.start_date)} – ${dmy(x.end_date)}`), h("div", { class: "muted" }, `${x.time}–${x.end_time} · ${t("allow_n_days", { n: num(x.days) })}`)),
             h("td", null, x.place, x.outside_muscat ? null : h("div", { class: "muted" }, t("allow_in_muscat"))),
             h("td", { class: "num" }, num(x.days_outside)), h("td", { class: "num" }, num(x.nights)),
-            h("td", { class: "num" }, h("b", null, omr(x.allowance)), x.note ? h("div", { class: "muted", title: x.note }, "✎ ", t("allow_corrected")) : null)))))) : empty(t("allow_none"))));
+            h("td", { class: "num" }, h("b", null, omr(x.allowance)), x.note ? h("div", { class: "muted", title: x.note }, "✎ ", t("allow_corrected")) : null)))))) : empty(t("allow_none")))].filter(Boolean));
   }
   month.addEventListener("change", load);
   el.append(pageHead(t("nav_allowances"), h("a", { class: "btn", href: "#/attendance/report" }, t("nav_att_report")), csv),

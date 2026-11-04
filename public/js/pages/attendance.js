@@ -28,6 +28,7 @@ export function summaryTiles(s) {
     tile(num(s.leave), t("att_leave_days")),
     tile(num(s.mission), t("att_mission_days")),
     s.restWorked ? tile(num(s.restWorked), t("att_rest_worked")) : null,
+    tile(s.afterMin ? durText(s.afterMin) : "—", `${t("att_after")} · ${t("att_n_days", { n: num(s.afterDays || 0) })}`),
     s.extraMin ? tile(durText(s.extraMin), t("att_extra")) : null,
     tile(s.onSiteDays ? durText(Math.round(s.onSite / s.onSiteDays)) : "—", t("att_avg_on_site")));
 }
@@ -93,6 +94,7 @@ export async function render(el, _p, { me, query, can }) {
       h("td", { class: "num" }, x.onSite ? durText(x.onSite) : quiet ? "" : "—"),
       h("td", { class: "num" }, x.late ? h("span", { class: "bad-text" }, durText(x.late)) : quiet ? "" : "—"),
       h("td", { class: "num" }, x.early ? h("span", { class: "bad-text" }, durText(x.early)) : quiet ? "" : "—"),
+      h("td", { class: "num" }, x.after ? h("span", { class: "good-text" }, durText(x.after)) : quiet ? "" : "—"),
       h("td", null, h("span", { class: `badge ${STATUS_CLASS[x.status] || ""}` }, status), x.info && ["absent", "missing"].includes(x.status) ? h("span", { class: "muted" }, " ", t("att_info_only")) : null),
       reqLinks.length || ask || more ? h("td", null, reqLinks, ask, more) : h("td", { "data-label": "" }));
   });
@@ -123,7 +125,7 @@ export async function render(el, _p, { me, query, can }) {
     h("section", { class: "card", style: { marginTop: "16px" } },
       h("div", { class: "card-head" }, h("h2", null, t("att_days")), h("span", { class: "sub" }, t("att_policy_note", { n: d.grace ?? 15 }))),
       rows.length ? h("div", { class: "table-wrap" }, h("table", { class: "att-table" },
-        h("thead", null, h("tr", null, [t("date"), t("att_in"), t("att_out"), t("att_on_site"), t("att_late"), t("att_early"), t("status"), ""].map((x, i) => h("th", { class: i > 0 && i < 6 ? "num" : null }, x)))),
+        h("thead", null, h("tr", null, [t("date"), t("att_in"), t("att_out"), t("att_on_site"), t("att_late"), t("att_early"), t("att_after"), t("status"), ""].map((x, i) => h("th", { class: i > 0 && i < 7 ? "num" : null }, x)))),
         h("tbody", null, rows))) : empty()),
     reviewBox);
 }
