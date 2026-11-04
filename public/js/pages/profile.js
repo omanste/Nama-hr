@@ -3,6 +3,7 @@ import { t, nm, getLang, tx, splitLangs, joinLangs } from "../i18n.js";
 import { BANKS, bankName, ibanText, validIban } from "../banks.js";
 import { GOVERNORATES, MUSCAT_GROUPS, wilayatName, areaName, isWilayat, isArea } from "../places.js";
 import { countryName } from "../countries.js";
+import { appliesTo } from "../leave-types.js";
 import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, errText, confirm, select, field, backLink, todayIso, isPermission, isAttendanceReq, durText, viewFile, busy, saveWithExpiryCheck, emailInput } from "../ui.js";
 import { balanceHero, requestItem } from "./home.js";
 import { render as rerender, refreshMe } from "../app.js";
@@ -600,7 +601,7 @@ export function leaveSections(p, { own = false, limit = 0 } = {}) {
         L.eligibleFrom && L.eligibleFrom > todayIso() ? h("div", { class: "note" }, t("eligible_from", { d: dmy(L.eligibleFrom) })) : null,
         !e.join_date ? h("div", { class: "note" }, t("no_join_date")) : null),
       h("section", { class: "card" }, h("h2", null, t(own ? "my_leave" : "by_type")),
-        leaveByType(L.byType))),
+        leaveByType(L.byType, e))),
 
     permissionCard(p.permissions),
     h("section", { class: "card" }, h("h2", null, t("sec_requests")),
@@ -610,8 +611,8 @@ export function leaveSections(p, { own = false, limit = 0 } = {}) {
 /** Leave taken this year by type: the main types and any used are shown; the unused rest open with "Show all" (a phone
  * would otherwise scroll through a dozen "0 days"). Two columns on narrow screens. */
 const MAIN_TYPES = ["annual", "sick", "early_leave"];
-function leaveByType(byType) {
-  const rows = Object.entries(byType).filter(([k, v]) => k !== "emergency" || v);
+function leaveByType(byType, emp) {
+  const rows = Object.entries(byType).filter(([k, v]) => (k !== "emergency" || v) && (v || appliesTo(emp, k)));
   const item = ([k, v]) => h("div", null, h("dt", null, t("lt_" + k)), h("dd", { class: "num" }, isPermission(k) ? t("hours", { n: num(v / 60) }) : daysText(v)));
   const shown = rows.filter(([k, v]) => v || MAIN_TYPES.includes(k)), rest = rows.filter((r) => !shown.includes(r));
   const list = h("dl", { class: "facts by-type" }, shown.map(item));

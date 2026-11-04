@@ -50,6 +50,7 @@ const D = {
   grp_main: ["الإجازات الأساسية", "Main"], grp_special: ["إجازات خاصة بأجر (المادة ٨٤)", "Special paid leave (Art. 84)"], grp_unpaid: ["بدون أجر", "Unpaid"],
   rule_annual: ["٣٠ يوماً سنوياً بعد ٦ أشهر من التعيين (المادة ٧٨).", "30 days a year, after 6 months of service (Art. 78)."],
   rule_early: ["أول {n} ساعات في الشهر مجانية، وما زاد يُخصم من الإجازة السنوية (٨ ساعات = يوم).", "The first {n} hours each month are free; extra hours come from annual leave (8 h = 1 day)."],
+  gender_missing_leave: ["لإظهار إجازة الأمومة أو الأبوة، اطلب من الموارد البشرية تسجيل الجنس في ملفك.", "To see maternity or paternity leave, ask HR to record your gender in your profile."],
   rule_umrah: ["حتى ٧ أيام مرة في السنة، تُخصم من رصيد الإجازة السنوية (سياسة الشركة؛ لا ينص عليها قانون العمل). أرفق ما يثبت: التأشيرة أو الحجز.", "Up to 7 days once a year, taken from your annual leave balance (company policy; not in the Labour Law). Attach proof: the visa or booking."],
   rule_emergency: ["تُخصم من رصيد الإجازة السنوية (سياسة الشركة).", "Taken from your annual leave balance (company policy)."],
   comp_choice: ["التعويض", "Compensation"], comp_leave: ["يوم إجازة (+١ يوم للرصيد)", "A day off (+1 day to the balance)"], comp_pay: ["مقابل مالي (يُسجل للرواتب)", "Payment (recorded for payroll)"],

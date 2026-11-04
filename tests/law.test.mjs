@@ -199,3 +199,18 @@ test("gender is validated", async () => {
   assert.equal((await hr.c.put(`/api/employees/${man.emp.id}`, { gender: "x" })).data.field, "gender");
   assert.equal((await hr.c.put(`/api/employees/${man.emp.id}`, { gender: "male" })).status, 200);
 });
+
+test("«My leave» lists only the types that apply: maternity for women, paternity for men, neither with no gender; one taken stays", async () => {
+  const types = async (p) => Object.keys((await hr.c.get(`/api/employees/${p.emp.id}`)).data.leave.byType);
+  const m = await types(man), w = await types(woman);
+  assert.ok(m.includes("paternity") && !m.includes("maternity") && !m.includes("childcare"));
+  assert.ok(w.includes("maternity") && w.includes("childcare") && !w.includes("paternity"));
+  assert.ok(!(await types(expat)).includes("exam"), "exam leave is for Omani staff");
+  const none = await makePerson(t.base, admin, { emp_no: "G0", name_ar: "بلا جنس", join_date: "2022-01-01" }, "staff");
+  const n = await types(none);
+  assert.ok(!n.includes("maternity") && !n.includes("paternity") && !n.includes("childcare")); assert.ok(n.includes("annual"));
+  // already taken: still listed even if the record changes later
+  t.db.prepare("INSERT INTO leave_requests(employee_id,type,start_date,end_date,minutes,status,created_at) VALUES(?,?,?,?,?,?,?)")
+    .run(none.emp.id, "paternity", "2026-10-01", "2026-10-02", 960, "approved", "2026-10-01T08:00:00Z");
+  assert.ok((await types(none)).includes("paternity"));
+});

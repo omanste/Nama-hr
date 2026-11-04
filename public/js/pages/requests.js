@@ -2,7 +2,7 @@ import { api } from "../api.js";
 import { t, getLang } from "../i18n.js";
 import { h, clear, select, pageHead, empty, num, daysText, todayIso, PERMISSIONS } from "../ui.js";
 import { requestItem } from "./home.js";
-import { isOmani } from "../countries.js";
+import { appliesTo } from "../leave-types.js";
 
 const STATUSES = ["pending", "approved", "rejected", "cancelled"];
 const TITLES = { mine: "my_requests", all: "all_requests", team: "team_requests" };
@@ -12,13 +12,12 @@ const monthName = (m) => new Intl.DateTimeFormat(getLang() === "ar" ? "ar-OM-u-n
 // every leave type, in the order staff think of them (permissions have their own page)
 const LEAVE_TYPES = ["annual", "emergency", "sick", "bereavement", "marriage", "paternity", "maternity", "hajj", "umrah", "exam", "patient_care", "childcare", "unpaid", "comp_day"];
 /** Leave types that can apply to this person (by gender and nationality), as on the request form. */
-const leaveTypesFor = (emp) => LEAVE_TYPES.filter((k) => !(emp && emp.gender === "male" && ["maternity", "childcare"].includes(k))
-  && !(emp && emp.gender === "female" && k === "paternity") && !(["exam", "patient_care"].includes(k) && emp && emp.nationality && !isOmani(emp.nationality)));
+const leaveTypesFor = (emp, items = []) => LEAVE_TYPES.filter((k) => appliesTo(emp, k) || items.some((r) => r.type === k));
 
 /** Summary of the shown period: times and days/hours of every type (approved requests only). */
 function summary(items, perm, emp) {
   const done = items.filter((r) => r.status === "approved");
-  const order = perm ? PERMISSIONS : leaveTypesFor(emp);
+  const order = perm ? PERMISSIONS : leaveTypesFor(emp, items);
   const amount = (m) => (perm ? t("hours", { n: num(m / 60) }) : daysText(m));
   const total = done.reduce((a, r) => a + r.minutes, 0);
   const pending = items.filter((r) => r.status === "pending").length;

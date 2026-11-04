@@ -1,7 +1,7 @@
 // New request: annual, early leave, sick, and the statutory special leaves of Oman's Labour Law (Art. 78–84).
 import { api } from "../api.js";
 import { t, nm } from "../i18n.js";
-import { isOmani } from "../countries.js";
+import { appliesTo } from "../leave-types.js";
 import { h, field, select, toast, errText, showFieldError, backLink, daysText, num, dmy, todayIso, empty } from "../ui.js";
 
 // mirrors server/leave.mjs TYPES (the server enforces every limit; this only guides the form)
@@ -29,7 +29,7 @@ export async function render(el, _p, { me, query }) {
   const L = prof.leave, emp = prof.employee;
   const today = todayIso();
   const notYet = L.eligibleFrom && L.eligibleFrom > today;
-  const allowed = (k) => { const R = RULES[k]; return !(R.gender && emp.gender && emp.gender !== R.gender) && !(R.omani && !isOmani(emp.nationality)); };
+  const allowed = (k) => appliesTo(emp, k);
   let type = RULES[query.get("type")] && allowed(query.get("type")) ? query.get("type") : notYet ? "sick" : "annual";
 
   const start = h("input", { type: "date", name: "start", value: today });
@@ -86,7 +86,8 @@ export async function render(el, _p, { me, query }) {
   function draw() {
     const R = RULES[type];
     typeBox.replaceChildren(...GROUPS.map(([g, keys]) => h("div", null, h("div", { class: "sub", style: { marginBottom: "6px" } }, t(g)),
-      h("div", { class: "seg", role: "group", "aria-label": t(g) }, keys.filter(allowed).map((k) => h("button", { type: "button", "aria-pressed": String(k === type), onclick: () => { type = k; draw(); } }, t("lt_" + k)))))));
+      h("div", { class: "seg", role: "group", "aria-label": t(g) }, keys.filter(allowed).map((k) => h("button", { type: "button", "aria-pressed": String(k === type), onclick: () => { type = k; draw(); } }, t("lt_" + k)))),
+      !emp.gender && g === "grp_special" ? h("p", { class: "sub", style: { margin: "6px 0 0" } }, t("gender_missing_leave")) : null)));
     end.min = start.value;
     date.max = type === "comp_day" ? today : "";
     if (type === "early") fillTimes();

@@ -1,6 +1,7 @@
 /* Ledger access: post rows and compute an employee's balance summary. */
 import { nowIso } from "./db.mjs";
 import { summarize, leaveYearStart, eligibleFrom, probationEnd, isIsoDate, TYPES } from "./leave.mjs";
+import { appliesTo } from "../public/js/leave-types.js";
 
 /** Leave-year bucket for a date: the join anniversary, or the calendar year when no join date is known. */
 export function yearStartFor(emp, date) {
@@ -27,5 +28,7 @@ export function leaveSummary(db, emp, today) {
   const s = summarize(ledgerRows(db, emp.id), pendingMinutes(db, emp.id), yearStart);
   const byType = Object.fromEntries(Object.keys(TYPES).filter((k) => !TYPES[k].attendance).map((k) => [k, 0]));
   for (const r of db.prepare("SELECT type, sum(minutes) n FROM leave_requests WHERE employee_id=? AND status='approved' AND start_date>=? GROUP BY type").all(emp.id, yearStart)) if (r.type in byType) byType[r.type] = r.n;
+  // only the types that apply to the person (maternity for women, paternity for men…); one already taken always shows
+  for (const k of Object.keys(byType)) if (!byType[k] && !appliesTo(emp, k)) delete byType[k];
   return { ...s, yearStart, eligibleFrom: eligibleFrom(emp.join_date), probationEnd: probationEnd(emp.join_date), byType };
 }
