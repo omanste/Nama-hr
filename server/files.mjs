@@ -30,11 +30,11 @@ const pick = (e) => ({ civil_id: e.civil_id, civil_id_expiry: e.civil_id_expiry,
 export const SELF_DOC_TYPES = ["civil_id", "passport", "visa", "resume", "certificate", "course", "contract", "medical", "other"];
 
 /** Store an uploaded body; returns the files row. Caller checks permissions. */
-export async function storeUpload(ctx, req, { employeeId, requestId = null, voiceId = null, kind = "doc" }) {
+export async function storeUpload(ctx, req, { employeeId, requestId = null, voiceId = null, kind = "doc", body: given = null }) {
   const mime = String(req.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
   const image = kind === "photo" || kind === "checkin";
   if (!(image ? IMAGES : DOCS).includes(mime)) throw new HttpError(415, "unsupported_type", image ? "Photo must be JPG, PNG or WebP" : "Only PDF, JPG, PNG or WebP files are accepted");
-  const body = await readBody(req, MAX_FILE);
+  const body = given || (await readBody(req, MAX_FILE)); // (a check-in reads its photo first, before its checks)
   if (!body.length) throw new HttpError(400, "empty_file", "The file is empty");
   const q = req.query;
   const docType = image ? null : q.get("doc_type") || "other";

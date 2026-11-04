@@ -5,13 +5,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { tx, nowIso, getSetting } from "./db.mjs";
-import { send, sendRaw, readJson, HttpError } from "./http.mjs";
+import { send, sendRaw, readJson, readBody, HttpError } from "./http.mjs";
 import { isIsoDate, addDays, clockMin, TYPES } from "./leave.mjs";
 import { shiftFor, isRestDay } from "./shifts.mjs";
 import { fileForPerson } from "./requests.mjs";
 import { audit } from "./audit.mjs";
 import { notify } from "./notify.mjs";
-import { storeUpload } from "./files.mjs";
+import { storeUpload, MAX_FILE } from "./files.mjs";
 import { attendanceExempt } from "./attendance.mjs";
 import { approvedDepartments } from "./perm.mjs";
 import { removeUpload } from "./files.mjs";
@@ -235,6 +235,9 @@ export function registerCheckin(api, ctx) {
   // body: the photo (JPEG/PNG/WebP); query: kind, lat, lng, acc, reason, device
   api.post("/api/attendance/checkin", async (req, res) => {
     const sess = req.sess, emp = sess.employee;
+    // the photo is read in full before any check: answering early while a phone is still sending it makes mobile
+    // browsers drop the connection ("Load failed") instead of showing the answer (e.g. "you're outside — say why")
+    const photoBody = await readBody(req, MAX_FILE);
     const may = canCheckIn(db, emp);
     if (!may.ok) throw new HttpError(403, "forbidden", may.why === "exempt" ? "Top management isn't under the attendance policy" : "Online check-in isn't on for you");
     if (!sess.user.checkin_consent_at) throw new HttpError(409, "consent_required", "Please read and accept the notice first");
@@ -254,7 +257,7 @@ export function registerCheckin(api, ctx) {
     const extraReason = String(q.get("extra_reason") || "").trim().slice(0, 300) || (open && open.reason) || "";
     if (lateOut && !extraReason)
       throw Object.assign(bad("extra_reason", "You're leaving after your working hours — say why"), { extra: { after_hours: true, shift_end: pad2(shift.end) } });
-    const photo = await storeUpload(ctx, req, { employeeId: emp.id, kind: "checkin" });
+    const photo = await storeUpload(ctx, req, { employeeId: emp.id, kind: "checkin", body: photoBody });
     const at = `${today} ${ctx.clock()}`;
     const row = tx(db, () => {
       const r = db.prepare(`INSERT INTO att_checkins(employee_id,kind,at,lat,lng,accuracy_m,site_id,outside,reason,photo_file_id,device_id,ip,user_agent,created_at)
@@ -282,6 +285,21 @@ export function registerCheckin(api, ctx) {
       } else extra = fileForPerson(ctx, emp, sess.user.id, { type: "overtime", ...v, reason: extraReason, details: { source: "checkout", checkin_id: row.id } });
     }
     send(req, res, 201, { checkin: { id: row.id, kind: row.kind, at: row.at, outside: !!row.outside, approval: row.approval, site: where.inside }, extra: extra && { id: extra.id, minutes: extra.minutes } });
+  });
+
+  // before taking the photo: is this place inside a work site, and is it a check-out after hours? (no photo is sent)
+  api.get("/api/attendance/checkin/check", (req, res) => {
+    const sess = req.sess, emp = sess.employee, q = req.query;
+    if (!canCheckIn(db, emp).ok) throw new HttpError(403, "forbidden", "Online check-in isn't on for you");
+    const kind = q.get("kind") === "out" ? "out" : "in", lat = Number(q.get("lat")), lng = Number(q.get("lng"));
+    if (!q.get("lat") || !q.get("lng") || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180)
+      throw bad("location", "Your location is needed — allow location for this site and try again");
+    const where = siteOf(sitesNow(), { lat, lng });
+    const today = ctx.today(), now = clockMin(ctx.clock()), shift = shiftFor(db, emp, today);
+    const after = kind === "out" && workingDay(db, emp, today) && now > shift.end + AFTER_HOURS_MIN;
+    const open = after ? openExtra(db, emp.id, today) : null;
+    send(req, res, 200, { inside: !!where.inside, site: where.inside, nearest: where.nearest, distance: where.distance,
+      after_hours: after && !(open && open.reason), shift_end: pad2(shift.end) });
   });
 
   // "I'm still working" (asked 30 minutes after the shift): a reason; the extra time goes to the manager once they check out

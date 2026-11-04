@@ -6,7 +6,10 @@ async function call(method, path, body, headers = {}) {
   let res;
   try { res = await fetch(path, opts); }
   catch { throw { status: 0, error: "offline", message: "offline" }; }
-  const data = (res.headers.get("content-type") || "").includes("json") ? await res.json() : null;
+  // the answer cut off on the way (a weak phone connection): a clear "try again", not the browser's raw "Load failed"
+  let data = null;
+  try { data = (res.headers.get("content-type") || "").includes("json") ? await res.json() : null; }
+  catch { throw { status: 0, error: "offline", message: "offline" }; }
   if (!res.ok) {
     const err = { status: res.status, ...(data || { error: "error" }) };
     if (res.status === 401 && !path.endsWith("/api/login")) { if (location.hash !== "#/login") location.hash = "#/login"; }

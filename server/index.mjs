@@ -10,6 +10,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openDb } from "./db.mjs";
 import { router, makeStatic, send, fail, HttpError } from "./http.mjs";
+/** Read and discard the rest of a request body (capped, with a time limit). */
+const drain = (req, limit) => new Promise((resolve) => {
+  let n = 0; const done = () => { clearTimeout(timer); resolve(); };
+  const timer = setTimeout(done, 15000);
+  req.on("data", (c) => { n += c.length; if (n > limit) { req.destroy(); done(); } });
+  req.on("end", done); req.on("error", done); req.on("close", done);
+  req.resume();
+});
 import { registerModules } from "./modules.mjs";
 import { todayMuscat } from "./leave.mjs";
 import { stopOcr } from "./idread.mjs";
@@ -48,6 +56,9 @@ export async function startServer({ dataDir, port = 3000, env = process.env } = 
       if (req.method !== "GET" && req.method !== "HEAD") return fail(req, res, 405, "method_not_allowed");
       return await serveStatic(req, res);
     } catch (e) {
+      // an error answered while the request's file is still arriving: take in the rest first (up to the upload limit),
+      // or a phone drops the connection and shows "Load failed" instead of the answer
+      if (!req.complete && !req.destroyed && e.status !== 413) await drain(req, 12 * 1024 * 1024);
       if (e instanceof HttpError) return send(req, res, e.status, { error: e.code, message: e.message, ...(e.field ? { field: e.field } : {}), ...(e.extra || {}) });
       console.error(e);
       if (!res.headersSent) fail(req, res, 500, "server_error", "Unexpected server error");

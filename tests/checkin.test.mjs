@@ -321,3 +321,34 @@ test("reminders: not checked in by start + 30, not out by end + 30 (with the two
   assert.equal(m.length, 1); assert.match(m[0].body_ar, /تذكير/);
   t.app.ctx.fakeToday = "2026-11-02"; t.app.ctx.fakeClock = "23:30";
 });
+
+test("outside the sites from a phone: the quick check asks for the reason first; the server reads the whole photo before answering", async () => {
+  const p = await makePerson(t.base, admin, { emp_no: "LF1", name_ar: "هاتف", join_date: "2022-01-01", department_id: dept.id }, "staff");
+  await p.c.post("/api/attendance/checkin/consent", {});
+  t.app.ctx.fakeToday = "2026-11-10"; t.app.ctx.fakeClock = "09:05";
+  // the quick check (no photo)
+  const out = (await p.c.get(`/api/attendance/checkin/check?kind=in&lat=${FAR.lat}&lng=${FAR.lng}`)).data;
+  assert.equal(out.inside, false); assert.equal(out.nearest.name_en, "Head office"); assert.ok(out.distance > 1000); assert.equal(out.after_hours, false);
+  const inn = (await p.c.get(`/api/attendance/checkin/check?kind=in&lat=${OFFICE.lat}&lng=${OFFICE.lng}`)).data;
+  assert.equal(inn.inside, true); assert.equal(inn.site.name_en, "Head office");
+  assert.equal((await p.c.get("/api/attendance/checkin/check?kind=in")).status, 400, "a location is needed");
+  // a phone-sized photo sent slowly: no answer before the last byte arrived
+  const net = await import("node:net");
+  const url = new URL(t.base), photo = Buffer.alloc(600 * 1024, 7); photo[0] = 0xff; photo[1] = 0xd8;
+  const answer = await new Promise((resolve, reject) => {
+    const sock = net.connect(Number(url.port), url.hostname);
+    let got = "", sentAll = false, early = false;
+    sock.on("data", (d) => { if (!sentAll) early = true; got += d; });
+    sock.on("end", () => resolve({ got, early })); sock.on("error", reject);
+    sock.write(`POST /api/attendance/checkin?kind=in&lat=${FAR.lat}&lng=${FAR.lng}&acc=10&device=d HTTP/1.1\r\nHost: ${url.host}\r\nCookie: ${p.c.cookie}\r\nContent-Type: image/jpeg\r\nContent-Length: ${photo.length}\r\nConnection: close\r\n\r\n`);
+    let i = 0; const step = 64 * 1024;
+    const next = () => { const last = i + step >= photo.length; if (last) sentAll = true; sock.write(photo.subarray(i, i + step)); i += step; if (!last) setTimeout(next, 15); };
+    next();
+  });
+  assert.equal(answer.early, false, "the server waited for the whole photo: " + answer.got.slice(0, 300));
+  assert.match(answer.got, /^HTTP\/1\.1 400/); assert.match(answer.got, /"outside":true/);
+  // with the reason: saved, waiting for the manager
+  const ok = await ci(p, "in", FAR, "&reason=" + encodeURIComponent("زيارة موقع"));
+  assert.equal(ok.status, 201); assert.equal(ok.data.checkin.approval, "pending");
+  t.app.ctx.fakeToday = "2026-11-02"; t.app.ctx.fakeClock = "23:30";
+});

@@ -56,10 +56,17 @@ async function start(kind, st, btn) {
     if (!st.consent) { if (!(await notice())) return; await api.post("/api/attendance/checkin/consent", {}); st.consent = true; }
     toast(t("ci_locating"));
     const pos = await locate();
+    // before the photo: does this place need a reason (outside the work sites), or leaving after hours?
+    let reason = "", extraReason = "";
+    try {
+      const c = await api.get(`/api/attendance/checkin/check?${new URLSearchParams({ kind, lat: pos.coords.latitude, lng: pos.coords.longitude })}`);
+      if (!c.inside) { reason = await reasonDialog(c); if (!reason) return; }
+      if (c.after_hours) { extraReason = await reasonDialog(null, { title: t("ci_extra_title"), hint: t("ci_extra_hint", { t: c.shift_end }) }); if (!extraReason) return; }
+    } catch (e) { if (e.status && e.status !== 404) throw e; } // an older server: it asks after the photo instead
     const photo = await camera();
     if (!photo) return;
-    await send(kind, pos, photo, "");
-  } catch (e) { toast(e.message && !e.status ? e.message : errText(e), "bad"); }
+    await send(kind, pos, photo, reason, extraReason);
+  } catch (e) { toast(e.status || e.error ? errText(e) : (e.message && !/load failed|failed to fetch|network/i.test(e.message) ? e.message : t("ci_conn_lost")), "bad"); }
   finally { btn.disabled = false; }
 }
 

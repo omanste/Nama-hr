@@ -456,6 +456,7 @@ const D = {
   att_src_all_note: ["البصمة والحضور الإلكتروني معاً", "Fingerprint and online check-ins together"], att_src_machine_note: ["من جهاز البصمة فقط", "From the fingerprint machine only"],
   att_src_online_note: ["من الحضور الإلكتروني فقط (تسجيلات البوابة)", "From online check-ins only (the portal)"],
   att_src_machine: ["بصمة", "Fingerprint"], att_src_corrected: ["تصحيح معتمد", "Approved correction"], ci_all_n: ["كل التسجيلات ({n})", "All check-ins ({n})"],
+  ci_conn_lost: ["انقطع الاتصال قبل اكتمال التسجيل — تأكد من الإنترنت وحاول مرة أخرى.", "The connection dropped before it was saved — check your internet and try again."],
   ci_still_working: ["ما زلت في العمل", "I'm still working"], ci_stay_title: ["العمل بعد الدوام", "Working after hours"],
   ci_stay_hint: ["لماذا ما زلت في العمل؟ يُرسل الوقت الإضافي إلى مديرك عند تسجيل الانصراف، ثم تعتمده الموارد البشرية.", "Why are you still working? The extra time goes to your manager when you check out, then HR confirms it."],
   ci_stay_saved: ["سُجّل السبب — سجّل انصرافك عند الانتهاء", "Reason saved — check out when you finish"],
