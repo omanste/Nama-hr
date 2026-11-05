@@ -110,3 +110,17 @@ test("HR deletes an entry from the list: it's gone, the profile keeps its curren
   assert.deepEqual((await hr.c.get(`/api/employees/${c.employee_id}`)).data.employee, before);
   assert.equal((await hr.c.del(`/api/profile-changes/${c.id}`)).status, 404);
 });
+
+test("each update lists the documents to compare: the person's ID papers for identity, CV and certificates for qualifications, none for bank", async () => {
+  const pdf = Buffer.from("%PDF-1.4 x");
+  const up = (type) => s.c.upload(`/api/employees/${s.emp.id}/files?kind=doc&doc_type=${type}&name=${type}.pdf`, pdf, "application/pdf");
+  const id = (await up("civil_id")).data.file, cv = (await up("resume")).data.file, cert = (await up("certificate")).data.file;
+  assert.equal((await s.c.put(`/api/employees/${s.emp.id}/identity`, { passport_no: "P1234567" })).status, 200);
+  assert.equal((await s.c.put(`/api/employees/${s.emp.id}/qualifications`, { skills: "Excel, Word" })).status, 200);
+  const list = (await hr.c.get("/api/profile-changes?status=all")).data.items.filter((x) => x.employee_id === s.emp.id);
+  const latest = (src) => list.find((x) => x.source === src);
+  assert.deepEqual(latest("identity").docs.map((d) => d.id), [id.id]);
+  assert.deepEqual(latest("qualifications").docs.map((d) => d.id).sort(), [cv.id, cert.id].sort());
+  assert.deepEqual(latest("bank").docs, []);
+  assert.ok(latest("identity").created_at && latest("identity").username);
+});

@@ -491,3 +491,16 @@ input[type="checkbox"],input[type="radio"]{width:20px;height:20px;flex:none;marg
 dialog.push-ask{max-width:min(400px,calc(100vw - 24px));text-align:center}
 dialog.push-ask .push-ask-icon{font-size:44px;line-height:1}
 dialog.push-ask .row.end{justify-content:center}
+
+/* profile updates: when, the before/after table and the document to compare beside it */
+.pc-when{display:flex;flex-direction:column;gap:2px;margin:8px 0 12px;font-size:.95rem}
+.pc-body{display:grid;gap:14px;min-width:0}
+.pc-body>*{min-width:0}
+@media (min-width:900px){.pc-body.with-doc{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}}
+.pc-doc{border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px;background:var(--bg)}
+.pc-doc-head{font-weight:600}
+.pc-doc-tabs{flex-wrap:wrap}
+.pc-doc-view{display:flex;flex-direction:column;gap:8px}
+.pc-doc-img{display:block;padding:0;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:zoom-in;overflow:hidden;max-height:420px}
+.pc-doc-img img{display:block;width:100%;height:auto;object-fit:contain;max-height:420px}
+.pc-doc-meta{display:flex;flex-direction:column;gap:4px;align-items:flex-start;font-size:.92rem}

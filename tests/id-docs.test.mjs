@@ -98,6 +98,9 @@ test("uploading an ID shows what was read; only the ticked values are saved (rep
   // HR is shown what changed (old → new) and can undo it
   const pc = (await hr.c.get("/api/profile-changes")).data.items.find((c) => c.employee_id === staff.emp.id && c.source === "id");
   assert.deepEqual(pc.changes.name_en, ["Typed Name", "Sample Person Altest"]);
+  // with the card it was read from, to compare when verifying; and when it was changed
+  assert.equal(pc.file_id, up.data.file.id); assert.deepEqual(pc.docs.map((d) => d.id), [up.data.file.id]);
+  assert.equal(pc.docs[0].doc_type, "civil_id"); assert.ok(pc.created_at);
   assert.ok((await admin.get("/api/audit?entity=employee")).data.items.find((a) => a.action === "employee.update_from_id"));
   // uploading the same card again changes nothing
   const again = await staff.c.upload(`/api/employees/${staff.emp.id}/files?kind=doc&doc_type=civil_id&name=id-back.jpg`, jpg, "image/jpeg");

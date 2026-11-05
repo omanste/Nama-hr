@@ -152,7 +152,7 @@ export function registerFiles(api, ctx) {
     tx(db, () => {
       db.prepare(`UPDATE employees SET ${cols.map((c) => `${c}=?`).join(",")},updated_at=? WHERE id=?`).run(...cols.map((c) => clean[c]), nowIso(), emp.id);
       audit(db, sess.user.id, "employee.update_from_id", "employee", emp.id, pick(emp), { ...clean, file_id: f.id });
-      recordSelfChange(ctx, sess, emp, emp, clean, "id");
+      recordSelfChange(ctx, sess, emp, emp, clean, "id", f.id);
     });
     return cols;
   }
@@ -173,7 +173,7 @@ export function registerFiles(api, ctx) {
     tx(db, () => {
       if (kind === "photo") {
         db.prepare("UPDATE employees SET photo_file_id=?,updated_at=? WHERE id=?").run(file.id, nowIso(), emp.id);
-        recordSelfChange(ctx, req.sess, emp, { photo_file_id: emp.photo_file_id }, { photo_file_id: file.id }, "photo");
+        recordSelfChange(ctx, req.sess, emp, { photo_file_id: emp.photo_file_id }, { photo_file_id: file.id }, "photo", file.id);
       }
       audit(db, req.sess.user.id, "file.upload", "employee", emp.id, null, file);
       if (old) {

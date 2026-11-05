@@ -330,7 +330,9 @@ function pendingNote(p, own, can) {
   const list = p.pendingChanges || [];
   if (!list.length) return null;
   const what = [...new Set(list.map((c) => t(SOURCE_KEYS[c.source] || c.source)))].join(getLang() === "ar" ? "، " : ", ");
+  const last = list.map((c) => c.created_at).sort().pop();
   return h("div", { class: "note" }, own ? t("pc_mine_pending", { what }) : t("pc_hr_pending", { what }),
+    last ? h("span", { class: "muted" }, " · ", t("pc_last_change", { d: dateTime(last) })) : null,
     !own && can.edit() ? h("a", { class: "btn small", href: "#/profile-changes", style: { marginInlineStart: "10px" } }, t("pc_review")) : null);
 }
 

@@ -14,19 +14,31 @@ const SOURCES = { contact: ["بيانات الاتصال", "contact details"], q
   id: ["بيانات من البطاقة", "details from an ID"], identity: ["بيانات الهوية والجواز", "ID and passport details"], photo: ["الصورة الشخصية", "profile photo"] };
 
 /** After a person saved their own profile: keep what changed for HR/Admin to verify. Changes HR or Admin make to others need no review. */
-export function recordSelfChange(ctx, sess, emp, before, after, source) {
+export function recordSelfChange(ctx, sess, emp, before, after, source, fileId = null) {
   if (!sess.employee || sess.employee.id !== emp.id) return null;
   if (sess.user.role === "admin") return null; // Admin is the last check: their own changes are saved without a review
   const changes = {};
   for (const k of Object.keys(after)) if (!same(before[k], after[k])) changes[k] = [before[k] ?? null, after[k] ?? null];
   if (!Object.keys(changes).length) return null;
   const { db } = ctx;
-  const id = Number(db.prepare("INSERT INTO profile_changes(employee_id,user_id,source,changes,created_at) VALUES(?,?,?,?,?)")
-    .run(emp.id, sess.user.id, source, JSON.stringify(changes), nowIso()).lastInsertRowid);
+  const id = Number(db.prepare("INSERT INTO profile_changes(employee_id,user_id,source,changes,created_at,file_id) VALUES(?,?,?,?,?,?)")
+    .run(emp.id, sess.user.id, source, JSON.stringify(changes), nowIso(), fileId).lastInsertRowid);
   const [ar, en] = SOURCES[source] || [source, source];
   notify(ctx, reviewers(db, sess.user.id), { title_ar: "تحديث في ملف موظف بانتظار التحقق", title_en: "A profile update to verify",
     body_ar: `${emp.name_ar || emp.name_en}: ${ar}`, body_en: `${emp.name_en || emp.name_ar}: ${en}`, link: "#/profile-changes" });
   return id;
+}
+
+/** The documents to compare a change with: the one it was read from, else the person's current papers for that section. */
+const DOCS_FOR = { identity: ["civil_id", "passport", "visa"], id: ["civil_id", "passport", "visa"], qualifications: ["resume", "certificate", "course"] };
+const FILE_COLS = "id, name, mime, doc_type, kind, expiry, uploaded_at, archived_at";
+export function docsFor(db, c) {
+  if (c.source === "photo") return []; // the photo itself is in the before / after table
+  if (c.file_id) { const f = db.prepare(`SELECT ${FILE_COLS} FROM files WHERE id=? AND employee_id=?`).get(c.file_id, c.employee_id); if (f) return [f]; }
+  const types = DOCS_FOR[c.source];
+  if (!types) return [];
+  return db.prepare(`SELECT ${FILE_COLS} FROM files WHERE employee_id=? AND kind='doc' AND archived_at IS NULL AND doc_type IN (${types.map(() => "?").join(",")})
+    ORDER BY uploaded_at DESC, id DESC LIMIT 6`).all(c.employee_id, ...types);
 }
 
 export const pendingChangesOf = (db, empId) => db.prepare("SELECT * FROM profile_changes WHERE employee_id=? AND status='pending' ORDER BY id").all(empId)
@@ -43,7 +55,7 @@ export function registerProfileChanges(api, ctx) {
     const items = db.prepare(`SELECT c.*, e.emp_no, e.name_ar, e.name_en, e.photo_file_id, u.username, d.username decided_username
       FROM profile_changes c JOIN employees e ON e.id=c.employee_id LEFT JOIN users u ON u.id=c.user_id LEFT JOIN users d ON d.id=c.decided_by
       ${status === "all" ? "" : "WHERE c.status=?"} ORDER BY c.id DESC LIMIT 300`).all(...(status === "all" ? [] : [status]))
-      .map((r) => ({ ...r, changes: JSON.parse(r.changes) }));
+      .map((r) => ({ ...r, changes: JSON.parse(r.changes), docs: docsFor(db, r) }));
     send(req, res, 200, { items });
   });
 

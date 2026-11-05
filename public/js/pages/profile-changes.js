@@ -2,7 +2,7 @@
 import { api } from "../api.js";
 import { t, nm, getLang, tx } from "../i18n.js";
 import { countryName } from "../countries.js";
-import { h, select, pageHead, empty, dmy, dateTime, toast, errText, confirm, avatar } from "../ui.js";
+import { h, select, pageHead, empty, dmy, dateTime, toast, errText, confirm, avatar, viewFile } from "../ui.js";
 import { render as rerender, refreshMe } from "../app.js";
 import { bankName, ibanText } from "../banks.js";
 import { wilayatName, areaName } from "../places.js";
@@ -20,6 +20,36 @@ function show(k, v) {
   if (k === "current_area") return areaName(v);
   if (k === "bank_iban") return h("span", { dir: "ltr" }, ibanText(v));
   return h("span", { dir: "auto", style: { whiteSpace: "pre-line" } }, tx(String(v)));
+}
+
+/** The document to compare with: a preview (an image, or a PDF's first page) that opens the full viewer; tabs when several. */
+function docBox(c) {
+  const docs = c.docs || [];
+  if (!docs.length) return null;
+  const shown = h("div", { class: "pc-doc-view" });
+  const tabs = docs.length > 1 ? h("div", { class: "seg pc-doc-tabs", role: "group", "aria-label": t("pc_doc_compare") }) : null;
+  const pick = (f) => {
+    if (tabs) for (const b of tabs.children) b.setAttribute("aria-pressed", String(b.dataset.id === String(f.id)));
+    const pdf = f.mime === "application/pdf", img = /^image\//.test(f.mime || "");
+    const open = () => viewFile(f);
+    shown.replaceChildren(
+      img || pdf ? h("button", { class: "pc-doc-img", type: "button", onclick: open, "aria-label": t("pc_doc_open") },
+        h("img", { src: img ? `/api/files/${f.id}?w=800` : `/api/files/${f.id}/page/1`, alt: f.name || "", loading: "lazy" })) : null,
+      h("div", { class: "pc-doc-meta" },
+        h("div", null, h("b", null, f.doc_type ? t("dt_" + f.doc_type) : t("document")), " · ", h("span", { dir: "auto" }, f.name || "")),
+        h("div", { class: "muted" }, t("pc_doc_uploaded"), " ", dateTime(f.uploaded_at), f.expiry ? ` · ${t("pc_doc_expiry")} ${dmy(f.expiry)}` : ""),
+        h("button", { class: "btn small", type: "button", onclick: open }, "🔍 ", t("pc_doc_open"))));
+  };
+  if (tabs) for (const f of docs) tabs.append(h("button", { type: "button", "data-id": String(f.id), onclick: () => pick(f) }, f.doc_type ? t("dt_" + f.doc_type) : t("document")));
+  pick(docs[0]);
+  return h("div", { class: "pc-doc" }, h("div", { class: "pc-doc-head" }, "📄 ", t(c.file_id ? "pc_doc_source" : "pc_doc_compare")), tabs, shown);
+}
+
+/** When it was changed and by whom, then the decision (verified / undone) with its time. */
+function whenLine(c) {
+  return h("div", { class: "pc-when" },
+    h("div", null, "🕒 ", t("pc_changed_at"), ": ", h("b", { class: "num" }, dateTime(c.created_at)), c.username ? ` — ${t("pc_by")} ${c.username}` : "", " · ", t(SOURCE_KEYS[c.source] || c.source)),
+    c.decided_at ? h("div", { class: "muted" }, c.status === "confirmed" ? "✓ " : "↩ ", t("pcs_" + c.status), " ", h("span", { class: "num" }, dateTime(c.decided_at)), c.decided_username ? ` — ${c.decided_username}` : "", c.note ? ` — ${c.note}` : "") : null);
 }
 
 /** Update every profile from its uploaded ID card and passport: start it, watch it run, read the result. */
@@ -92,11 +122,12 @@ export async function render(el, _p, { me, query }) {
       h("div", { class: "card-head" },
         h("a", { class: "row", href: `#/staff/${c.employee_id}`, style: { textDecoration: "none", color: "inherit", gap: "10px" } }, avatar(c, 36), h("div", null, h("b", null, nm(c)), h("div", { class: "muted" }, c.emp_no))),
         h("span", { class: `badge ${c.status === "pending" ? "b-pending" : c.status === "confirmed" ? "b-approved" : "b-rejected"}` }, t("pcs_" + c.status))),
-      h("p", { class: "sub", style: { margin: "6px 0 10px" } }, t(SOURCE_KEYS[c.source] || c.source), " · ", dateTime(c.created_at),
-        c.decided_at ? ` · ${t("pcs_" + c.status)} ${dateTime(c.decided_at)}${c.decided_username ? ` (${c.decided_username})` : ""}` : "", c.note ? ` — ${c.note}` : ""),
-      h("div", { class: "table-wrap keep-table" }, h("table", null,
-        h("thead", null, h("tr", null, h("th", null, t("pc_field")), h("th", null, t("pc_before")), h("th", null, t("pc_after")))),
-        h("tbody", null, Object.entries(c.changes).map(([k, [a, b]]) => h("tr", null, h("td", null, t("f_" + k)), h("td", { class: "pc-old" }, show(k, a)), h("td", { class: "pc-new" }, show(k, b))))))),
+      whenLine(c),
+      h("div", { class: `pc-body ${(c.docs || []).length ? "with-doc" : ""}` },
+        h("div", { class: "table-wrap keep-table" }, h("table", null,
+          h("thead", null, h("tr", null, h("th", null, t("pc_field")), h("th", null, t("pc_before")), h("th", null, t("pc_after")))),
+          h("tbody", null, Object.entries(c.changes).map(([k, [a, b]]) => h("tr", null, h("td", null, t("f_" + k)), h("td", { class: "pc-old" }, show(k, a)), h("td", { class: "pc-new" }, show(k, b))))))),
+        docBox(c)),
       mine(c) ? (c.status === "pending" ? h("p", { class: "sub" }, t("pc_not_own")) : null) : h("div", { class: "row end", style: { marginTop: "10px" } },
         h("button", { class: "btn danger", type: "button", onclick: del(c) }, "🗑 ", t("delete")),
         c.status === "pending" ? h("button", { class: "btn", type: "button", onclick: act(c, "revert") }, "↩ ", t("pc_undo")) : null,
