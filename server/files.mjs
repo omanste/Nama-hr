@@ -100,9 +100,14 @@ export function registerFiles(api, ctx) {
     res.writeHead(304, fileCache(f, variant)); res.end(); return true;
   };
   const forbidden = () => new HttpError(403, "forbidden", "You do not have permission for this");
-  // read value → profile column; the expiry goes to the matching date (civil ID, passport or visa)
-  const readMap = (docType) => ({ civil_id: "civil_id", passport_no: docType === "passport" ? "passport_no" : null, dob: "dob", gender: "gender", nationality: "nationality", name_en: "name_en", name_ar: "name_ar",
-    expiry: { civil_id: "civil_id_expiry", passport: "passport_expiry", visa: "visa_expiry" }[docType] || null });
+  // read value → profile column. Personal details come from the civil ID card only; a passport gives just its number and
+  // expiry, a visa its expiry (passports spell names differently and were the source of wrong names and nationalities)
+  const readMap = (docType) => docType === "civil_id"
+    ? { civil_id: "civil_id", dob: "dob", gender: "gender", nationality: "nationality", name_en: "name_en", name_ar: "name_ar", expiry: "civil_id_expiry" }
+    : docType === "passport" ? { passport_no: "passport_no", expiry: "passport_expiry" }
+    : docType === "visa" ? { expiry: "visa_expiry" } : {};
+  /** Only what this kind of document may fill (plus how it was read). */
+  const forDoc = (docType, read) => read && Object.fromEntries(Object.entries(read).filter(([k]) => readMap(docType)[k] || ["verified", "kind", "name_ar_from"].includes(k)));
   /** Read a stored ID, passport or visa (image or PDF) on our server; keeps what was read on the file. Returns the values, or null. */
   async function readStored(file) {
     const pdf = file.mime === "application/pdf";
@@ -185,9 +190,10 @@ export function registerFiles(api, ctx) {
     let read = null, applied = [];
     // nothing is applied here: the person sees each value read next to the current one and ticks what to save (a scanner
     // can misread), then /apply saves only those
-    if (kind === "doc") read = await readStored(file);
+    if (kind === "doc") read = forDoc(file.doc_type, await readStored(file));
+    if (read && !Object.keys(read).some((k) => readMap(file.doc_type)[k])) read = null;
     if (read) {
-      arabicFallback(emp, read);
+      if (file.doc_type === "civil_id") arabicFallback(emp, read);
       db.prepare("UPDATE files SET extracted=? WHERE id=?").run(JSON.stringify(read), file.id); // with the Arabic name, if spelled from the English
     }
     try { runExpiryCheck(ctx, ctx.today()); } catch (e) { console.error(e); }
@@ -286,31 +292,58 @@ export function registerFiles(api, ctx) {
   // what couldn't be read, who has no ID uploaded — is kept until the next run.
   let batch = null;
   const needHr = (sess) => { if (!["hr", "admin"].includes(sess.user.role)) throw forbidden(); };
+  const COLS_OF = { civil_id: readMap("civil_id"), passport: readMap("passport") };
+  // why a document gave nothing: a file type the reader can't open, or nothing readable in it (too dark, blurred, cut off)
+  const why = (f) => (f.mime.startsWith("image/") || f.mime === "application/pdf" ? "unreadable" : "type");
   async function runBatch(sess) {
-    const people = db.prepare("SELECT id, emp_no, name_ar, name_en FROM employees ORDER BY name_ar").all();
+    const people = db.prepare("SELECT id, emp_no, name_ar, name_en FROM employees WHERE status NOT IN ('resigned','terminated','disabled') ORDER BY name_ar").all();
     // the latest few of each (the front and the back of an ID are often two files), oldest first so the newest has the last word
     const latest = db.prepare(`SELECT * FROM (SELECT * FROM files WHERE employee_id=? AND kind='doc' AND doc_type=? AND request_id IS NULL AND voice_id IS NULL AND archived_at IS NULL
       ORDER BY uploaded_at DESC, id DESC LIMIT ?) ORDER BY uploaded_at, id`);
     const work = people.map((p) => ({ p, docs: [...latest.all(p.id, "passport", 2), ...latest.all(p.id, "civil_id", 3)] }));
     batch.total = work.reduce((n, w) => n + w.docs.length, 0);
+    batch.check = []; batch.matches = 0; batch.noPassport = [];
     for (const { p, docs } of work) {
-      if (!docs.some((d) => d.doc_type === "civil_id")) batch.noId.push({ id: p.id, emp_no: p.emp_no, name_ar: p.name_ar, name_en: p.name_en });
+      const who = { id: p.id, emp_no: p.emp_no, name_ar: p.name_ar, name_en: p.name_en };
+      if (!docs.some((d) => d.doc_type === "civil_id")) batch.noId.push(who);
+      if (!docs.some((d) => d.doc_type === "passport")) batch.noPassport.push(who);
       if (!docs.length) continue;
       const row = { id: p.id, emp_no: p.emp_no, docs: [] };
+      const seen = {}; // per profile column: the value the documents agree on, after the run
       for (const f of docs) {
-        const read = await readStored(f);
-        const item = { file_id: f.id, doc_type: f.doc_type, name: f.name, status: "not_read", changes: {} };
-        if (read) {
+        const read = forDoc(f.doc_type, await readStored(f));
+        const item = { file_id: f.id, doc_type: f.doc_type, name: f.name, mime: f.mime, status: "not_read", changes: {} };
+        if (read && Object.keys(read).some((k) => COLS_OF[f.doc_type][k])) {
           const before = getEmployee(db, p.id);
-          arabicFallback(before, read);
+          if (f.doc_type === "civil_id") arabicFallback(before, read);
+          const auto = autoKeys(before, f, read);
           let cols = [];
-          try { cols = applyRead(sess, before, f, read, autoKeys(before, f, read)); } catch (e) { item.error = e.message; }
+          try { cols = applyRead(sess, before, f, read, auto); } catch (e) { item.error = e.message; }
           const after = getEmployee(db, p.id);
           for (const c of cols) item.changes[c] = [before[c] ?? null, after[c] ?? null];
           item.status = cols.length ? "updated" : "same";
-        }
+          // what the card shows but couldn't confirm: left as it is, for HR to look at
+          for (const [k, col] of Object.entries(COLS_OF[f.doc_type])) {
+            if (read[k] === undefined || read[k] === null || read[k] === "") continue;
+            const cur = after[col];
+            if (String(cur ?? "") === String(read[k])) { seen[col] = true; continue; }
+            if (auto.includes(k)) continue; // applied, or refused by validation (item.error)
+            seen[col] = seen[col] || false;
+            batch.check.push({ ...who, field: col, profile: cur ?? null, document: read[k], file_id: f.id, doc_type: f.doc_type, file_name: f.name, mime: f.mime,
+              reason: (read.verified || []).length ? "not_confirmed" : "front_only" });
+          }
+        } else item.reason = why(f);
         row.docs.push(item); batch.done++;
       }
+      batch.matches += Object.values(seen).filter(Boolean).length;
+      // a later document already put that value on the profile: not a mismatch; the same difference twice is listed once
+      const fin = getEmployee(db, p.id), keys = new Set();
+      batch.check = batch.check.filter((c) => {
+        if (c.id !== p.id) return true;
+        const k = `${c.field}|${c.document}`;
+        if (String(fin[c.field] ?? "") === String(c.document) || keys.has(k)) return false;
+        keys.add(k); c.profile = fin[c.field] ?? null; return true;
+      });
       const e = getEmployee(db, p.id); row.name_ar = e.name_ar; row.name_en = e.name_en;
       batch.results.push(row);
     }
@@ -319,7 +352,7 @@ export function registerFiles(api, ctx) {
   api.post("/api/profiles/reread-ids", (req, res) => {
     needHr(req.sess);
     if (batch && batch.running) throw new HttpError(409, "busy", "Already running");
-    batch = { running: true, done: 0, total: 0, started_at: nowIso(), by: req.sess.user.username, results: [], noId: [] };
+    batch = { running: true, done: 0, total: 0, started_at: nowIso(), by: req.sess.user.username, results: [], noId: [], noPassport: [], check: [], matches: 0 };
     audit(db, req.sess.user.id, "profiles.reread_ids", "employee", null, null, null);
     const job = batch;
     runBatch(req.sess)
@@ -329,7 +362,22 @@ export function registerFiles(api, ctx) {
   });
   api.get("/api/profiles/reread-ids", (req, res) => {
     needHr(req.sess);
-    send(req, res, 200, { batch: batch || getSetting(db, "id_reread_last", null) });
+    const b = batch || getSetting(db, "id_reread_last", null);
+    if (req.query.get("format") === "csv" && b) {
+      const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+      const lines = [["Result", "Employee ID", "Name (Arabic)", "Name (English)", "Document", "File", "Field", "Before / on profile", "After / on document", "Note"].join(",")];
+      for (const r of b.results) for (const d of r.docs) {
+        if (d.status === "updated") for (const [c, [a, v]] of Object.entries(d.changes)) lines.push(["Updated", r.emp_no, r.name_ar, r.name_en, d.doc_type, d.name, c, a, v, ""].map(q).join(","));
+        if (d.status === "not_read") lines.push(["Could not read", r.emp_no, r.name_ar, r.name_en, d.doc_type, d.name, "", "", "", d.reason || ""].map(q).join(","));
+        if (d.error) lines.push(["Not saved", r.emp_no, r.name_ar, r.name_en, d.doc_type, d.name, "", "", "", d.error].map(q).join(","));
+      }
+      for (const c of b.check || []) lines.push(["To check", c.emp_no, c.name_ar, c.name_en, c.doc_type, c.file_name, c.field, c.profile, c.document, c.reason].map(q).join(","));
+      for (const p of b.noId || []) lines.push(["No civil ID uploaded", p.emp_no, p.name_ar, p.name_en, "", "", "", "", "", ""].map(q).join(","));
+      for (const p of b.noPassport || []) lines.push(["No passport uploaded", p.emp_no, p.name_ar, p.name_en, "", "", "", "", "", ""].map(q).join(","));
+      return sendRaw(req, res, 200, Buffer.from("\ufeff" + lines.join("\r\n"), "utf8"), "text/csv; charset=utf-8",
+        { "Content-Disposition": `attachment; filename="profile-check-${String(b.finished_at || b.started_at || "").slice(0, 10)}.csv"`, "Cache-Control": "no-store" });
+    }
+    send(req, res, 200, { batch: b });
   });
 
   api.delete("/api/files/:id", (req, res) => {

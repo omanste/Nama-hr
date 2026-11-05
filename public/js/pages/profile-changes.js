@@ -57,6 +57,7 @@ async function rereadCard() {
   const box = h("section", { class: "card" });
   let timer = null;
   const DOC = { civil_id: "dt_civil_id", passport: "dt_passport" };
+  const openDoc = (id, name, mime) => h("button", { class: "btn small", type: "button", onclick: () => viewFile({ id, name, mime }) }, "📄 ", t("rr_open"));
   const draw = (b) => {
     const start = h("button", { class: "btn primary", type: "button", disabled: !!(b && b.running), onclick: async () => {
       if (!(await confirm(t("rr_confirm"), { okText: t("rr_start") }))) return;
@@ -67,8 +68,11 @@ async function rereadCard() {
     if (b && !b.running) {
       const docs = b.results.flatMap((r) => r.docs.map((d) => ({ r, d })));
       const upd = docs.filter((x) => x.d.status === "updated"), same = docs.filter((x) => x.d.status === "same"), bad = docs.filter((x) => x.d.status === "not_read");
+      const check = b.check || [];
       parts.push(h("div", { class: "note" }, h("b", null, t("rr_done_at", { at: dateTime(b.finished_at), by: b.by })), " · ",
-        t("rr_summary", { u: new Set(upd.map((x) => x.r.id)).size, s: same.length, x: bad.length, n: b.noId.length })),
+        b.check ? t("rr_summary", { u: new Set(upd.map((x) => x.r.id)).size, s: b.matches ?? same.length, c: check.length, x: bad.length, n: b.noId.length })
+          : t("rr_summary", { u: new Set(upd.map((x) => x.r.id)).size, s: same.length, c: 0, x: bad.length, n: b.noId.length }),
+        " ", h("a", { class: "btn small", href: "/api/profiles/reread-ids?format=csv" }, "⬇ ", t("download_excel"))),
         b.error ? h("div", { class: "note bad" }, b.error) : null);
       const who = (r) => h("a", { href: `#/staff/${r.id}` }, nm(r) || r.emp_no, h("span", { class: "muted" }, ` · ${r.emp_no}`));
       if (upd.length) parts.push(h("h3", null, t("rr_updated")), h("div", { class: "table-wrap" }, h("table", null,
@@ -78,9 +82,18 @@ async function rereadCard() {
           h("td", { "data-label": t("employee") }, who(r)), h("td", { "data-label": t("doc_type") }, t(DOC[d.doc_type])),
           h("td", { "data-label": t("rr_changes") }, h("div", { class: "rr-changes" }, Object.entries(d.changes).map(([k, [a, v]]) => h("div", null,
             h("span", { class: "muted" }, t("f_" + k), ": "), h("span", { class: "pc-old-inline" }, show(k, a)), getLang() === "ar" ? " ← " : " → ", h("b", null, show(k, v))))))))))));
+      if (check.length) parts.push(h("h3", null, t("rr_check"), " ", h("span", { class: "badge b-pending" }, check.length)), h("p", { class: "sub" }, t("rr_check_hint")),
+        h("div", { class: "table-wrap" }, h("table", null,
+          h("thead", null, h("tr", null, [t("employee"), t("pc_field"), t("rr_profile"), t("rr_document"), t("rr_reason"), ""].map((x) => h("th", null, x)))),
+          h("tbody", null, check.map((c) => h("tr", null,
+            h("td", { "data-label": t("employee") }, who(c)), h("td", { "data-label": t("pc_field") }, t("f_" + c.field)),
+            h("td", { "data-label": t("rr_profile") }, show(c.field, c.profile)), h("td", { "data-label": t("rr_document") }, h("b", null, show(c.field, c.document))),
+            h("td", { "data-label": t("rr_reason") }, t(DOC[c.doc_type]), " · ", t("rr_why_" + c.reason)),
+            h("td", { "data-label": "" }, openDoc(c.file_id, c.file_name, c.mime))))))));
       if (bad.length) parts.push(h("h3", null, t("rr_not_read")), h("p", { class: "sub" }, t("rr_not_read_hint")),
-        h("ul", null, bad.map(({ r, d }) => h("li", null, who(r), " — ", t(DOC[d.doc_type]), " (", h("span", { dir: "auto" }, d.name), ")"))));
+        h("ul", null, bad.map(({ r, d }) => h("li", null, who(r), " — ", t(DOC[d.doc_type]), " (", h("span", { dir: "auto" }, d.name), ")", d.reason ? ` · ${t("rr_why_" + d.reason)}` : "", " ", d.mime ? openDoc(d.file_id, d.name, d.mime) : null))));
       if (b.noId.length) parts.push(h("h3", null, t("rr_no_id")), h("p", { class: "sub" }, b.noId.map((p) => nm(p) || p.emp_no).join("، ")));
+      if ((b.noPassport || []).length) parts.push(h("h3", null, t("rr_no_passport")), h("p", { class: "sub" }, b.noPassport.map((p) => nm(p) || p.emp_no).join("، ")));
     }
     box.replaceChildren(...parts.filter(Boolean));
   };

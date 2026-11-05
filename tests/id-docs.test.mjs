@@ -155,8 +155,10 @@ test("a passport PDF (phone scan with a text layer) is read: number and expiry g
   assert.equal(up.status, 201);
   if (!up.data.read) return; // this machine has no pdftotext (the server image installs it)
   assert.equal(up.data.read.passport_no, "T1234567"); assert.equal(up.data.read.expiry, "2031-01-30");
-  assert.equal(up.data.read.civil_id, "98765432", "the civil number from the passport");
+  // a passport gives only its number and expiry: personal details come from the civil ID card
+  for (const k of ["civil_id", "name_en", "name_ar", "dob", "gender", "nationality"]) assert.equal(up.data.read[k], undefined, k);
   assert.equal(up.data.file.expiry, "2031-01-30");
+  assert.equal((await staff.c.post(`/api/files/${up.data.file.id}/apply`, { fields: ["name_en"] })).status, 400, "no names from a passport");
   assert.equal((await staff.c.post(`/api/files/${up.data.file.id}/apply`, { fields: ["passport_no", "expiry"] })).status, 200);
   const e = (await staff.c.get(`/api/employees/${staff.emp.id}`)).data.employee;
   assert.equal(e.passport_no, "T1234567"); assert.equal(e.passport_expiry, "2031-01-30");
@@ -201,8 +203,33 @@ test("HR updates every profile from its uploaded ID in one go, and sees old → 
   assert.ok(b.noId.some((p) => p.id === none.emp.id));
   const e = (await hr.c.get(`/api/employees/${a.emp.id}`)).data.employee;
   assert.equal(e.name_en, "Sample Person Altest"); assert.equal(e.name_ar, "عينة شخص الاختبار");
-  // kept for later
+  assert.ok(b.noPassport.some((p) => p.id === a.emp.id));
+  // kept for later, and as an Excel file for HR / Admin only
   assert.equal((await admin.get("/api/profiles/reread-ids")).data.batch.results.length, b.results.length);
+  const csv = await fetch(`${t.base}/api/profiles/reread-ids?format=csv`, { headers: { cookie: hr.c.cookie } });
+  assert.equal(csv.status, 200); const text = await csv.text();
+  assert.match(text, /"Updated","RR1"/); assert.match(text, /"No civil ID uploaded","RR3"/); assert.match(text, /"Could not read","RR2"/);
+  assert.equal((await fetch(`${t.base}/api/profiles/reread-ids?format=csv`, { headers: { cookie: staff.c.cookie } })).status, 403);
+});
+
+test("the check: a passport never changes names or nationality; what the card can't confirm is listed to check, unchanged", async () => {
+  const pdf = fs.readFileSync(new URL("./fixtures/fake-passport.pdf", import.meta.url));
+  const front = fs.readFileSync(new URL("./fixtures/fake-id-front.jpg", import.meta.url));
+  const p = await makePerson(t.base, admin, { emp_no: "CK1", name_ar: "اسم صحيح", name_en: "Right Name", nationality: "OM", join_date: "2022-01-01" });
+  await hr.c.upload(`/api/employees/${p.emp.id}/files?kind=doc&doc_type=passport&name=passport.pdf`, pdf, "application/pdf");
+  const q = await makePerson(t.base, admin, { emp_no: "CK2", name_ar: "اسم", civil_id: "11111111", join_date: "2022-01-01" });
+  const upq = await hr.c.upload(`/api/employees/${q.emp.id}/files?kind=doc&doc_type=civil_id&name=front.jpg`, front, "image/jpeg");
+  assert.equal((await hr.c.post("/api/profiles/reread-ids", {})).status, 202);
+  let b; for (let i = 0; i < 240; i++) { b = (await hr.c.get("/api/profiles/reread-ids")).data.batch; if (!b.running) break; await new Promise((r) => setTimeout(r, 500)); }
+  const e = (await hr.c.get(`/api/employees/${p.emp.id}`)).data.employee;
+  assert.equal(e.name_en, "Right Name"); assert.equal(e.name_ar, "اسم صحيح"); assert.equal(e.nationality, "OM");
+  assert.ok(b.noId.some((x) => x.id === p.emp.id));
+  // the printed front only (no "<<<" lines): a different civil number is not taken, it waits to be checked
+  if (upq.data.read && upq.data.read.civil_id && !(upq.data.read.verified || []).includes("civil_id")) {
+    assert.equal((await hr.c.get(`/api/employees/${q.emp.id}`)).data.employee.civil_id, "11111111");
+    const c = b.check.find((x) => x.id === q.emp.id && x.field === "civil_id");
+    assert.ok(c); assert.equal(c.profile, "11111111"); assert.equal(c.document, upq.data.read.civil_id); assert.equal(c.reason, "front_only");
+  }
 });
 
 test("a card with a long name and no Arabic: the full English name, and the Arabic one completed from it", async () => {
