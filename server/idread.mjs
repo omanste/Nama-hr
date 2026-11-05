@@ -155,7 +155,8 @@ export function parseFront(text) {
 
 // ---------- the Arabic name printed on the front ----------
 const AR_WORD = /^[\u0621-\u064A]{2,}$/;
-const NOT_NAME = /سلطنة|عمان|البطاقة|الشخصية|المدنية|شرطة|السلطانية|المديرية|جواز|السفر|الجنسية|تاريخ|الرقم|رقم|الميلاد|الانتهاء|الإصدار|الجنس|ذكر|أنثى/;
+// whole words only: «عمان» from «سلطنة عمان» must not reject the family name «النعماني»
+const NOT_NAME = /^(?:و?ال)?(?:سلطنة|عمان|البطاقة|بطاقة|الشخصية|شخصية|المدنية|مدنية|شرطة|السلطانية|المديرية|مديرية|جواز|السفر|سفر|الجنسية|جنسية|تاريخ|الرقم|رقم|الميلاد|ميلاد|الانتهاء|انتهاء|الإصدار|إصدار|الجنس|جنس|ذكر|أنثى)$/;
 const LABEL = /(.*?)(?:^|\s|:)ال\s?[اإأآ]\s?س\s?م(?=\s|:|：|$)\s*[:：.\-]?\s*(.*)$/; // الاسم / الإسم / الأسم, as printed or as read
 const nameWords = (x) => String(x || "").replace(/[^\u0621-\u064A\s]/g, " ").split(/\s+/).filter(Boolean);
 const nameLike = (ws) => ws.length > 0 && ws.every((w) => AR_WORD.test(w)) && !ws.some((w) => NOT_NAME.test(w));
@@ -168,7 +169,8 @@ export function parseArabicName(text, nameEn = null) {
   const first = parts[0] && parts[0].ar ? arKey(parts[0].ar) : null, last = parts.length && parts.at(-1).ar ? arKey(parts.at(-1).ar) : null;
   let best = null;
   const consider = (ws, base) => {
-    if (ws.length < 2 || ws.length > 7 || !nameLike(ws)) return;
+    const names = ws.filter((w) => !["بن", "بنت"].includes(w)).length; // «بن» / «بنت» between the names don't count
+    if (ws.length < 2 || names > 7 || ws.length > 13 || !nameLike(ws)) return;
     let score = base;
     if (parts.length) score += (ws.length === parts.length ? 3 : 0) + (first && arKey(ws[0]) === first ? 3 : 0) + (last && arKey(ws.at(-1)) === last ? 1 : 0);
     if (!best || score > best.score) best = { ws, score };
@@ -222,13 +224,26 @@ export function fullPrintedName(text, short) {
 }
 /** The Arabic name: after "الاسم", or else the line whose words match the English name spelled in Arabic. */
 export function arabicNameFrom(text, nameEn) {
+  // a PDF's text layer may hold the Arabic as joined letter shapes (ﺗﻤّﺎﻡ, "presentation forms") with direction marks:
+  // NFKC turns them back into ordinary letters
+  text = String(text || "").normalize("NFKC").replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "");
   const labelled = parseArabicName(text, nameEn);
   if (labelled) return labelled;
-  const parts = nameParts(nameEn); if (parts.length < 2 || !parts[0].ar) return undefined;
-  const first = arKey(parts[0].ar), last = parts.at(-1).ar ? arKey(parts.at(-1).ar) : null; // the family name may not be in the list
+  const parts = nameParts(nameEn); if (parts.length < 2) return undefined;
+  const first = parts[0].ar ? arKey(parts[0].ar) : null, last = parts.at(-1).ar ? arKey(parts.at(-1).ar) : null; // either may not be in the list
+  const known = parts.map((p) => p.ar && arKey(p.ar)).filter(Boolean);
   for (const line of String(text || "").split(/\r?\n/)) {
     const ws = line.replace(/[\u064B-\u0652\u0640]/g, "").replace(/[^\u0621-\u064A\s]/g, " ").split(/\s+/).filter(Boolean);
-    if (ws.length >= 2 && ws.length <= 7 && arKey(ws[0]) === first && (!last || arKey(ws.at(-1)) === last) && !ws.some((w) => NOT_NAME.test(w))) return ws.join(" ");
+    // an unknown first name: the line still matches when two or more of the known names appear in it, in order
+    if (!first) {
+      const keys = ws.map(arKey); let at = 0, hits = 0;
+      for (const k of known) { const i = keys.indexOf(k, at); if (i >= 0) { hits++; at = i + 1; } }
+      const names = ws.filter((w) => !["بن", "بنت"].includes(w)).length;
+      if (hits >= 2 && hits >= known.length - 1 && names >= parts.length - 1 && names <= 7 && !ws.some((w) => NOT_NAME.test(w))) return ws.join(" ");
+      continue;
+    }
+    const names = ws.filter((w) => !["بن", "بنت"].includes(w)).length; // «بن» / «بنت» between the names don't count
+    if (ws.length >= 2 && names <= 7 && ws.length <= 13 && arKey(ws[0]) === first && (!last || arKey(ws.at(-1)) === last) && !ws.some((w) => NOT_NAME.test(w))) return ws.join(" ");
   }
   return undefined;
 }

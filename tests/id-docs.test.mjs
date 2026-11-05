@@ -397,3 +397,13 @@ test("today as an expiry date must be confirmed (a phone's date picker fills in 
   assert.equal((await admin.put(`/api/files/${f}`, { expiry: today, confirm_past: true })).data.file.expiry, today);
   assert.equal((await admin.put(`/api/files/${f}`, { expiry: "2028-05-01" })).data.file.expiry, "2028-05-01");
 });
+
+test("the Arabic name from a PDF's text layer: joined letter shapes, direction marks, «بن», a family name containing «عمان»", () => {
+  // made-up name; «خالد» in presentation forms as an iPhone scan stores it, wrapped in direction marks
+  const line = "\u202bسالم بن ﺧﺎﻟﺪ بن علي بن حمود النعماني\u202c";
+  assert.equal(arabicNameFrom(`سلطنة عمان\n${line}\nLight Vehicle`, "Salim Khalid Ali Al Namani"), "سالم بن خالد بن علي بن حمود النعماني");
+  // an unknown first name: two known names in order are enough
+  assert.equal(arabicNameFrom("ثمامة بن خالد بن علي النعماني", "Thumama Khalid Ali Al Namani"), "ثمامة بن خالد بن علي النعماني");
+  // the card's own labels are still not a name
+  assert.equal(arabicNameFrom("سلطنة عمان\nالبطاقة الشخصية", "Salim Khalid"), undefined);
+});
