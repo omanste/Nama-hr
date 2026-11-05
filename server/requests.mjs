@@ -112,6 +112,25 @@ export function routeFor(db, emp, today) {
   return deputy && deputy !== user.id ? { ...route, reason: "cover", deputyId: deputy } : route;
 }
 
+/** After HR changes someone's direct manager: their requests still at the manager's step go to the new approver (those
+ * already with HR or the CEO stay). Returns how many moved. */
+export function rerouteFor(ctx, empId) {
+  const { db } = ctx;
+  const emp = getEmployee(db, empId);
+  if (!emp) return 0;
+  let moved = 0;
+  for (const r of db.prepare("SELECT * FROM leave_requests WHERE employee_id=? AND status='pending' AND coalesce(route_reason,'') NOT IN ('hr_final','ceo_final')").all(emp.id)) {
+    const route = routeFor(db, emp, ctx.today());
+    if (!route.userId || route.userId === r.approver_user_id) continue;
+    db.prepare("UPDATE leave_requests SET approver_user_id=?, alt_approver_user_id=?, route_reason=? WHERE id=?").run(route.userId, route.altUserId || null, route.reason, r.id);
+    event(db, r.id, "rerouted", null, null);
+    const d = describe(r, emp);
+    notify(ctx, [route.userId, route.altUserId].filter(Boolean), { title_ar: "طلب بانتظار موافقتك", title_en: "A request is waiting for your approval", body_ar: d.ar, body_en: d.en, link: `#/leave/${r.id}` });
+    moved++;
+  }
+  return moved;
+}
+
 /** Requests that went to Admin only because the right approver had no login (or none was set) move to that approver
  * once there is one — after a manager first signs in, gets a login, or is named as a department's approver. */
 export function rerouteFallbacks(ctx) {
@@ -341,8 +360,10 @@ export function registerRequests(api, ctx) {
     }
     else if (scope === "team") {
       const depts = approvedDepartments(db, sess.employee && sess.employee.id);
-      if (!depts.length) throw forbidden();
-      where.push(`e.department_id IN (${depts.map(() => "?").join(",")})`); args.push(...depts);
+      const direct = sess.employee ? db.prepare("SELECT 1 FROM employees WHERE manager_employee_id=? LIMIT 1").get(sess.employee.id) : null;
+      if (!depts.length && !direct) throw forbidden();
+      // their departments, and the people they are direct manager of
+      where.push(`(${depts.length ? `e.department_id IN (${depts.map(() => "?").join(",")}) OR ` : ""}e.manager_employee_id=?)`); args.push(...depts, sess.employee.id);
     } else if (scope === "all") { if (!can(sess, "requests.viewAll")) throw forbidden(); }
     else throw err(400, "invalid", "unknown scope");
     // period: requests starting between from and to (YYYY-MM-DD)

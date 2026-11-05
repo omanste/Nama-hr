@@ -29,12 +29,19 @@ export function approvedDepartments(db, employeeId) {
   if (!employeeId) return [];
   return db.prepare("SELECT id FROM departments WHERE approver_employee_id=? AND active=1").all(employeeId).map((r) => r.id);
 }
-export const isApprover = (db, employeeId) => approvedDepartments(db, employeeId).length > 0;
+/** Active staff whose direct manager is this employee (HR assigns it on the profile). */
+export function directReports(db, employeeId) {
+  if (!employeeId) return [];
+  return db.prepare("SELECT id FROM employees WHERE manager_employee_id=? AND status IN ('active','on_leave')").all(employeeId).map((r) => r.id);
+}
+/** Approves requests: a department's approver, or someone's direct manager. */
+export const isApprover = (db, employeeId) => approvedDepartments(db, employeeId).length > 0 || directReports(db, employeeId).length > 0;
 
 /** May this session see this employee's profile and leave? */
 export function canViewEmployee(db, sess, emp) {
   if (!emp) return false;
   if (can(sess, "employee.viewAll")) return true;
   if (sess.employee && sess.employee.id === emp.id) return true;
+  if (sess.employee && emp.manager_employee_id === sess.employee.id) return true; // their direct manager
   return approvedDepartments(db, sess.employee && sess.employee.id).includes(emp.department_id);
 }

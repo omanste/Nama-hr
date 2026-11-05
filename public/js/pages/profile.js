@@ -207,7 +207,7 @@ export async function render(el, params, { me, can, opts }) {
         h("div", { class: "sub-box" }, h("h3", null, t("sec_emergency")), facts([
           ["emergency_person", e.emergency_name], ["f_emergency_relation", e.emergency_relation], ["f_emergency_phone", e.emergency_phone && h("a", { href: `tel:${e.emergency_phone}`, dir: "ltr" }, e.emergency_phone)]]))),
       h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_job")), can.edit() ? editLink(e, "job", !!opts.me) : null), facts([
-        ["f_department_id", nm(p.department)], ["f_job_title", tx(e.job_title)], ["f_manager_employee_id", nm(p.manager)], ["f_join_date", dmy(e.join_date)], ["f_status", t("st_" + e.status)],
+        ["f_department_id", nm(p.department)], ["f_job_title", tx(e.job_title)], ["f_manager_employee_id", h("span", null, p.manager ? nm(p.manager) : can.edit() ? h("span", { class: "muted" }, t("mgr_none")) : null, " ", can.edit() && !opts.me ? h("button", { class: "btn small mgr-btn", type: "button", onclick: () => managerDialog(e) }, p.manager ? t("shift_change") : t("mgr_assign")) : null, p.manager ? h("div", { class: "muted", style: { fontSize: ".85rem" } }, t("mgr_routes")) : null)], ["f_join_date", dmy(e.join_date)], ["f_status", t("st_" + e.status)],
         ["f_shift", h("span", null, t(`shift_${[1, 2, 3, 4].includes(e.shift) ? e.shift : 2}_full`), " ", p.shiftSelf ? h("button", { class: "btn small", type: "button", onclick: () => shiftDialog(e) }, t("shift_change")) : null)]])),
       h("section", { class: "card", style: { gridColumn: "1 / -1" } }, h("div", { class: "card-head" }, h("h2", null, t("sec_contract")), can.edit() ? editLink(e, "contract", !!opts.me) : null), facts([
         ["f_join_date", dmy(e.join_date)], ["probation_end", dmy(p.leave.probationEnd)], ["service_length", serviceLength(e.join_date)],
@@ -534,6 +534,33 @@ export async function permissionSummaryCard(empId) {
 }
 
 /** The person picks their own shift (while the company allows it and HR hasn't fixed it). */
+/** HR / Admin: choose this person's direct manager (who then approves their requests, before HR). A search filters the list. */
+async function managerDialog(e) {
+  const { items } = await api.get("/api/employees");
+  const people = items.filter((x) => x.id !== e.id && !["resigned", "terminated", "disabled"].includes(x.status));
+  let pick = e.manager_employee_id || null;
+  const list = h("div", { class: "list mgr-list" });
+  const q = h("input", { type: "search", id: "mgr-q", placeholder: t("mgr_search"), "aria-label": t("mgr_search"), autocomplete: "off" });
+  const row = (id, label, sub) => h("label", { class: "item", style: { cursor: "pointer" } },
+    h("input", { type: "radio", name: "mgr", value: id ?? "", checked: pick === id, style: { width: "22px", height: "22px", minHeight: "0" }, onchange: () => { pick = id; } }),
+    h("div", { class: "grow" }, h("div", { class: "title" }, label), sub ? h("div", { class: "meta" }, sub) : null));
+  const draw = () => {
+    const s = q.value.trim().toLowerCase();
+    const shown = people.filter((x) => !s || [x.name_ar, x.name_en, x.emp_no, x.job_title].some((v) => String(v || "").toLowerCase().includes(s))).slice(0, 60);
+    list.replaceChildren(row(null, t("mgr_none")), ...shown.map((x) => row(x.id, nm(x), [x.emp_no, tx(x.job_title || "")].filter(Boolean).join(" · "))));
+  };
+  q.addEventListener("input", draw); draw();
+  const err = h("div", { class: "form-error" });
+  const dlg = h("dialog", { class: "dialog" }, h("form", { class: "form", onsubmit: async (ev) => {
+    ev.preventDefault();
+    try { await api.put(`/api/employees/${e.id}`, { manager_employee_id: pick }); dlg.close(); toast(t("saved")); rerender(); } catch (er) { err.textContent = errText(er); }
+  } },
+    h("h2", null, t("mgr_title")), h("p", { class: "sub" }, t("mgr_hint")), q, list, err,
+    h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), h("button", { class: "btn primary", type: "submit" }, t("save")))));
+  dlg.addEventListener("close", () => dlg.remove());
+  document.body.append(dlg); dlg.showModal(); q.focus();
+}
+
 function shiftDialog(e) {
   let pick = e.shift === 1 ? 1 : 2;
   const opt = (n) => h("label", { class: "item", style: { cursor: "pointer" } },

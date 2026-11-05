@@ -10,7 +10,7 @@ import { postLedger, leaveSummary, ledgerRows, yearStartFor, balanceOf, pendingM
 import { tempPassword, hashPassword } from "./auth.mjs";
 import { toCountryCode } from "../public/js/countries.js";
 import { permissionSummary } from "./permissions.mjs";
-import { rerouteFallbacks } from "./requests.mjs";
+import { rerouteFallbacks, rerouteFor } from "./requests.mjs";
 import { SHIFTS, SELF_SHIFTS } from "./shifts.mjs";
 import { recordSelfChange, pendingChangesOf } from "./profile-changes.mjs";
 import { removeUpload } from "./files.mjs";
@@ -81,6 +81,12 @@ export function cleanEmployee(db, body, cur = null, { today = null } = {}) {
     if (k === "manager_employee_id" && v !== null) {
       if (!db.prepare("SELECT 1 FROM employees WHERE id=?").get(Number(v))) throw bad(k, "unknown manager");
       if (cur && Number(v) === cur.id) throw bad(k, "an employee cannot be their own manager");
+      // no loops: the new manager can't report (directly or higher up) to this person
+      for (let m = Number(v), n = 0; m && n < 50; n++) {
+        const up = db.prepare("SELECT manager_employee_id FROM employees WHERE id=?").get(m);
+        m = up && up.manager_employee_id;
+        if (cur && m === cur.id) throw bad(k, "This person is already above the chosen manager — choose someone else");
+      }
     }
     if ((k === "department_id" || k === "manager_employee_id") && v !== null) v = Number(v);
     if (typeof v === "string" && v.length > (LONG.includes(k) ? 4000 : 300)) throw bad(k, `${k} is too long`);
@@ -256,6 +262,8 @@ export function registerEmployees(api, ctx) {
       audit(db, req.sess.user.id, "employee.update", "employee", e.id, cur, e);
       return e;
     });
+    // a new direct manager: their waiting requests go to them
+    if ("manager_employee_id" in values && values.manager_employee_id !== cur.manager_employee_id) rerouteFor(ctx, emp.id);
     send(req, res, 200, { employee: emp });
   });
 
