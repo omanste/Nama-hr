@@ -431,3 +431,26 @@ test("«Read and update details» on an ID already on file: the person, HR and A
   const cert = await p.c.upload(`/api/employees/${p.emp.id}/files?kind=doc&doc_type=certificate&name=c.pdf`, Buffer.from("%PDF-1.4"), "application/pdf");
   assert.equal((await p.c.post(`/api/files/${cert.data.file.id}/reread`, {})).status, 404);
 });
+
+test("feedback on a reading: the person or HR reports what was read wrong (with the right value, a comment); one list for HR / Admin", async () => {
+  const jpg = fs.readFileSync(new URL("./fixtures/fake-id.jpg", import.meta.url));
+  const p = await makePerson(t.base, admin, { emp_no: "FB1", name_ar: "اسم", join_date: "2022-01-01" }, "staff");
+  const up = await p.c.upload(`/api/employees/${p.emp.id}/files?kind=doc&doc_type=civil_id&name=id.jpg`, jpg, "image/jpeg");
+  const id = up.data.file.id;
+  assert.equal((await p.c.post(`/api/files/${id}/feedback`, {})).status, 400, "something to say");
+  assert.equal((await other.c.post(`/api/files/${id}/feedback`, { comment: "x" })).status, 403);
+  assert.equal((await p.c.post(`/api/files/${id}/feedback`, { items: [{ field: "name_en", correct: "Sample Person Al Test" }, { field: "nope" }], comment: "the family name is cut" })).status, 201);
+  assert.equal((await hr.c.post(`/api/files/${id}/feedback`, { comment: "photo is dark" })).status, 201);
+  assert.equal((await p.c.get("/api/read-feedback")).status, 403);
+  const list = (await hr.c.get("/api/read-feedback")).data.items.filter((x) => x.employee_id === p.emp.id);
+  assert.equal(list.length, 2);
+  const mine = list.find((x) => x.comment === "the family name is cut");
+  assert.deepEqual(mine.items, [{ field: "name_en", read: "Sample Person Altest", correct: "Sample Person Al Test" }], "what it read is kept beside the right value");
+  const csv = await (await fetch(`${t.base}/api/read-feedback?format=csv`, { headers: { cookie: admin.cookie } })).text();
+  assert.match(csv, /"FB1"/); assert.match(csv, /Sample Person Al Test/);
+  assert.equal((await hr.c.post(`/api/read-feedback/${mine.id}/resolve`, {})).status, 200);
+  assert.ok(!(await hr.c.get("/api/read-feedback")).data.items.some((x) => x.id === mine.id), "done ones leave the open list");
+  assert.ok((await hr.c.get("/api/read-feedback?status=resolved")).data.items.some((x) => x.id === mine.id));
+  // the profile itself is not changed by feedback
+  assert.notEqual((await hr.c.get(`/api/employees/${p.emp.id}`)).data.employee.name_en, "Sample Person Al Test");
+});

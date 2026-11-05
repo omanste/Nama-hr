@@ -92,20 +92,35 @@ async function readDialog(e, r, docType, canEditAll) {
   if (filled.length) await refreshMe(); // the name at the top (and on the sign-in list) follows the profile
   if (!ask.length) { toast(filled.length ? t("read_filled", { n: filled.length }) : t("read_nothing_new")); return; }
   const rows = ask.map((x) => {
-    const box = h("input", { type: "checkbox", name: x.k, checked: true });
-    return { k: x.k, box, row: h("label", { class: "read-row" }, box,
+    // unticked = the reader got it wrong: the right value can be typed for the report (it is not saved on the profile)
+    const correct = h("input", { name: `correct_${x.k}`, placeholder: t("fb_correct"), dir: "auto", hidden: true, class: "fb-correct" });
+    const box = h("input", { type: "checkbox", name: x.k, checked: true, onchange: () => { correct.hidden = box.checked; } });
+    return { k: x.k, box, correct, row: h("label", { class: "read-row" }, box,
       h("div", { class: "grow" }, h("div", { class: "sub" }, t(x.label)),
         h("div", { class: "read-before-after" }, h("span", { class: "muted" }, t("pc_before"), ": "), h("span", { class: x.now ? "pc-old-inline" : "muted", dir: "auto" }, show(x.k, x.now)),
           h("br"), h("span", { class: "muted" }, t("pc_after"), ": "), h("b", { dir: "auto" }, show(x.k, found[x.k])),
-          verified.has(x.k) ? h("span", { class: "badge b-approved", style: { marginInlineStart: "8px" } }, "✓ ", t("read_verified")) : h("span", { class: "badge b-pending", style: { marginInlineStart: "8px" } }, t("read_check"))))) };
+          verified.has(x.k) ? h("span", { class: "badge b-approved", style: { marginInlineStart: "8px" } }, "✓ ", t("read_verified")) : h("span", { class: "badge b-pending", style: { marginInlineStart: "8px" } }, t("read_check"))), correct)) };
   });
+  const comment = h("textarea", { name: "fb_comment", rows: 3, placeholder: t("fb_placeholder"), dir: "auto" });
+  // what was unticked (with any right value typed) and the comment go to one list for HR / Admin to look at
+  let sent = false;
+  async function sendFeedback() {
+    if (sent) return;
+    const items = rows.filter((x) => !x.box.checked).map((x) => ({ field: x.k, correct: x.correct.value.trim() || null }));
+    if (!items.length && !comment.value.trim()) return;
+    await api.post(`/api/files/${r.file.id}/feedback`, { items, comment: comment.value.trim() });
+    sent = true; toast(t("fb_sent"));
+  }
   return new Promise((resolve) => {
     const err = h("div", { class: "form-error" });
     const dlg = h("dialog", { class: "dialog" }, h("form", { class: "form", onsubmit: async (ev) => {
       ev.preventDefault();
       const fields = rows.filter((x) => x.box.checked).map((x) => x.k);
-      if (!fields.length) { dlg.close(); return; }
-      try { await api.post(`/api/files/${r.file.id}/apply`, { fields }); toast(t("read_filled", { n: fields.length })); await refreshMe(); dlg.close(); } catch (er) { err.textContent = errText(er); }
+      try {
+        await sendFeedback();
+        if (fields.length) { await api.post(`/api/files/${r.file.id}/apply`, { fields }); toast(t("read_filled", { n: fields.length })); await refreshMe(); }
+        dlg.close();
+      } catch (er) { err.textContent = errText(er); }
     } },
       h("h2", null, t("read_update_title")),
       filled.length ? h("div", { class: "note" }, t("read_filled", { n: filled.length })) : null,
@@ -113,8 +128,9 @@ async function readDialog(e, r, docType, canEditAll) {
       rows.length > 1 ? h("div", { class: "row", style: { gap: "8px" } },
         h("button", { class: "btn small", type: "button", onclick: () => rows.forEach((x) => { x.box.checked = true; }) }, t("select_all")),
         h("button", { class: "btn small", type: "button", onclick: () => rows.forEach((x) => { x.box.checked = false; }) }, t("select_none"))) : null,
-      h("div", { class: "list" }, rows.map((x) => x.row)), err,
-      h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("read_keep")), h("button", { class: "btn primary", type: "submit" }, t("read_apply")))));
+      h("div", { class: "list" }, rows.map((x) => x.row)),
+      h("details", { class: "fb-box" }, h("summary", null, "💬 ", t("fb_title")), h("p", { class: "sub" }, t("fb_hint")), comment), err,
+      h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: async () => { try { await sendFeedback(); dlg.close(); } catch (er) { err.textContent = errText(er); } } }, t("read_keep")), h("button", { class: "btn primary", type: "submit" }, t("read_apply")))));
     dlg.addEventListener("close", () => { dlg.remove(); resolve(); });
     document.body.append(dlg); dlg.showModal();
   });
@@ -270,6 +286,19 @@ function rereadButton(e, f, can, mayUpload) {
     rerender();
   } }, "🔍 ", t("reread"));
 }
+/** A comment on how this document was read (e.g. a name it keeps getting wrong): goes to the same list for HR / Admin. */
+function feedbackDialog(f) {
+  const comment = h("textarea", { name: "fb_comment", rows: 4, required: true, placeholder: t("fb_placeholder"), dir: "auto" });
+  const err = h("div", { class: "form-error" });
+  const dlg = h("dialog", { class: "dialog" }, h("form", { class: "form", onsubmit: async (ev) => {
+    ev.preventDefault();
+    try { await api.post(`/api/files/${f.id}/feedback`, { comment: comment.value }); toast(t("fb_sent")); dlg.close(); } catch (er) { err.textContent = errText(er); }
+  } },
+    h("h2", null, t("fb_title"), " · ", t("dt_" + f.doc_type)), h("p", { class: "sub" }, t("fb_hint")), comment, err,
+    h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), h("button", { class: "btn primary", type: "submit" }, t("send")))));
+  dlg.addEventListener("close", () => dlg.remove());
+  document.body.append(dlg); dlg.showModal(); comment.focus();
+}
 const RENEWABLE = ["civil_id", "passport", "visa"];
 function renewButton(e, f, can, mayUpload) {
   if (!RENEWABLE.includes(f.doc_type) || !f.expiry) return null;
@@ -324,6 +353,7 @@ function documents(p, e, can, mayUpload, setPhoto) {
           ? h("button", { class: "btn small", type: "button", onclick: async () => { await expiryDialog(f); rerender(); } }, "📅 ", t(f.expiry ? "expiry_change" : "expiry_add")) : null,
         h("a", { class: "btn small", href: `/api/files/${f.id}?download=1` }, t("download")),
         rereadButton(e, f, can, mayUpload),
+        ["civil_id", "passport", "visa"].includes(f.doc_type) && (can.edit() || mayUpload) ? h("button", { class: "btn small", type: "button", onclick: () => feedbackDialog(f) }, "💬 ", t("fb_button")) : null,
         renewButton(e, f, can, mayUpload),
         can.edit() ? h("button", { class: "btn small danger", type: "button", onclick: async () => {
           if (!(await confirm(t("delete_file_q"), { danger: true, okText: t("delete") }))) return;

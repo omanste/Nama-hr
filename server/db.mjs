@@ -171,6 +171,11 @@ const MIGRATIONS = [
    CREATE INDEX ps_user ON push_subs(user_id);`,
   // 32: the document a profile change came from (an ID, passport or visa read on upload; a new photo), to compare when verifying
   `ALTER TABLE profile_changes ADD COLUMN file_id INTEGER;`,
+  // 33: feedback on what the reader got from a document (values it got wrong, the right value, a comment), in one list
+  `CREATE TABLE read_feedback(id INTEGER PRIMARY KEY, file_id INTEGER NOT NULL, employee_id INTEGER NOT NULL REFERENCES employees(id), user_id INTEGER NOT NULL,
+     doc_type TEXT, items TEXT NOT NULL DEFAULT '[]', comment TEXT, status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','resolved')),
+     resolved_by INTEGER, resolved_at TEXT, created_at TEXT NOT NULL);
+   CREATE INDEX rf_status ON read_feedback(status, id);`,
 ];
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */

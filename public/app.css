@@ -506,3 +506,11 @@ dialog.push-ask .row.end{justify-content:center}
 .pc-doc-meta{display:flex;flex-direction:column;gap:4px;align-items:flex-start;font-size:.92rem}
 
 .mgr-list{max-height:min(50vh,420px);overflow-y:auto}
+
+.read-row input.fb-correct{display:block;margin-top:8px;width:100%;height:auto;min-height:40px;border-radius:8px;flex:none}
+.read-row input.fb-correct[hidden]{display:none}
+.fb-item{flex-direction:column;align-items:stretch!important}
+.fb-item .doc-actions{justify-content:flex-start}
+.fb-box{margin-top:6px}
+.fb-box summary{cursor:pointer;font-weight:600}
+.fb-box textarea{width:100%;margin-top:6px}

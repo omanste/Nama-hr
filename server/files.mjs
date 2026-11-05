@@ -215,6 +215,46 @@ export function registerFiles(api, ctx) {
     send(req, res, 200, { file: db.prepare("SELECT id,employee_id,kind,doc_type,name,mime,size,expiry,uploaded_at FROM files WHERE id=?").get(f.id), read, applied: [], current: pick(getEmployee(db, emp.id)) });
   });
 
+  // ---------- feedback on a reading: what it got wrong, the right value, a comment — one list for HR / Admin ----------
+  api.post("/api/files/:id/feedback", async (req, res) => {
+    const f = db.prepare("SELECT * FROM files WHERE id=?").get(Number(req.params.id));
+    if (!f || !READABLE.includes(f.doc_type)) throw new HttpError(404, "not_found", "Document not found");
+    if (!can(req.sess, "employee.edit") && f.employee_id !== req.sess.user.employee_id) throw forbidden();
+    const b = await readJson(req);
+    const read = f.extracted ? JSON.parse(f.extracted) : {}, map = readMap(f.doc_type);
+    const items = (Array.isArray(b.items) ? b.items : []).filter((x) => x && map[x.field]).slice(0, 12)
+      .map((x) => ({ field: x.field, read: read[x.field] ?? null, correct: String(x.correct || "").trim().slice(0, 200) || null }));
+    const comment = String(b.comment || "").trim().slice(0, 1000);
+    if (!items.length && !comment) throw Object.assign(new HttpError(400, "invalid", "Write what's wrong"), { field: "comment" });
+    const id = Number(db.prepare("INSERT INTO read_feedback(file_id,employee_id,user_id,doc_type,items,comment,created_at) VALUES(?,?,?,?,?,?,?)")
+      .run(f.id, f.employee_id, req.sess.user.id, f.doc_type, JSON.stringify(items), comment || null, nowIso()).lastInsertRowid);
+    audit(db, req.sess.user.id, "file.read_feedback", "employee", f.employee_id, null, { file_id: f.id, items, comment });
+    send(req, res, 201, { id });
+  });
+  api.get("/api/read-feedback", (req, res) => {
+    needHr(req.sess);
+    const status = ["open", "resolved", "all"].includes(req.query.get("status")) ? req.query.get("status") : "open";
+    const rows = db.prepare(`SELECT r.*, e.emp_no, e.name_ar, e.name_en, u.username, f.name file_name, f.mime, ru.username resolved_username
+      FROM read_feedback r JOIN employees e ON e.id=r.employee_id LEFT JOIN users u ON u.id=r.user_id LEFT JOIN files f ON f.id=r.file_id LEFT JOIN users ru ON ru.id=r.resolved_by
+      ${status === "all" ? "" : "WHERE r.status=?"} ORDER BY r.id DESC LIMIT 500`).all(...(status === "all" ? [] : [status])).map((r) => ({ ...r, items: JSON.parse(r.items || "[]") }));
+    if (req.query.get("format") === "csv") {
+      const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+      const lines = [["Date", "Employee ID", "Name (Arabic)", "Name (English)", "Document", "File", "Field", "Read as", "Correct value", "Comment", "By", "Status"].join(",")];
+      for (const r of rows) for (const it of r.items.length ? r.items : [{}])
+        lines.push([r.created_at, r.emp_no, r.name_ar, r.name_en, r.doc_type, r.file_name, it.field || "", it.read ?? "", it.correct ?? "", r.comment || "", r.username, r.status].map(q).join(","));
+      return sendRaw(req, res, 200, Buffer.from("\ufeff" + lines.join("\r\n"), "utf8"), "text/csv; charset=utf-8",
+        { "Content-Disposition": `attachment; filename="reading-feedback.csv"`, "Cache-Control": "no-store" });
+    }
+    send(req, res, 200, { items: rows });
+  });
+  api.post("/api/read-feedback/:id/resolve", (req, res) => {
+    needHr(req.sess);
+    const r = db.prepare("SELECT * FROM read_feedback WHERE id=?").get(Number(req.params.id));
+    if (!r) throw new HttpError(404, "not_found", "Not found");
+    db.prepare("UPDATE read_feedback SET status=?, resolved_by=?, resolved_at=? WHERE id=?").run(r.status === "open" ? "resolved" : "open", req.sess.user.id, nowIso(), r.id);
+    send(req, res, 200, { ok: true });
+  });
+
   // Apply chosen values read from an ID photo to the profile. Only values the reader found are used — nobody can type new ones here.
   api.post("/api/files/:id/apply", async (req, res) => {
     const f = db.prepare("SELECT * FROM files WHERE id=?").get(Number(req.params.id));

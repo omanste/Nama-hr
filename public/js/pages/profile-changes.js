@@ -110,6 +110,34 @@ async function rereadCard() {
   return box;
 }
 
+/** Feedback on document readings, in one list (with the document, the value read, the right one and the comment). */
+async function feedbackCard() {
+  const box = h("section", { class: "card" });
+  const sel = select("fb_status", [["open", t("fb_open")], ["resolved", t("fb_resolved")], ["all", t("all")]], "open", { "aria-label": t("status") });
+  const load = async () => {
+    const { items } = await api.get(`/api/read-feedback?status=${sel.value}`);
+    const DOC = { civil_id: "dt_civil_id", passport: "dt_passport", visa: "dt_visa" };
+    box.replaceChildren(
+      h("div", { class: "card-head" }, h("h2", null, t("fb_list"), " ", items.length ? h("span", { class: "badge b-pending" }, items.length) : null),
+        h("div", { class: "row" }, sel, h("a", { class: "btn small", href: `/api/read-feedback?status=${sel.value}&format=csv` }, "⬇ ", t("download_excel")))),
+      h("p", { class: "sub" }, t("fb_list_hint")),
+      items.length ? h("div", { class: "list" }, items.map((r) => h("div", { class: "item fb-item" },
+        h("div", { class: "grow", style: { minWidth: "0" } },
+          h("div", { class: "title" }, h("a", { href: `#/staff/${r.employee_id}` }, nm(r) || r.emp_no), h("span", { class: "muted" }, ` · ${r.emp_no} · ${t(DOC[r.doc_type] || "document")}`)),
+          h("div", { class: "meta" }, "🕒 ", dateTime(r.created_at), r.username ? ` — ${r.username}` : "", r.status === "resolved" ? ` · ✓ ${r.resolved_username || ""}` : ""),
+          r.items.map((it) => h("div", null, h("span", { class: "muted" }, t("f_" + ({ expiry: { civil_id: "civil_id_expiry", passport: "passport_expiry", visa: "visa_expiry" }[r.doc_type] }[it.field] || it.field)), ": "),
+            t("fb_read_as"), " ", h("span", { class: "pc-old-inline", dir: "auto" }, it.read ?? "—"), it.correct ? h("span", null, " · ", t("fb_right"), " ", h("b", { dir: "auto" }, it.correct)) : null)),
+          r.comment ? h("div", { dir: "auto", style: { whiteSpace: "pre-line" } }, "💬 ", r.comment) : null),
+        h("div", { class: "row doc-actions" },
+          r.mime ? h("button", { class: "btn small", type: "button", onclick: () => viewFile({ id: r.file_id, name: r.file_name, mime: r.mime }) }, "📄 ", t("rr_open")) : null,
+          h("button", { class: "btn small", type: "button", onclick: async () => { try { await api.post(`/api/read-feedback/${r.id}/resolve`, {}); load(); } catch (e) { toast(errText(e), "bad"); } } },
+            r.status === "open" ? `✓ ${t("fb_resolve")}` : t("fb_reopen")))))) : empty(t("fb_none")));
+  };
+  sel.addEventListener("change", load);
+  await load();
+  return box;
+}
+
 export async function render(el, _p, { me, query }) {
   if (!["hr", "admin"].includes(me.user.role)) throw { status: 403 };
   const status = query.get("status") || "pending";
@@ -130,6 +158,7 @@ export async function render(el, _p, { me, query }) {
   el.append(pageHead(t("nav_profile_changes")),
     h("p", { class: "sub" }, t("pc_intro")),
     await rereadCard(),
+    await feedbackCard(),
     h("div", { class: "toolbar" }, sel),
     items.length ? h("div", { class: "grid" }, items.map((c) => h("section", { class: "card" },
       h("div", { class: "card-head" },
