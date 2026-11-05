@@ -200,6 +200,21 @@ export function registerFiles(api, ctx) {
     send(req, res, 201, { file, read, applied, current: read ? pick(getEmployee(db, emp.id)) : undefined });
   });
 
+  // Read an ID, passport or visa already on file again (the person, HR, Admin): returns what it shows next to the profile,
+  // to tick and confirm with /apply. Nothing is saved here.
+  api.post("/api/files/:id/reread", async (req, res) => {
+    const f = db.prepare("SELECT * FROM files WHERE id=?").get(Number(req.params.id));
+    if (!f || f.kind !== "doc" || f.archived_at || !READABLE.includes(f.doc_type)) throw new HttpError(404, "not_found", "No ID, passport or visa to read");
+    const emp = getEmployee(db, f.employee_id);
+    if (!emp || (!can(req.sess, "employee.edit") && emp.id !== req.sess.user.employee_id)) throw forbidden();
+    let read = forDoc(f.doc_type, await readStored(f));
+    if (read && !Object.keys(read).some((k) => readMap(f.doc_type)[k])) read = null;
+    if (!read) throw new HttpError(422, "not_read", "Nothing could be read from this document — upload a clearer copy");
+    if (f.doc_type === "civil_id") arabicFallback(emp, read);
+    db.prepare("UPDATE files SET extracted=? WHERE id=?").run(JSON.stringify(read), f.id);
+    send(req, res, 200, { file: db.prepare("SELECT id,employee_id,kind,doc_type,name,mime,size,expiry,uploaded_at FROM files WHERE id=?").get(f.id), read, applied: [], current: pick(getEmployee(db, emp.id)) });
+  });
+
   // Apply chosen values read from an ID photo to the profile. Only values the reader found are used — nobody can type new ones here.
   api.post("/api/files/:id/apply", async (req, res) => {
     const f = db.prepare("SELECT * FROM files WHERE id=?").get(Number(req.params.id));

@@ -257,6 +257,19 @@ function signIns(e) {
   return box;
 }
 /** Documents that can be renewed, and when: expired, or expiring within 30 days. */
+/** Read an ID, passport or visa on file again: what it shows next to the profile, to tick and confirm (the person, HR, Admin). */
+function rereadButton(e, f, can, mayUpload) {
+  if (!["civil_id", "passport", "visa"].includes(f.doc_type) || !(can.edit() || mayUpload)) return null;
+  if (!(/^image\//.test(f.mime || "") || f.mime === "application/pdf")) return null;
+  return h("button", { class: "btn small", type: "button", title: t("reread_hint"), onclick: async () => {
+    const wait = busy(t("reading_card"), [[0, t("busy_read_en")], [15, t("busy_read_ar")], [45, t("busy_long")]]);
+    let r;
+    try { r = await api.post(`/api/files/${f.id}/reread`, {}); } catch (er) { wait.close(); toast(errText(er), "bad"); return; }
+    wait.close();
+    await readDialog(e, r, f.doc_type, can.edit());
+    rerender();
+  } }, "🔍 ", t("reread"));
+}
 const RENEWABLE = ["civil_id", "passport", "visa"];
 function renewButton(e, f, can, mayUpload) {
   if (!RENEWABLE.includes(f.doc_type) || !f.expiry) return null;
@@ -310,6 +323,7 @@ function documents(p, e, can, mayUpload, setPhoto) {
         (can.edit() || (mayUpload && SELF_DOC_TYPES.includes(f.doc_type || "other"))) && (f.expiry || EXPIRING.includes(f.doc_type))
           ? h("button", { class: "btn small", type: "button", onclick: async () => { await expiryDialog(f); rerender(); } }, "📅 ", t(f.expiry ? "expiry_change" : "expiry_add")) : null,
         h("a", { class: "btn small", href: `/api/files/${f.id}?download=1` }, t("download")),
+        rereadButton(e, f, can, mayUpload),
         renewButton(e, f, can, mayUpload),
         can.edit() ? h("button", { class: "btn small danger", type: "button", onclick: async () => {
           if (!(await confirm(t("delete_file_q"), { danger: true, okText: t("delete") }))) return;

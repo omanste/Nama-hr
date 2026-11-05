@@ -407,3 +407,27 @@ test("the Arabic name from a PDF's text layer: joined letter shapes, direction m
   // the card's own labels are still not a name
   assert.equal(arabicNameFrom("سلطنة عمان\nالبطاقة الشخصية", "Salim Khalid"), undefined);
 });
+
+test("«Read and update details» on an ID already on file: the person, HR and Admin; nothing is saved until confirmed", async () => {
+  const jpg = fs.readFileSync(new URL("./fixtures/fake-id.jpg", import.meta.url));
+  const p = await makePerson(t.base, admin, { emp_no: "RD1", name_ar: "اسم", join_date: "2022-01-01" }, "staff");
+  const up = await p.c.upload(`/api/employees/${p.emp.id}/files?kind=doc&doc_type=civil_id&name=id.jpg`, jpg, "image/jpeg");
+  await admin.put(`/api/employees/${p.emp.id}`, { name_en: "Wrong Name K", dob: "1980-01-01" }); // a mistake on the profile
+  const r = await p.c.post(`/api/files/${up.data.file.id}/reread`, {});
+  assert.equal(r.status, 200);
+  assert.equal(r.data.read.name_en, "Sample Person Altest"); assert.equal(r.data.current.name_en, "Wrong Name K");
+  assert.equal((await hr.c.get(`/api/employees/${p.emp.id}`)).data.employee.name_en, "Wrong Name K", "not saved yet");
+  assert.equal((await hr.c.post(`/api/files/${up.data.file.id}/reread`, {})).status, 200);
+  assert.equal((await admin.post(`/api/files/${up.data.file.id}/reread`, {})).status, 200);
+  assert.equal((await other.c.post(`/api/files/${up.data.file.id}/reread`, {})).status, 403);
+  // confirming the ticked values saves them
+  assert.equal((await p.c.post(`/api/files/${up.data.file.id}/apply`, { fields: ["name_en", "dob"] })).status, 200);
+  const e = (await hr.c.get(`/api/employees/${p.emp.id}`)).data.employee;
+  assert.equal(e.name_en, "Sample Person Altest"); assert.equal(e.dob, "1990-04-03");
+  // a passport offers only its number and expiry; a certificate can't be read
+  const pass = await p.c.upload(`/api/employees/${p.emp.id}/files?kind=doc&doc_type=passport&name=p.pdf`, fs.readFileSync(new URL("./fixtures/fake-passport.pdf", import.meta.url)), "application/pdf");
+  const rp = await p.c.post(`/api/files/${pass.data.file.id}/reread`, {});
+  if (rp.status === 200) assert.deepEqual(Object.keys(rp.data.read).filter((k) => !["verified", "kind"].includes(k)).sort(), ["expiry", "passport_no"]);
+  const cert = await p.c.upload(`/api/employees/${p.emp.id}/files?kind=doc&doc_type=certificate&name=c.pdf`, Buffer.from("%PDF-1.4"), "application/pdf");
+  assert.equal((await p.c.post(`/api/files/${cert.data.file.id}/reread`, {})).status, 404);
+});

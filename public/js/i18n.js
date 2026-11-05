@@ -63,6 +63,8 @@ const D = {
   rr_why_front_only: ["مقروءة من الوجه المطبوع فقط", "Read from the printed front only"], rr_why_not_confirmed: ["لم تؤكدها أرقام التحقق", "Not confirmed by check digits"],
   rr_why_unreadable: ["لم يُقرأ شيء", "Nothing could be read"], rr_why_type: ["نوع ملف لا يُقرأ", "File type can't be read"],
   rr_no_passport: ["بلا جواز سفر مرفوع", "Without a passport uploaded"], rr_open: ["فتح", "Open"],
+  reread: ["قراءة وتحديث البيانات", "Read and update details"], reread_hint: ["يقرأ المستند ويعرض ما يختلف عن الملف لتأكيده", "Reads the document and shows what differs from the profile, to confirm"],
+  err_not_read: ["تعذّرت قراءة المستند — ارفع نسخة أوضح", "The document couldn't be read — upload a clearer copy"],
   rule_umrah: ["حتى ٧ أيام مرة في السنة، تُخصم من رصيد الإجازة السنوية (سياسة الشركة؛ لا ينص عليها قانون العمل). أرفق ما يثبت: التأشيرة أو الحجز.", "Up to 7 days once a year, taken from your annual leave balance (company policy; not in the Labour Law). Attach proof: the visa or booking."],
   rule_emergency: ["تُخصم من رصيد الإجازة السنوية (سياسة الشركة).", "Taken from your annual leave balance (company policy)."],
   comp_choice: ["التعويض", "Compensation"], comp_leave: ["يوم إجازة (+١ يوم للرصيد)", "A day off (+1 day to the balance)"], comp_pay: ["مقابل مالي (يُسجل للرواتب)", "Payment (recorded for payroll)"],
