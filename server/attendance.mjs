@@ -416,7 +416,7 @@ export function registerAttendance(api, ctx) {
   api.get("/api/attendance/hr-queue", (req, res) => {
     if (!can(req.sess, "employee.edit")) throw forbidden();
     const items = db.prepare(`SELECT r.*, e.emp_no, e.name_ar, e.name_en FROM leave_requests r JOIN employees e ON e.id=r.employee_id
-      WHERE r.status='approved' AND r.hr_class IS NULL AND r.type IN ('early','late','break','correction') ORDER BY r.start_date, r.id`).all();
+      WHERE r.status='approved' AND r.hr_class IS NULL AND r.type IN ('early','late','break','correction','overtime') ORDER BY r.start_date, r.id`).all();
     send(req, res, 200, { items });
   });
 }

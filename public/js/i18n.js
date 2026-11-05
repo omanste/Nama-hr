@@ -587,7 +587,7 @@ const D = {
   att_by_department: ["حسب القسم (بدون أسماء)", "By department (no names)"], att_by_person: ["حسب الموظف", "By person"],
   att_by_person_note: ["للموارد البشرية والمدير المباشر فقط — لا تُنشر المخالفات بالأسماء (البند 7).", "For HR and the direct manager only — violations are never published with names (§7)."],
   att_no_data: ["لا توجد بيانات حضور لهذه الفترة.", "No attendance data for this period."], no_department: ["بدون قسم", "No department"],
-  att_hr_queue: ["بانتظار الموارد البشرية ", "Waiting for HR "], att_hr_queue_hint: ["استئذانات وافق عليها المدير وتحتاج تصنيفاً، وتصحيحات بصمة تحتاج اعتماداً.", "Permissions the manager approved that need classifying, and fingerprint corrections that need confirming."],
+  att_hr_queue: ["بانتظار الموارد البشرية ", "Waiting for HR "], att_hr_queue_hint: ["استئذانات وافق عليها المدير وتحتاج تصنيفاً، وتصحيحات بصمة وعمل بعد الدوام يحتاج اعتماداً.", "Permissions the manager approved that need classifying, and fingerprint corrections and after-hours time that need confirming."],
   att_queue_empty: ["لا شيء بانتظارك.", "Nothing waiting for you."],
   att_upload_title: ["ملف جهاز البصمة", "Fingerprint machine file"],
   att_upload_hint: ["صدّر سجل الحركات من جهاز البصمة (Excel أو CSV) وارفعه هنا كل أسبوع. لا يُضاف أي سطر مرتين.", "Export the punch log from the fingerprint machine (Excel or CSV) and upload it here each week. No punch is added twice."],

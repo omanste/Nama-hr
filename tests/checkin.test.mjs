@@ -278,6 +278,9 @@ test("leaving after hours: a reason; the extra time goes to the manager (who may
   assert.equal((await w.c.post("/api/requests", { type: "overtime", date: day })).status, 400, "not filed by hand");
   const a = await mgr.c.post(`/api/requests/${r.id}/approve`, { end_time: "19:30" });
   assert.equal(a.status, 200); assert.equal(a.data.request.status, "approved"); assert.equal(a.data.request.minutes, 90);
+  // it now waits in HR's list on the attendance reports, and counts on its badge
+  assert.ok((await hr.c.get("/api/attendance/hr-queue")).data.items.some((x) => x.id === r.id));
+  assert.ok((await hr.c.get("/api/me")).data.pendingHr >= 1);
   // HR confirms (adjusting to 19:45)
   assert.equal((await hr.c.post(`/api/requests/${r.id}/hr`, { class: "confirmed", end_time: "19:45" })).status, 200);
   r = t.db.prepare("SELECT * FROM leave_requests WHERE id=?").get(r.id);

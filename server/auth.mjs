@@ -200,7 +200,7 @@ export function registerAuth(api, ctx) {
       .get(...(["hr", "admin"].includes(s.user.role) ? [own] : [own, own])).n;
     const pendingCapReviews = ["hr", "admin"].includes(s.user.role) ? db.prepare("SELECT count(*) n FROM cap_reviews WHERE status='pending'").get().n : 0;
     // HR: approved permissions to classify and fingerprint corrections to confirm (attendance policy §5, §8)
-    const pendingHr = ["hr", "admin"].includes(s.user.role) ? db.prepare("SELECT count(*) n FROM leave_requests WHERE status='approved' AND hr_class IS NULL AND type IN ('early','late','break','correction')").get().n : 0;
+    const pendingHr = ["hr", "admin"].includes(s.user.role) ? db.prepare("SELECT count(*) n FROM leave_requests WHERE status='approved' AND hr_class IS NULL AND type IN ('early','late','break','correction','overtime')").get().n : 0;
     // a manager sees their team's attendance: department approver, or someone's direct manager
     const hasTeam = !!s.employee && (s.isApprover || !!db.prepare("SELECT 1 FROM employees WHERE manager_employee_id=? AND status IN ('active','on_leave')").get(s.employee.id));
     const pendingProfileChanges = ["hr", "admin"].includes(s.user.role) ? db.prepare("SELECT count(*) n FROM profile_changes WHERE status='pending' AND employee_id<>?").get(s.employee ? s.employee.id : -1).n : 0;
