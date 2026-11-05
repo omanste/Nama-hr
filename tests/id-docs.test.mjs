@@ -368,6 +368,9 @@ test("the name in the <<< lines stops at the filler, even when a scanner read pa
   assert.equal(td1("SAMPLE<PERSON<TESTA<K<<<<<K<L"), "Sample Person Testa");
   assert.equal(td1("SAMPLE<PERSON<AL<TEST<<<<<<<<<"), "Sample Person Al Test");
   assert.equal(td1("ALI<IL<TEST"), "Ali Il Test", "a real short name stays");
+  // a 600-dpi phone scan of an Omani card: "<KL" right after the family name, and one "K" after "<<" (made-up name)
+  assert.equal(td1("SAMPLE<KHALID<ALI<<AL<TESTI<KL"), "Sample Khalid Ali Al Testi");
+  assert.equal(td1("SAMPLE<KHALID<ALI<<AL<TESTI<<K"), "Sample Khalid Ali Al Testi");
   const p = parseMrz("P<OMNTESTA<<SAMPLE<PERSON<L<K<LK<K<<<<<<<<<<<<<\nA123456780OMN9001011F3001011<<<<<<<<<<<<<<00");
   assert.equal(p.name_en, "Sample Person Testa");
 });
