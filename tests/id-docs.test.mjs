@@ -2,6 +2,8 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
 import { boot, adminClient, makePerson } from "./helpers.mjs";
 import { parseMrz, parseFront, parseArabicName, fullPrintedName, arabicNameFrom, arabicFromVariants, completeName } from "../server/idread.mjs";
 import { toArabicName, completeFamily, completeArabicName, fixConfusedLetters } from "../server/names-ar.mjs";
@@ -442,15 +444,17 @@ test("feedback on a reading: the person or HR reports what was read wrong (with 
   assert.equal((await p.c.post(`/api/files/${id}/feedback`, { items: [{ field: "name_en", correct: "Sample Person Al Test" }, { field: "nope" }], comment: "the family name is cut" })).status, 201);
   assert.equal((await hr.c.post(`/api/files/${id}/feedback`, { comment: "photo is dark" })).status, 201);
   assert.equal((await p.c.get("/api/read-feedback")).status, 403);
-  const list = (await hr.c.get("/api/read-feedback")).data.items.filter((x) => x.employee_id === p.emp.id);
+  assert.equal((await hr.c.get("/api/read-feedback")).status, 403, "the list is for Admin only");
+  const list = (await admin.get("/api/read-feedback")).data.items.filter((x) => x.employee_id === p.emp.id);
   assert.equal(list.length, 2);
   const mine = list.find((x) => x.comment === "the family name is cut");
   assert.deepEqual(mine.items, [{ field: "name_en", read: "Sample Person Altest", correct: "Sample Person Al Test" }], "what it read is kept beside the right value");
   const csv = await (await fetch(`${t.base}/api/read-feedback?format=csv`, { headers: { cookie: admin.cookie } })).text();
   assert.match(csv, /"FB1"/); assert.match(csv, /Sample Person Al Test/);
-  assert.equal((await hr.c.post(`/api/read-feedback/${mine.id}/resolve`, {})).status, 200);
-  assert.ok(!(await hr.c.get("/api/read-feedback")).data.items.some((x) => x.id === mine.id), "done ones leave the open list");
-  assert.ok((await hr.c.get("/api/read-feedback?status=resolved")).data.items.some((x) => x.id === mine.id));
+  assert.equal((await hr.c.post(`/api/read-feedback/${mine.id}/resolve`, {})).status, 403);
+  assert.equal((await admin.post(`/api/read-feedback/${mine.id}/resolve`, {})).status, 200);
+  assert.ok(!(await admin.get("/api/read-feedback")).data.items.some((x) => x.id === mine.id), "done ones leave the open list");
+  assert.ok((await admin.get("/api/read-feedback?status=resolved")).data.items.some((x) => x.id === mine.id));
   // the profile itself is not changed by feedback
   assert.notEqual((await hr.c.get(`/api/employees/${p.emp.id}`)).data.employee.name_en, "Sample Person Al Test");
 });
@@ -470,4 +474,40 @@ test("an English family name the card's 30-letter line cut short is finished fro
   // not cut, or nothing that fits: unchanged (no extra middle name is ever added)
   assert.equal(completeName("Sample Khalid Ali Al Namani", { text: "SAMPLE KHALID ALI HAMOOD AL\nNAMANI", nameAr: "سالم بن خالد بن علي بن حمود النعماني" }), "Sample Khalid Ali Al Namani");
   assert.equal(completeName("Sample Khalid Ali Al Zqx", { nameAr: "سالم خالد علي المقبالي" }), "Sample Khalid Ali Al Zqx");
+});
+
+test("a mistake on any profile field can be reported by the person, HR or Admin; Admin downloads one .zip with the reports and documents", async () => {
+  const jpg = fs.readFileSync(new URL("./fixtures/fake-id.jpg", import.meta.url));
+  const p = await makePerson(t.base, admin, { emp_no: "RI1", name_ar: "اسم", join_date: "2022-01-01" }, "staff");
+  const up = await p.c.upload(`/api/employees/${p.emp.id}/files?kind=doc&doc_type=civil_id&name=id.jpg`, jpg, "image/jpeg");
+  await admin.put(`/api/employees/${p.emp.id}`, { name_en: "Sample Person Alt" });
+  const url = `/api/employees/${p.emp.id}/report-issue`;
+  assert.equal((await p.c.post(url, { field: "name_en" })).status, 400, "the right value or a comment");
+  assert.equal((await p.c.post(url, { field: "salary", comment: "x" })).status, 400);
+  assert.equal((await other.c.post(url, { field: "name_en", comment: "x" })).status, 403);
+  assert.equal((await p.c.post(url, { field: "name_en", correct: "Sample Person Altest", comment: "the family name is cut", file_id: up.data.file.id })).status, 201);
+  assert.equal((await hr.c.post(url, { field: "mobile", correct: "99999999" })).status, 201);
+  const items = (await admin.get("/api/read-feedback")).data.items.filter((x) => x.employee_id === p.emp.id);
+  assert.equal(items.length, 2);
+  const nameRep = items.find((x) => x.items[0].field === "name_en");
+  assert.equal(nameRep.source, "profile"); assert.equal(nameRep.items[0].read, "Sample Person Alt"); assert.equal(nameRep.items[0].correct, "Sample Person Altest");
+  // the download: Admin only; README, reports.json / .csv and the document, with what the reader read from it
+  assert.equal((await fetch(`${t.base}/api/read-feedback/pack`, { headers: { cookie: hr.c.cookie } })).status, 403);
+  const z = await fetch(`${t.base}/api/read-feedback/pack`, { headers: { cookie: admin.cookie } });
+  assert.equal(z.status, 200); assert.equal(z.headers.get("content-type"), "application/zip");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pack-")), zf = path.join(dir, "p.zip");
+  fs.writeFileSync(zf, Buffer.from(await z.arrayBuffer()));
+  const { execFileSync } = await import("node:child_process");
+  let list;
+  try { list = execFileSync("unzip", ["-Z1", zf]).toString(); } catch { list = null; } // no unzip on this machine: read the JSON ourselves below
+  if (list) {
+    assert.match(list, /README\.txt/); assert.match(list, /reports\.json/); assert.match(list, /reports\.csv/); assert.match(list, new RegExp(`documents/${up.data.file.id}-civil_id\\.jpg`));
+    const json = JSON.parse(execFileSync("unzip", ["-p", zf, "reports.json"]).toString());
+    const r = json.find((x) => x.employee === "RI1" && x.items[0].field === "name_en");
+    assert.equal(r.items[0].correct, "Sample Person Altest"); assert.equal(r.documents[0].doc_type, "civil_id"); assert.ok(r.documents[0].reader_read);
+    assert.equal(r.profile_now.name_en, "Sample Person Alt");
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+  // reporting changes nothing on the profile
+  assert.equal((await admin.get(`/api/employees/${p.emp.id}`)).data.employee.name_en, "Sample Person Alt");
 });

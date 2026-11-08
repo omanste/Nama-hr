@@ -207,7 +207,7 @@ export async function render(el, params, { me, can, opts }) {
           h("td", { class: "muted" }, l.request_id ? h("a", { href: `#/leave/${l.request_id}` }, `#${l.request_id}`) : null, " ", l.kind === "adjustment" ? l.note : ""))))))) : null,
 
     h("div", { class: "grid cols2" },
-      h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_personal")), badgeIfPending(p, "identity"),
+      h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_personal")), badgeIfPending(p, "identity"), mayUpload ? h("button", { class: "btn small report-btn", type: "button", title: t("ri_hint"), onclick: () => reportDialog(e, p.files || []) }, "⚠ ", t("ri_button")) : null,
           can.edit() ? editLink(e, "personal", !!opts.me) : mayUpload ? h("button", { class: "btn small", type: "button", onclick: () => identityDialog(e) }, t("edit_id_details")) : null), facts([
         ["f_name_ar", e.name_ar], ["f_name_en", e.name_en], ["f_emp_no", e.emp_no], ["f_gender", e.gender ? t("g_" + e.gender) : ""], ["f_nationality", countryName(e.nationality, getLang())], ["f_dob", dmy(e.dob)], ["age", ageText(e.dob)],
         ["f_civil_id", e.civil_id], ["f_civil_id_expiry", e.civil_id_expiry ? h("span", null, dmy(e.civil_id_expiry), " ", expiryBadge(e.civil_id_expiry)) : null],
@@ -285,6 +285,35 @@ function rereadButton(e, f, can, mayUpload) {
     await readDialog(e, r, f.doc_type, can.edit());
     rerender();
   } }, "🔍 ", t("reread"));
+}
+/** Report a wrong detail on the profile (any field): what's right and a comment, with the document it should match if any.
+ * It goes to one list Admin downloads for whoever fixes the reader; the profile isn't changed. */
+const REPORT_FIELDS = ["name_en", "name_ar", "civil_id", "civil_id_expiry", "dob", "gender", "nationality", "passport_no", "passport_expiry", "visa_expiry",
+  "mobile", "personal_phone", "email", "personal_email", "perm_wilayat", "current_area", "address", "job_title", "join_date", "bank_name", "bank_account", "bank_iban", "other"];
+function reportDialog(e, files) {
+  const showVal = (k) => { const v = e[k]; return v === null || v === undefined || v === "" ? "—" : k === "dob" || /_expiry$|join_date/.test(k) ? dmy(v) : k === "gender" ? t("g_" + v) : k === "nationality" ? countryName(v, getLang()) : String(v); };
+  const fieldSel = select("ri_field", REPORT_FIELDS.map((k) => [k, k === "other" ? t("ri_other") : t("f_" + k)]), "name_en");
+  const now = h("div", { class: "note", dir: "auto" });
+  const drawNow = () => { now.replaceChildren(fieldSel.value === "other" ? t("ri_other_hint") : h("span", null, t("ri_shown"), ": ", h("b", { dir: "auto" }, showVal(fieldSel.value)))); };
+  fieldSel.addEventListener("change", drawNow); drawNow();
+  const correct = h("input", { name: "ri_correct", dir: "auto", placeholder: t("fb_correct") });
+  const comment = h("textarea", { name: "ri_comment", rows: 3, dir: "auto", placeholder: t("fb_placeholder") });
+  const docs = files.filter((f) => f.kind === "doc" && !f.archived_at && ["civil_id", "passport", "visa"].includes(f.doc_type));
+  const docSel = docs.length ? select("ri_file", [["", t("ri_no_doc")], ...docs.map((f) => [f.id, `${t("dt_" + f.doc_type)} · ${f.name}`])], String(docs.find((f) => f.doc_type === "civil_id")?.id || "")) : null;
+  const err = h("div", { class: "form-error" });
+  const dlg = h("dialog", { class: "dialog" }, h("form", { class: "form", onsubmit: async (ev) => {
+    ev.preventDefault();
+    try {
+      await api.post(`/api/employees/${e.id}/report-issue`, { field: fieldSel.value, correct: correct.value, comment: comment.value, file_id: docSel && docSel.value ? Number(docSel.value) : null });
+      toast(t("fb_sent")); dlg.close();
+    } catch (er) { err.textContent = errText(er); }
+  } },
+    h("h2", null, t("ri_title")), h("p", { class: "sub" }, t("ri_intro")),
+    field(t("pc_field"), fieldSel), now, field(t("fb_correct"), correct), field(t("fb_comment"), comment),
+    docSel ? field(t("ri_doc"), docSel, { hint: t("ri_doc_hint") }) : null, err,
+    h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), h("button", { class: "btn primary", type: "submit" }, t("send")))));
+  dlg.addEventListener("close", () => dlg.remove());
+  document.body.append(dlg); dlg.showModal();
 }
 /** A comment on how this document was read (e.g. a name it keeps getting wrong): goes to the same list for HR / Admin. */
 function feedbackDialog(f) {

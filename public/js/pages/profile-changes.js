@@ -111,7 +111,8 @@ async function rereadCard() {
 }
 
 /** Feedback on document readings, in one list (with the document, the value read, the right one and the comment). */
-async function feedbackCard() {
+async function feedbackCard(me) {
+  if (me.user.role !== "admin") return null; // the reports and their documents are for Admin only
   const box = h("section", { class: "card" });
   const sel = select("fb_status", [["open", t("fb_open")], ["resolved", t("fb_resolved")], ["all", t("all")]], "open", { "aria-label": t("status") });
   const load = async () => {
@@ -121,11 +122,12 @@ async function feedbackCard() {
       h("div", { class: "card-head" }, h("h2", null, t("fb_list"), " ", items.length ? h("span", { class: "badge b-pending" }, items.length) : null),
         h("div", { class: "row" }, sel, h("a", { class: "btn small", href: `/api/read-feedback?status=${sel.value}&format=csv` }, "⬇ ", t("download_excel")))),
       h("p", { class: "sub" }, t("fb_list_hint")),
+      h("div", { class: "note" }, h("a", { class: "btn small primary", href: `/api/read-feedback/pack?status=${sel.value}` }, "📦 ", t("fb_pack")), h("div", { class: "sub", style: { marginTop: "6px" } }, t("fb_pack_hint"))),
       items.length ? h("div", { class: "list" }, items.map((r) => h("div", { class: "item fb-item" },
         h("div", { class: "grow", style: { minWidth: "0" } },
-          h("div", { class: "title" }, h("a", { href: `#/staff/${r.employee_id}` }, nm(r) || r.emp_no), h("span", { class: "muted" }, ` · ${r.emp_no} · ${t(DOC[r.doc_type] || "document")}`)),
+          h("div", { class: "title" }, h("a", { href: `#/staff/${r.employee_id}` }, nm(r) || r.emp_no), h("span", { class: "muted" }, ` · ${r.emp_no} · ${r.source === "profile" ? t("fb_kind_profile") : t("fb_kind_reading")}${r.doc_type ? ` · ${t(DOC[r.doc_type] || "document")}` : ""}`)),
           h("div", { class: "meta" }, "🕒 ", dateTime(r.created_at), r.username ? ` — ${r.username}` : "", r.status === "resolved" ? ` · ✓ ${r.resolved_username || ""}` : ""),
-          r.items.map((it) => h("div", null, h("span", { class: "muted" }, t("f_" + ({ expiry: { civil_id: "civil_id_expiry", passport: "passport_expiry", visa: "visa_expiry" }[r.doc_type] }[it.field] || it.field)), ": "),
+          r.items.map((it) => h("div", null, h("span", { class: "muted" }, (it.field === "other" ? t("ri_other") : t("f_" + ({ expiry: { civil_id: "civil_id_expiry", passport: "passport_expiry", visa: "visa_expiry" }[r.doc_type] }[it.field] || it.field))), ": "),
             t("fb_read_as"), " ", h("span", { class: "pc-old-inline", dir: "auto" }, it.read ?? "—"), it.correct ? h("span", null, " · ", t("fb_right"), " ", h("b", { dir: "auto" }, it.correct)) : null)),
           r.comment ? h("div", { dir: "auto", style: { whiteSpace: "pre-line" } }, "💬 ", r.comment) : null),
         h("div", { class: "row doc-actions" },
@@ -158,7 +160,7 @@ export async function render(el, _p, { me, query }) {
   el.append(pageHead(t("nav_profile_changes")),
     h("p", { class: "sub" }, t("pc_intro")),
     await rereadCard(),
-    await feedbackCard(),
+    await feedbackCard(me),
     h("div", { class: "toolbar" }, sel),
     items.length ? h("div", { class: "grid" }, items.map((c) => h("section", { class: "card" },
       h("div", { class: "card-head" },

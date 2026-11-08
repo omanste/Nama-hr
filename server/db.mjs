@@ -176,6 +176,8 @@ const MIGRATIONS = [
      doc_type TEXT, items TEXT NOT NULL DEFAULT '[]', comment TEXT, status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','resolved')),
      resolved_by INTEGER, resolved_at TEXT, created_at TEXT NOT NULL);
    CREATE INDEX rf_status ON read_feedback(status, id);`,
+  // 34: the same list also takes a mistake reported on any profile field (no document: file_id 0)
+  `ALTER TABLE read_feedback ADD COLUMN source TEXT NOT NULL DEFAULT 'reading';`,
 ];
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */

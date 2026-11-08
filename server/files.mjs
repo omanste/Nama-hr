@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import path from "node:path";
 import { nowIso, tx, getSetting, setSetting } from "./db.mjs";
 import { send, sendRaw, readBody, readJson, HttpError } from "./http.mjs";
+import { makeZip } from "./zip.mjs";
 import { can, canViewEmployee } from "./perm.mjs";
 import { audit } from "./audit.mjs";
 import { isIsoDate } from "./leave.mjs";
@@ -231,8 +232,28 @@ export function registerFiles(api, ctx) {
     audit(db, req.sess.user.id, "file.read_feedback", "employee", f.employee_id, null, { file_id: f.id, items, comment });
     send(req, res, 201, { id });
   });
+  const needAdmin = (sess) => { if (sess.user.role !== "admin") throw forbidden(); };
+  // a mistake on any profile field (the person, HR, Admin): what it shows, what's right, a comment, and the document if any
+  const REPORT_FIELDS = ["name_ar", "name_en", "civil_id", "civil_id_expiry", "dob", "gender", "nationality", "passport_no", "passport_expiry", "visa_expiry",
+    "mobile", "personal_phone", "email", "personal_email", "perm_wilayat", "current_area", "address", "job_title", "department_id", "join_date", "bank_name", "bank_account", "bank_iban", "other"];
+  api.post("/api/employees/:id/report-issue", async (req, res) => {
+    const emp = getEmployee(db, req.params.id);
+    if (!emp) throw new HttpError(404, "not_found", "Employee not found");
+    if (!can(req.sess, "employee.edit") && emp.id !== req.sess.user.employee_id) throw forbidden();
+    const b = await readJson(req);
+    const field = REPORT_FIELDS.includes(b.field) ? b.field : null;
+    if (!field) throw Object.assign(new HttpError(400, "invalid", "Choose the field"), { field: "field" });
+    const correct = String(b.correct || "").trim().slice(0, 300) || null, comment = String(b.comment || "").trim().slice(0, 1000);
+    if (!correct && !comment) throw Object.assign(new HttpError(400, "invalid", "Write the right value or what's wrong"), { field: "comment" });
+    const f = b.file_id ? db.prepare("SELECT id, doc_type FROM files WHERE id=? AND employee_id=? AND kind='doc'").get(Number(b.file_id), emp.id) : null;
+    const items = [{ field, read: field === "other" ? null : emp[field] ?? null, correct }];
+    const id = Number(db.prepare("INSERT INTO read_feedback(file_id,employee_id,user_id,doc_type,items,comment,created_at,source) VALUES(?,?,?,?,?,?,?,'profile')")
+      .run(f ? f.id : 0, emp.id, req.sess.user.id, f ? f.doc_type : null, JSON.stringify(items), comment || null, nowIso()).lastInsertRowid);
+    audit(db, req.sess.user.id, "employee.report_issue", "employee", emp.id, null, { items, comment, file_id: f ? f.id : null });
+    send(req, res, 201, { id });
+  });
   api.get("/api/read-feedback", (req, res) => {
-    needHr(req.sess);
+    needAdmin(req.sess);
     const status = ["open", "resolved", "all"].includes(req.query.get("status")) ? req.query.get("status") : "open";
     const rows = db.prepare(`SELECT r.*, e.emp_no, e.name_ar, e.name_en, u.username, f.name file_name, f.mime, ru.username resolved_username
       FROM read_feedback r JOIN employees e ON e.id=r.employee_id LEFT JOIN users u ON u.id=r.user_id LEFT JOIN files f ON f.id=r.file_id LEFT JOIN users ru ON ru.id=r.resolved_by
@@ -247,8 +268,55 @@ export function registerFiles(api, ctx) {
     }
     send(req, res, 200, { items: rows });
   });
+  // Admin: one .zip to send to whoever fixes the reader — the reports, what the reader saw (its reading of each document), the
+  // profile values involved, and the documents themselves. Built on request; nothing is kept.
+  api.get("/api/read-feedback/pack", (req, res) => {
+    needAdmin(req.sess);
+    const status = ["open", "resolved", "all"].includes(req.query.get("status")) ? req.query.get("status") : "open";
+    const rows = db.prepare(`SELECT r.*, e.emp_no, u.username FROM read_feedback r JOIN employees e ON e.id=r.employee_id LEFT JOIN users u ON u.id=r.user_id
+      ${status === "all" ? "" : "WHERE r.status=?"} ORDER BY r.id LIMIT 300`).all(...(status === "all" ? [] : [status]));
+    const PERSONAL = ["name_ar", "name_en", "civil_id", "civil_id_expiry", "dob", "gender", "nationality", "passport_no", "passport_expiry", "visa_expiry"];
+    const out = [], docs = new Map(); let bytes = 0;
+    const addDoc = (fid) => {
+      if (docs.has(fid)) return docs.get(fid).path;
+      const f = db.prepare("SELECT * FROM files WHERE id=?").get(fid);
+      const p = f && path.join(ctx.dataDir, "uploads", String(f.id));
+      if (!f || !fs.existsSync(p) || bytes > 150 * 1024 * 1024 || docs.size >= 120) return null;
+      const ext = { "application/pdf": ".pdf", "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp" }[f.mime] || "";
+      const name = `documents/${f.id}-${f.doc_type || "doc"}${ext}`, data = fs.readFileSync(p); bytes += data.length;
+      docs.set(fid, { path: name, data, reading: f.extracted ? JSON.parse(f.extracted) : null, doc_type: f.doc_type, uploaded_at: f.uploaded_at });
+      return name;
+    };
+    for (const r of rows) {
+      const emp = getEmployee(db, r.employee_id), items = JSON.parse(r.items || "[]");
+      // the document named in the report; for a personal detail with none, the person's current civil ID and passport
+      const fids = r.file_id ? [r.file_id] : items.some((it) => PERSONAL.includes(it.field))
+        ? db.prepare("SELECT id FROM files WHERE employee_id=? AND kind='doc' AND archived_at IS NULL AND doc_type IN ('civil_id','passport') ORDER BY uploaded_at DESC LIMIT 3").all(r.employee_id).map((x) => x.id) : [];
+      const documents = fids.map((id) => { const pth = addDoc(id), d = docs.get(id); return pth ? { file: pth, doc_type: d.doc_type, uploaded_at: d.uploaded_at, reader_read: d.reading } : null; }).filter(Boolean);
+      out.push({ report: r.id, status: r.status, date: r.created_at, reported_by: r.username, kind: r.source === "profile" ? "profile field" : "document reading",
+        employee: r.emp_no, items, comment: r.comment, profile_now: emp ? Object.fromEntries(PERSONAL.map((k) => [k, emp[k] ?? null])) : null, documents });
+    }
+    const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const csv = ["Report,Date,Employee ID,Kind,Field,Shown / read as,Correct value,Comment,Documents,Reported by"].concat(out.flatMap((o) => (o.items.length ? o.items : [{}]).map((it) =>
+      [o.report, o.date, o.employee, o.kind, it.field || "", it.read ?? "", it.correct ?? "", o.comment || "", o.documents.map((d) => d.file).join(" "), o.reported_by].map(q).join(","))));
+    const readme = [
+      "Nama HR — reports of wrong profile details and document readings",
+      `Made ${nowIso()} by ${req.sess.user.username}. Reports: ${out.length} (${status}). Documents: ${docs.size}.`,
+      "",
+      "reports.json — one entry per report: the field, what the portal shows or read, the correct value, the comment,",
+      "               the profile's personal details now, and each related document with what the reader read from it.",
+      "reports.csv  — the same as a table (opens in Excel).",
+      "documents/   — the documents, named <file id>-<type>.",
+      "",
+      "This file holds personal data. Share it only with the person fixing the reader, and delete it after.",
+    ].join("\r\n");
+    const zip = makeZip([{ name: "README.txt", data: readme }, { name: "reports.json", data: JSON.stringify(out, null, 2) }, { name: "reports.csv", data: "\ufeff" + csv.join("\r\n") },
+      ...[...docs.values()].map((d) => ({ name: d.path, data: d.data }))]);
+    audit(db, req.sess.user.id, "read_feedback.pack", "employee", null, null, { reports: out.length, documents: docs.size });
+    sendRaw(req, res, 200, zip, "application/zip", { "Content-Disposition": `attachment; filename="nama-hr-reports-${nowIso().slice(0, 10)}.zip"`, "Cache-Control": "no-store" });
+  });
   api.post("/api/read-feedback/:id/resolve", (req, res) => {
-    needHr(req.sess);
+    needAdmin(req.sess);
     const r = db.prepare("SELECT * FROM read_feedback WHERE id=?").get(Number(req.params.id));
     if (!r) throw new HttpError(404, "not_found", "Not found");
     db.prepare("UPDATE read_feedback SET status=?, resolved_by=?, resolved_at=? WHERE id=?").run(r.status === "open" ? "resolved" : "open", req.sess.user.id, nowIso(), r.id);
