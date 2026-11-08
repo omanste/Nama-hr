@@ -135,6 +135,31 @@ export function fixConfusedLetters(w) {
   }
   return w;
 }
+// a plain Arabic → Latin spelling, the way Omani names are usually written on cards (for completing a cut family name)
+const LATIN = { ا: "a", أ: "a", إ: "i", آ: "a", ب: "b", ت: "t", ث: "th", ج: "j", ح: "h", خ: "kh", د: "d", ذ: "dh", ر: "r", ز: "z", س: "s", ش: "sh",
+  ص: "s", ض: "dh", ط: "t", ظ: "dh", ع: "a", غ: "gh", ف: "f", ق: "q", ك: "k", ل: "l", م: "m", ن: "n", ه: "h", ة: "a", و: "w", ي: "y", ى: "a", ئ: "y", ء: "", ؤ: "w" };
+function toLatin(ar) {
+  const s = [...ar];
+  return s.map((c, i) => (c === "ي" && i === s.length - 1 ? "i" : c === "و" && i > 0 ? "o" : LATIN[c] ?? "")).join("");
+}
+const skeleton = (w) => w.replace(/[aeiouy]/g, "");
+/** The family name a card's "<<<" line cut short, finished from the Arabic name read on the same card: the list spelling that
+ * starts the same way, else a plain spelling of the Arabic whose consonants continue the cut letters. "Maqb" + «المقبالي» → "maqbali". */
+export function familyFromArabic(fragment, arWord) {
+  const p = word(fragment);
+  const ar = String(arWord || "").replace(/[ً-ْـ]/g, "").replace(/^ال/, "");
+  if (p.length < 2 || !ar || FAMILY[p] || GIVEN[p]) return null;
+  const listed = Object.keys(FAMILY).filter((k) => arKey(FAMILY[k]) === arKey(ar) && k.startsWith(p) && k.length > p.length).sort((a, b) => a.length - b.length);
+  if (listed.length) return listed[0];
+  if (p.length < 3) return null;
+  const lat = toLatin(ar), want = skeleton(p);
+  if (!want || !skeleton(lat).startsWith(want)) return null;
+  // walk the spelling until it has used as many consonants as the cut letters, then add what follows
+  let n = 0, at = 0;
+  for (; at < lat.length && n < want.length; at++) if (!/[aeiouy]/.test(lat[at])) n++;
+  const rest = lat.slice(at);
+  return rest ? p + rest : null;
+}
 /** A family name the card cut short ("Jabr" from "JABRI", the "<<<" line is only 30 letters): the one family name it starts, if just one. */
 export function completeFamily(part) {
   const p = word(part);

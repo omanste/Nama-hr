@@ -8,7 +8,7 @@ import { createRequire } from "node:module";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { toCountryCode } from "../public/js/countries.js";
-import { nameParts, completeFamily, arKey, fixConfusedLetters, isKnownName } from "./names-ar.mjs";
+import { nameParts, completeFamily, familyFromArabic, arKey, fixConfusedLetters, isKnownName } from "./names-ar.mjs";
 
 const require = createRequire(import.meta.url);
 const workers = {}; // one per language: "eng" (labels, "<<<" lines) and "ara" (the Arabic name on the front)
@@ -124,8 +124,10 @@ export function parseMrz(text) {
     if (nameLine.replace(/</g, "")) {
       if (letters(l1.slice(2, 5)) === "OMN") out.name_en = words(nameLine);
       else { const [sur, given = ""] = nameLine.split("<<"); out.name_en = words(`${given}<${sur}`); }
-      // the line holds 30 letters: a long name fills it to the end and loses its last letters ("AL<JABR" for Al Jabri)
-      if (nameLine.length >= 30) out.name_cut = true;
+      // the line holds 30 letters: a long name fills it to the end and loses its last letters ("AL<JABR" for Al Jabri). It is cut
+      // when the name runs to the line's end with no "<" after it — also when the scan dropped or merged a letter or two
+      const raw = String(L[i + 2] || "").replace(/[^A-Z<]/g, "").slice(0, 30).replace(/<+$/, "");
+      if (nameLine.length >= 30 || (nameLine.length >= 28 && raw === nameLine && /[A-Z]$/.test(String(L[i + 2] || "").replace(/[^A-Z<]/g, "").slice(0, 30)))) out.name_cut = true;
     }
   }
   return clean(out);
@@ -308,6 +310,8 @@ export async function readDocument(buffer, { arabic = false } = {}) {
       if (ar) front.name_ar = ar;
     } catch (e) { console.error(`ID reader (Arabic): ${e.message}`); }
   }
+  if (mrz.cut_name && front.name_ar) mrz.name_en = completeName(mrz.name_en, { text, nameAr: front.name_ar });
+  delete mrz.cut_name;
   const found = { ...front, ...mrz }; // MRZ wins: it is check-digit verified
   // which values the card's own check digits confirm (the rest need a closer look)
   found.verified = Object.keys(mrz).filter((k) => k !== "kind");
@@ -316,15 +320,41 @@ export async function readDocument(buffer, { arabic = false } = {}) {
 }
 
 const mrzName = (f) => f.mrz_name || null;
-/** A name the "<<<" line cut short: the full one printed on the card, or the one known family name it starts. */
+const cap = (w) => w[0].toUpperCase() + w.slice(1).toLowerCase();
+/** A name whose last word the "<<<" line cut short ("… Al Maqb"): only that word is finished, from — first that works — the
+ * English printed on the card (wrapped lines too), the family name in the Arabic name read from the card, or the family-name
+ * list. Nothing is added or reordered. Unchanged when the last word is already a known name or nothing fits. */
+export function completeName(nameEn, { text = "", nameAr = "" } = {}) {
+  const ws = String(nameEn || "").split(" ").filter(Boolean), frag = ws.at(-1) || "";
+  if (ws.length < 2 || frag.length < 2 || isKnownName(frag)) return nameEn;
+  const f = frag.toLowerCase(), others = ws.slice(0, -1).map((w) => w.toUpperCase()).filter((w) => w.length > 2);
+  // a. the printed English name: a longer word starting with the cut letters, best on a line with the name's other words
+  let best = null;
+  for (const line of String(text || "").split(/\r?\n/)) {
+    if (line.includes("<")) continue;
+    const lw = line.toUpperCase().split(/[^A-Z]+/).filter(Boolean);
+    for (const w of lw) {
+      if (!w.toLowerCase().startsWith(f) || w.length <= frag.length || w.length > frag.length + 10) continue;
+      const score = lw.filter((x) => others.includes(x)).length;
+      if (!best || score > best.score) best = { w, score };
+    }
+  }
+  if (best) return [...ws.slice(0, -1), cap(best.w)].join(" ");
+  // b / c. the family name in the Arabic name (its last word)
+  const arLast = String(nameAr || "").trim().split(/\s+/).at(-1);
+  const fromAr = arLast && familyFromArabic(frag, arLast);
+  if (fromAr) return [...ws.slice(0, -1), cap(fromAr)].join(" ");
+  // d. the one family name in the list it starts
+  const done = completeFamily(frag);
+  return done ? [...ws.slice(0, -1), cap(done)].join(" ") : nameEn;
+}
+/** A name the "<<<" line cut short: the full one printed on the card, or its last word finished (see completeName). */
 function fixName(mrz, text) {
   if (!mrz.name_en) return;
   const full = fullPrintedName(text, mrz.name_en);
   if (full) mrz.name_en = full;
-  else if (mrz.name_cut) {
-    const ws = mrz.name_en.split(" "), done = completeFamily(ws.at(-1));
-    if (done) mrz.name_en = [...ws.slice(0, -1), done[0].toUpperCase() + done.slice(1)].join(" ");
-  }
+  else if (mrz.name_cut) mrz.name_en = completeName(mrz.name_en, { text });
+  mrz.cut_name = !!mrz.name_cut && !full; // kept until the Arabic name is read, which can finish it too
   delete mrz.name_cut;
 }
 
@@ -342,6 +372,8 @@ export async function readPdf(buffer, readImage = readDocument, opts = {}) {
     const mrz = parseMrz(text), front = parseFront(text);
     fixName(mrz, text);
     const ar = arabicNameFrom(text, mrz.name_en); if (ar) front.name_ar = ar;
+    const cut = !!mrz.cut_name; delete mrz.cut_name;
+    if (cut && front.name_ar) mrz.name_en = completeName(mrz.name_en, { text, nameAr: front.name_ar });
     if (mrz.expiry || mrz.dob || front.expiry) {
       const found = { ...front, ...mrz };
       found.verified = Object.keys(mrz).filter((k) => k !== "kind");
@@ -365,6 +397,7 @@ export async function readPdf(buffer, readImage = readDocument, opts = {}) {
           if (full && full.split(" ").length >= (found.name_en || "").split(" ").length) found.name_en = full;
           else if (found.mrz_name && found.mrz_name.split(" ").length > (found.name_en || "").split(" ").length) found.name_en = found.mrz_name;
           delete found.mrz_name; if (!found.name_ar) delete found.name_ar;
+          if (cut && found.name_en) found.name_en = completeName(found.name_en, { text: all, nameAr: found.name_ar });
         } catch (e) { console.error(`ID reader (PDF pages): ${e.message}`); }
       }
       return { found, text };

@@ -3,7 +3,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { boot, adminClient, makePerson } from "./helpers.mjs";
-import { parseMrz, parseFront, parseArabicName, fullPrintedName, arabicNameFrom, arabicFromVariants } from "../server/idread.mjs";
+import { parseMrz, parseFront, parseArabicName, fullPrintedName, arabicNameFrom, arabicFromVariants, completeName } from "../server/idread.mjs";
 import { toArabicName, completeFamily, completeArabicName, fixConfusedLetters } from "../server/names-ar.mjs";
 import { runExpiryCheck } from "../server/jobs.mjs";
 
@@ -453,4 +453,21 @@ test("feedback on a reading: the person or HR reports what was read wrong (with 
   assert.ok((await hr.c.get("/api/read-feedback?status=resolved")).data.items.some((x) => x.id === mine.id));
   // the profile itself is not changed by feedback
   assert.notEqual((await hr.c.get(`/api/employees/${p.emp.id}`)).data.employee.name_en, "Sample Person Al Test");
+});
+
+test("an English family name the card's 30-letter line cut short is finished from the card (made-up names)", () => {
+  const td1 = (line) => parseMrz(`IDOMN12345678<4<<<<<<<<<<<<<<<\n9001011F3001011OMN<<<<<<<<<<<0\n${line}`);
+  // cut at the line's end: noticed; also when the scan lost a letter (29)
+  assert.equal(td1("SAMPLE<KHALFAN<SAIF<<AL<MAQBA").name_cut, true);
+  assert.equal(td1("SAMPLE<KHALFN<SAIF<<AL<MAQBA").name_cut, true, "one letter lost");
+  assert.equal(td1("SAMPLE<KHALID<ALI<<AL<TESTI<<<").name_cut, undefined, "ends in filler: not cut");
+  assert.equal(td1("TESTA<KHALID<ALI<<AL<NAMANI<KL").name_cut, undefined, "scanner noise after the filler is not a cut");
+  // from the Arabic name read on the same card: the list spelling, or a plain spelling of an unknown family name
+  assert.equal(completeName("Sample Khalfan Saif Al Maqb", { nameAr: "سالم بن خلفان بن سيف المقبالي" }), "Sample Khalfan Saif Al Maqbali");
+  assert.equal(completeName("Sample Khalfan Saif Al Mukht", { nameAr: "سالم خلفان سيف المختبري" }), "Sample Khalfan Saif Al Mukhtbri");
+  // from the English printed on the card, wrapped onto two lines
+  assert.equal(completeName("Sample Khalid Ali Al Hosn", { text: "SAMPLE KHALID ALI HAMOOD AL\nHOSNIYAH\nLight Vehicle" }), "Sample Khalid Ali Al Hosniyah");
+  // not cut, or nothing that fits: unchanged (no extra middle name is ever added)
+  assert.equal(completeName("Sample Khalid Ali Al Namani", { text: "SAMPLE KHALID ALI HAMOOD AL\nNAMANI", nameAr: "سالم بن خالد بن علي بن حمود النعماني" }), "Sample Khalid Ali Al Namani");
+  assert.equal(completeName("Sample Khalid Ali Al Zqx", { nameAr: "سالم خالد علي المقبالي" }), "Sample Khalid Ali Al Zqx");
 });
