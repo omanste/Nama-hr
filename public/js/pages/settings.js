@@ -103,6 +103,8 @@ function restoreCard() {
 function sitesCard(settings, save) {
   const rows = h("div", { class: "sites" });
   const grace = h("input", { type: "number", min: 0, max: 60, step: 1, value: settings.late_grace_min ?? 15, style: { maxWidth: "120px" } });
+  const remIn = h("input", { type: "number", name: "remind_checkin_min", min: 1, max: 120, step: 1, value: settings.remind_checkin_min ?? 10, style: { maxWidth: "120px" } });
+  const remOut = h("input", { type: "number", name: "remind_checkout_min", min: 1, max: 120, step: 1, value: settings.remind_checkout_min ?? 10, style: { maxWidth: "120px" } });
   const row = (s = {}) => {
     const inp = (k, attrs) => h("input", { name: k, value: s[k] ?? "", ...attrs });
     const f = { name_ar: inp("name_ar", { dir: "rtl" }), name_en: inp("name_en", { dir: "ltr" }), lat: inp("lat", { inputmode: "decimal", dir: "ltr" }),
@@ -130,7 +132,8 @@ function sitesCard(settings, save) {
   for (const s of settings.att_sites || []) rows.append(row(s));
   return h("section", { class: "card" }, h("h2", null, t("att_sites")), h("p", { class: "sub" }, t("att_sites_hint")), rows,
     h("div", { class: "row", style: { marginTop: "10px" } }, h("button", { class: "btn", type: "button", onclick: () => rows.append(row()) }, "+ ", t("site_add"))),
-    h("div", { class: "fields", style: { marginTop: "14px" } }, field(t("late_grace"), grace, { hint: t("att_policy_note", { n: grace.value }) })),
+    h("div", { class: "fields", style: { marginTop: "14px" } }, field(t("late_grace"), grace, { hint: t("att_policy_note", { n: grace.value }) }),
+      field(t("remind_in"), remIn, { hint: t("remind_in_hint") }), field(t("remind_out"), remOut, { hint: t("remind_out_hint") })),
     h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", {
-      att_sites: [...rows.children].map((r) => r.read()), late_grace_min: Number(grace.value) })) }, t("save"))));
+      att_sites: [...rows.children].map((r) => r.read()), late_grace_min: Number(grace.value), remind_checkin_min: Number(remIn.value), remind_checkout_min: Number(remOut.value) })) }, t("save"))));
 }

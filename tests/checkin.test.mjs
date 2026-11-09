@@ -328,22 +328,22 @@ test("leaving after hours: a reason; the extra time goes to the manager (who may
   t.app.ctx.fakeToday = "2026-11-02"; t.app.ctx.fakeClock = "23:30";
 });
 
-test("reminders: not checked in by start + 30, not out by end + 30 (with the two buttons), once each; the manager's morning list", async () => {
+test("reminders: not checked in by start + 10, not out by end + 10 (with the two buttons), once each — times set by Admin; the manager's morning list", async () => {
   const r = await makePerson(t.base, admin, { emp_no: "RM1", name_ar: "تذكير", join_date: "2022-01-01", department_id: dept.id, shift: 2, att_mode: "online" }, "staff");
   const fp = await makePerson(t.base, admin, { emp_no: "RM2", name_ar: "بصمة فقط", join_date: "2022-01-01", department_id: dept.id, att_mode: "machine" }, "staff");
   const notes = async (p) => (await p.c.get("/api/notifications")).data.items;
   const day = "2026-11-10"; // Tuesday
-  runReminders(t.app.ctx, day, 9 * 60 + 20); // 09:20: shift 2 starts 09:00 — not yet
+  runReminders(t.app.ctx, day, 9 * 60 + 9); // 09:09: shift 2 starts 09:00 — not yet (10 minutes by default)
   assert.ok(!(await notes(r)).some((n) => /haven't checked in/.test(n.title_en)));
-  runReminders(t.app.ctx, day, 9 * 60 + 35); runReminders(t.app.ctx, day, 9 * 60 + 40);
+  runReminders(t.app.ctx, day, 9 * 60 + 10); runReminders(t.app.ctx, day, 9 * 60 + 40);
   assert.equal((await notes(r)).filter((n) => /haven't checked in/.test(n.title_en)).length, 1, "once");
   assert.ok(!(await notes(fp)).some((n) => /checked in/.test(n.title_en)), "not for fingerprint-only staff");
   // checked in; 18:35 → the check-out question
   await r.c.post("/api/attendance/checkin/consent", {});
   t.app.ctx.fakeToday = day; t.app.ctx.fakeClock = "09:50"; await ci(r, "in");
-  runReminders(t.app.ctx, day, 18 * 60 + 20);
+  runReminders(t.app.ctx, day, 18 * 60 + 9);
   assert.ok(!(await notes(r)).some((n) => /haven't checked out/.test(n.title_en)));
-  runReminders(t.app.ctx, day, 18 * 60 + 35);
+  runReminders(t.app.ctx, day, 18 * 60 + 10);
   const out = (await notes(r)).find((n) => /haven't checked out/.test(n.title_en));
   assert.ok(out); assert.equal(out.link, "#/?ci=out");
   // not on a rest day
@@ -384,5 +384,26 @@ test("outside the sites from a phone: the quick check asks for the reason first;
   // with the reason: saved, waiting for the manager
   const ok = await ci(p, "in", FAR, "&reason=" + encodeURIComponent("زيارة موقع"));
   assert.equal(ok.status, 201); assert.equal(ok.data.checkin.approval, "pending");
+  t.app.ctx.fakeToday = "2026-11-02"; t.app.ctx.fakeClock = "23:30";
+});
+
+test("Admin sets the reminder times in Settings (1–120 minutes); others can't", async () => {
+  assert.equal((await admin.get("/api/settings")).data.remind_checkin_min, 10);
+  assert.equal((await hr.c.put("/api/settings", { remind_checkin_min: 20 })).status, 403);
+  assert.equal((await admin.put("/api/settings", { remind_checkin_min: 0 })).status, 400);
+  assert.equal((await admin.put("/api/settings", { remind_checkout_min: 121 })).status, 400);
+  assert.equal((await admin.put("/api/settings", { remind_checkin_min: 20, remind_checkout_min: 15 })).status, 200);
+  const r = await makePerson(t.base, admin, { emp_no: "RM9", name_ar: "تذكير معدّل", join_date: "2022-01-01", department_id: dept.id, shift: 2, att_mode: "online" }, "staff");
+  const day = "2026-11-17"; // Tuesday
+  const count = async (re) => (await r.c.get("/api/notifications")).data.items.filter((n) => re.test(n.title_en)).length;
+  runReminders(t.app.ctx, day, 9 * 60 + 15); assert.equal(await count(/haven't checked in/), 0, "09:15 — set to 20");
+  runReminders(t.app.ctx, day, 9 * 60 + 20); assert.equal(await count(/haven't checked in/), 1);
+  await r.c.post("/api/attendance/checkin/consent", {});
+  t.app.ctx.fakeToday = day; t.app.ctx.fakeClock = "09:25"; await ci(r, "in");
+  runReminders(t.app.ctx, day, 18 * 60 + 14); assert.equal(await count(/haven't checked out/), 0);
+  runReminders(t.app.ctx, day, 18 * 60 + 15); assert.equal(await count(/haven't checked out/), 1);
+  // leaving after hours still asks a reason only after 30 minutes
+  t.app.ctx.fakeClock = "18:20"; assert.equal((await ci(r, "out")).status, 201);
+  await admin.put("/api/settings", { remind_checkin_min: 10, remind_checkout_min: 10 });
   t.app.ctx.fakeToday = "2026-11-02"; t.app.ctx.fakeClock = "23:30";
 });

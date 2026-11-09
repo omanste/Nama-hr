@@ -227,10 +227,11 @@ export function registerJobs(api, ctx) {
     try {
       const today = todayMuscat();
       if (state.daily !== today) { state.daily = today; const r = runAnniversaries(ctx, today); runExpiryCheck(ctx, today); runBirthdayAlerts(ctx, today); runWeeklyAttendance(ctx, today); runMonthlySummary(ctx, today); runCheckinRetention(ctx, today); if (r.credits) console.log(`Leave credits posted: ${r.credits}, balances over the cap for review: ${r.reviews}`); }
-      try { runReminders(ctx, today, clockMin(muscatTime())); } catch (e) { console.error("reminders failed:", e); }
       if (state.backup !== today && muscatTime() >= (env.BACKUP_TIME || "02:00")) { state.backup = today; backup(ctx, today, Number(env.BACKUP_KEEP_DAYS || 14)); }
     } catch (e) { console.error("scheduled job failed:", e); }
   };
-  tick();
-  ctx.timers.push(setInterval(tick, 5 * 60e3).unref());
+  // reminders every minute, so they arrive close to the time set in Settings
+  const remind = () => { try { runReminders(ctx, todayMuscat(), clockMin(muscatTime())); } catch (e) { console.error("reminders failed:", e); } };
+  tick(); remind();
+  ctx.timers.push(setInterval(tick, 5 * 60e3).unref(), setInterval(remind, 60e3).unref());
 }

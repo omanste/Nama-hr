@@ -90,8 +90,8 @@ export function mayDecideCheckin(db, sess, c) {
 
 /* Reminders (every few minutes, from the job runner). Only for people who check in online — on "online", or on "both"
  * with an online check-in in the last 14 days — on a working day, once a day each:
- *   start + 30 min with no check-in → "you haven't checked in yet";
- *   end + 30 min still checked in → "check out now, or tell us you're still working" (buttons on the pop-up);
+ *   start + N min with no check-in → "you haven't checked in yet" (N: Settings, 10 by default);
+ *   end + N min still checked in → "check out now, or tell us you're still working" (buttons on the pop-up; 10 by default);
  *   23:00, said "still working" and still checked in → one last reminder;
  *   from 09:00, each manager gets one list of their people with no check-out (or no check-in) on the last working day. */
 const once = (db, empId, date, kind) => db.prepare("INSERT OR IGNORE INTO att_reminders(employee_id,date,kind,sent_at) VALUES(?,?,?,?)").run(empId, date, kind, nowIso()).changes > 0;
@@ -102,17 +102,18 @@ export function runReminders(ctx, today, now) {
     WHERE e.status='active' AND coalesce(e.att_mode,'both')<>'machine'`).all()
     .filter((e) => !exempt.has(e.id) && (e.att_mode === "online" || db.prepare("SELECT 1 FROM att_checkins WHERE employee_id=? AND at>=?").get(e.id, since)));
   let sent = 0;
+  const afterStart = Number(getSetting(db, "remind_checkin_min", 10)) || 10, afterEnd = Number(getSetting(db, "remind_checkout_min", 10)) || 10;
   const lastOf = (id, d) => db.prepare("SELECT kind FROM att_checkins WHERE employee_id=? AND substr(at,1,10)=? AND coalesce(approval,'approved')<>'rejected' ORDER BY at DESC, id DESC LIMIT 1").get(id, d);
   const missedBy = new Map(); // manager user → names
   for (const e of people) {
     const shift = shiftFor(db, e, today), last = lastOf(e.id, today);
     if (workingDay(db, e, today)) {
-      if (!last && now >= shift.start + AFTER_HOURS_MIN && now < shift.end && once(db, e.id, today, "in")) {
+      if (!last && now >= shift.start + afterStart && now < shift.end && once(db, e.id, today, "in")) {
         notify(ctx, [e.user_id], { title_ar: "لم تسجّل حضورك بعد", title_en: "You haven't checked in yet", body_ar: `بدأ دوامك الساعة ${pad2(shift.start)}`, body_en: `Your shift started at ${pad2(shift.start)}`, link: "#/", inAppOnly: true, tag: "ci-in" });
         sent++;
       }
       const open = openExtra(db, e.id, today);
-      if (last && last.kind === "in" && !open && now >= shift.end + AFTER_HOURS_MIN && once(db, e.id, today, "out")) {
+      if (last && last.kind === "in" && !open && now >= shift.end + afterEnd && once(db, e.id, today, "out")) {
         notify(ctx, [e.user_id], { title_ar: "لم تسجّل انصرافك", title_en: "You haven't checked out", body_ar: `انتهى دوامك الساعة ${pad2(shift.end)} — سجّل انصرافك، أو أخبرنا إن كنت ما زلت في العمل`,
           body_en: `Your shift ended at ${pad2(shift.end)} — check out, or tell us you're still working`, link: "#/?ci=out", inAppOnly: true, tag: "ci-out",
           actions: [{ action: "#/?ci=out", title_ar: "انصراف الآن", title_en: "Check out now" }, { action: "#/?ci=stay", title_ar: "ما زلت في العمل", title_en: "I'm still working" }] });
