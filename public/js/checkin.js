@@ -37,7 +37,11 @@ export async function checkinCard() {
     mainBtn, stayBtn);
   // opened from a reminder's buttons ("check out now" / "I'm still working")
   const want = new URLSearchParams(location.hash.split("?")[1] || "").get("ci");
-  if (want && (want === "out" ? next === "out" : stayBtn)) setTimeout(() => (want === "out" ? start("out", st, mainBtn) : stay()), 300);
+  if (want && (want === "out" ? next === "out" : stayBtn)) {
+    // used once: take it out of the address so a re-render doesn't open another window
+    try { history.replaceState(null, "", location.href.replace(/([?&])ci=[^&]*&?/, "$1").replace(/[?&]$/, "")); } catch { /* old browser */ }
+    setTimeout(() => (want === "out" ? start("out", st, mainBtn) : stay()), 300);
+  }
   return card;
 }
 const dmyShort = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
@@ -50,7 +54,10 @@ async function stay() {
   catch (e) { toast(errText(e), "bad"); }
 }
 
+let running = false; // one check-in at a time, however often the card is redrawn or the button tapped
 async function start(kind, st, btn) {
+  if (running) return;
+  running = true;
   btn.disabled = true;
   try {
     if (!st.consent) { if (!(await notice())) return; await api.post("/api/attendance/checkin/consent", {}); st.consent = true; }
@@ -67,7 +74,7 @@ async function start(kind, st, btn) {
     if (!photo) return;
     await send(kind, pos, photo, reason, extraReason);
   } catch (e) { toast(e.status || e.error ? errText(e) : (e.message && !/load failed|failed to fetch|network/i.test(e.message) ? e.message : t("ci_conn_lost")), "bad"); }
-  finally { btn.disabled = false; }
+  finally { btn.disabled = false; running = false; }
 }
 
 async function send(kind, pos, photo, reason, extraReason = "") {
@@ -118,29 +125,74 @@ function locate() {
   });
 }
 
-/** A photo taken live with the camera (front camera on phones); never a file from the gallery. Resolves with a JPEG blob, or null. */
+/** Shrink a photo to 640 px wide as a JPEG (like the live camera's), from an image file. */
+function shrinkImage(file) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const w = Math.min(640, img.naturalWidth || 640), hgt = Math.round(w * ((img.naturalHeight || 480) / (img.naturalWidth || 640)));
+      const c = document.createElement("canvas"); c.width = w; c.height = hgt;
+      c.getContext("2d").drawImage(img, 0, 0, w, hgt); URL.revokeObjectURL(url);
+      c.toBlob((b) => resolve(b || file), "image/jpeg", 0.82);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+
+/** A photo taken live with the camera (front camera on phones); never a file from the gallery. Resolves with a JPEG blob, or null.
+ * If the live picture stays black (some phones inside a pop-up), the phone's own camera app opens instead (capture="user"). */
 function camera() {
   return new Promise(async (resolve, reject) => {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return reject(new Error(t("ci_no_camera")));
-    let stream;
+    let finished = false;
+    const finish = (v) => { if (finished) return; finished = true; resolve(v); };
+    // the phone's own camera app: a fallback that works where the live view doesn't
+    const native = h("input", { type: "file", accept: "image/*", capture: "user", hidden: true, onchange: async (ev) => {
+      const f = ev.target.files[0]; ev.target.value = "";
+      if (!f) return;
+      const b = await shrinkImage(f); stop(); close(); finish(b);
+    } });
+    const nativeBtn = h("label", { class: "btn" }, "📷 ", t("ci_phone_camera"), native);
+    const hint = h("p", { class: "sub" }, t("ci_photo_hint"));
+    const video = h("video", { class: "ci-video" });
+    video.muted = true; video.playsInline = true; video.autoplay = true; video.setAttribute("playsinline", ""); video.setAttribute("muted", "");
+    const takeBtn = h("button", { class: "btn primary", type: "button", disabled: true, onclick: () => take() }, "📸 ", t("ci_take"));
+    const status = h("p", { class: "sub ci-cam-status" }, t("ci_cam_starting"));
+    let stream = null;
+    const stop = () => { if (stream) stream.getTracks().forEach((tr) => tr.stop()); stream = null; };
+    const dlg = h("dialog", { class: "dialog" }, h("div", { class: "form" },
+      h("h2", null, t("ci_photo_title")), hint, video, status,
+      h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => close() }, t("cancel")), takeBtn)));
+    const close = () => { if (dlg.open) dlg.close(); };
+    // one close (Cancel, Esc, the back gesture) ends it: the camera light goes off and nothing else opens
+    dlg.addEventListener("close", () => { stop(); dlg.remove(); finish(null); });
+    const showFallback = (msg) => {
+      status.replaceChildren(h("span", { class: "bad-text" }, msg), " ");
+      if (!status.contains(nativeBtn)) status.append(h("div", { class: "row", style: { marginTop: "8px" } }, nativeBtn));
+    };
+    document.body.append(dlg); dlg.showModal();
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { video.hidden = true; showFallback(t("ci_no_live_camera")); return; }
     try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 960 } }, audio: false }); }
-    catch (e) { return reject(new Error(t(e && e.name === "NotAllowedError" ? "ci_camera_denied" : "ci_no_camera"))); }
-    const video = h("video", { autoplay: true, playsinline: true, muted: true, class: "ci-video" });
+    catch (e) {
+      if (e && e.name === "NotAllowedError") { close(); return reject(new Error(t("ci_camera_denied"))); }
+      video.hidden = true; showFallback(t("ci_no_live_camera")); return;
+    }
+    if (finished) { stop(); return; } // closed while the camera was starting
     video.srcObject = stream;
-    let done = false;
-    const stop = () => stream.getTracks().forEach((tr) => tr.stop());
+    const live = () => video.videoWidth > 0 && video.readyState >= 2;
+    const ready = () => { if (!live()) return; takeBtn.disabled = false; status.replaceChildren(); };
+    const play = () => { const p = video.play(); if (p && p.catch) p.catch(() => {}); };
+    video.addEventListener("loadedmetadata", play); video.addEventListener("playing", ready); video.addEventListener("loadeddata", ready);
+    video.addEventListener("click", play); // some iPhones need a touch to start the picture
+    play();
+    setTimeout(() => { if (!finished && !live()) { video.hidden = true; showFallback(t("ci_cam_black")); } }, 4000);
     const take = () => {
-      const w = Math.min(640, video.videoWidth || 640), hgt = Math.round(w * ((video.videoHeight || 480) / (video.videoWidth || 640)));
+      if (!live()) return;
+      const w = Math.min(640, video.videoWidth), hgt = Math.round(w * (video.videoHeight / video.videoWidth));
       const c = document.createElement("canvas"); c.width = w; c.height = hgt;
       c.getContext("2d").drawImage(video, 0, 0, w, hgt);
-      c.toBlob((b) => { done = true; stop(); dlg.close(); resolve(b); }, "image/jpeg", 0.82);
+      c.toBlob((b) => { stop(); finish(b); close(); }, "image/jpeg", 0.82);
     };
-    const dlg = h("dialog", { class: "dialog" }, h("div", { class: "form" },
-      h("h2", null, t("ci_photo_title")), h("p", { class: "sub" }, t("ci_photo_hint")), video,
-      h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")),
-        h("button", { class: "btn primary", type: "button", onclick: take }, "📸 ", t("ci_take")))));
-    dlg.addEventListener("close", () => { dlg.remove(); if (!done) { stop(); resolve(null); } });
-    document.body.append(dlg); dlg.showModal();
   });
 }
 
