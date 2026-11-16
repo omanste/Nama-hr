@@ -333,7 +333,7 @@ function renewButton(e, f, can, mayUpload) {
   if (!RENEWABLE.includes(f.doc_type) || !f.expiry) return null;
   if (!(can.edit() || (mayUpload && SELF_DOC_TYPES.includes(f.doc_type)))) return null;
   const days = Math.round((Date.parse(f.expiry) - Date.parse(todayIso())) / 864e5);
-  if (days > 30) return null;
+  if (days > (f.doc_type === "passport" ? 183 : 30)) return null; // a passport is renewed 6 months ahead
   // the new copy is a file (a clear scan or PDF reads better than a phone photo); it replaces this one and updates Personal
   return h("label", { class: `btn small ${days < 0 ? "warn" : ""}`, title: t("renew_hint") }, "🔄 ", t("renew"),
     h("input", { type: "file", hidden: true, accept: DOC_ACCEPT, onchange: async (ev) => {

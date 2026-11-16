@@ -146,19 +146,22 @@ const DOC_NAMES = { civil_id: ["البطاقة المدنية", "Civil ID"], pas
   certificate: ["الشهادة العلمية", "Academic certificate"], resume: ["السيرة الذاتية", "Resume"], course: ["شهادة دورة تدريبية", "Course certificate"], medical: ["مستند طبي", "Medical document"], consent: ["موافقة", "Consent"], other: ["مستند", "Document"] };
 
 /** Everything with an expiry date that ends within `days` (or already ended), for active staff. */
-export function expiringItems(db, today, days = 30) {
-  const limit = addDays(today, days), out = [];
+/** A passport must be renewed 6 months before it runs out (many countries refuse entry with less): it is listed and
+ * reminded from 6 months ahead; everything else from 30 days. */
+export const PASSPORT_DAYS = 183;
+export function expiringItems(db, today, days = 30, { passportDays = Math.max(days, PASSPORT_DAYS) } = {}) {
+  const limit = addDays(today, days), pLimit = addDays(today, passportDays), wide = pLimit > limit ? pLimit : limit, out = [];
   const emps = db.prepare("SELECT * FROM employees WHERE status IN ('active','on_leave')").all();
   const byId = new Map(emps.map((e) => [e.id, e]));
   for (const e of emps) {
     if (e.civil_id_expiry && e.civil_id_expiry <= limit) out.push({ key: `civil:${e.id}`, employee: e, what: "civil_id", expiry: e.civil_id_expiry });
-    if (e.passport_expiry && e.passport_expiry <= limit) out.push({ key: `passport:${e.id}`, employee: e, what: "passport", expiry: e.passport_expiry });
+    if (e.passport_expiry && e.passport_expiry <= pLimit) out.push({ key: `passport:${e.id}`, employee: e, what: "passport", expiry: e.passport_expiry });
     if (e.visa_expiry && e.visa_expiry <= limit) out.push({ key: `visa:${e.id}`, employee: e, what: "visa", expiry: e.visa_expiry });
     if (e.contract_end && e.contract_end <= limit) out.push({ key: `contract_end:${e.id}`, employee: e, what: "contract", expiry: e.contract_end });
   }
-  for (const f of db.prepare("SELECT * FROM files WHERE kind='doc' AND request_id IS NULL AND archived_at IS NULL AND expiry IS NOT NULL AND expiry<=?").all(limit)) {
+  for (const f of db.prepare("SELECT * FROM files WHERE kind='doc' AND request_id IS NULL AND archived_at IS NULL AND expiry IS NOT NULL AND expiry<=?").all(wide)) {
     const e = byId.get(f.employee_id);
-    if (!e) continue;
+    if (!e || f.expiry > (f.doc_type === "passport" ? pLimit : limit)) continue;
     // the civil ID copy carries the same date as the profile field: one alert is enough
     if ((f.doc_type === "civil_id" && e.civil_id_expiry === f.expiry) || (f.doc_type === "passport" && e.passport_expiry === f.expiry) || (f.doc_type === "visa" && e.visa_expiry === f.expiry)) continue;
     // only the newest copy of each kind counts (an older passport stays on file after a renewal)
@@ -169,22 +172,25 @@ export function expiringItems(db, today, days = 30) {
   return out.map((x) => ({ ...x, days: Math.round((Date.parse(x.expiry) - Date.parse(today)) / 864e5) })).sort((a, b) => (a.expiry < b.expiry ? -1 : 1));
 }
 
-/** Alerts to HR and to the person: 30 days before, 7 days before and on/after the date — once each. */
+/** Alerts to HR and to the person, once each: 30 days before, 7 days before and on/after the date — and for a passport also
+ * 6 months and 3 months before, since it has to be renewed 6 months ahead. */
 export function runExpiryCheck(ctx, today) {
   const { db } = ctx;
   const seen = getSetting(db, "expiry_notified", {});
   let sent = 0;
   for (const x of expiringItems(db, today, 30)) {
-    const stage = x.days <= 0 ? "expired" : x.days <= 7 ? "7" : "30";
+    const stage = x.days <= 0 ? "expired" : x.days <= 7 ? "7" : x.days <= 30 ? "30" : x.days <= 90 ? "90" : "180";
     const tag = `${x.key}:${x.expiry}:${stage}`;
     if (seen[tag]) continue;
     const e = x.employee, nameAr = e.name_ar || e.name_en, nameEn = e.name_en || e.name_ar;
     const [docAr, docEn] = DOC_NAMES[x.what] || DOC_NAMES.other;
     const when = { ar: x.days <= 0 ? `انتهى في ${dmy(x.expiry)}` : `ينتهي في ${dmy(x.expiry)} (بعد ${x.days} يوم)`, en: x.days <= 0 ? `expired on ${dmy(x.expiry)}` : `expires on ${dmy(x.expiry)} (in ${x.days} days)` };
     const title = x.days <= 0 ? { title_ar: `${docAr} منتهي`, title_en: `${docEn} expired` } : { title_ar: `${docAr} قارب على الانتهاء`, title_en: `${docEn} expiring soon` };
+    // a passport with less than 6 months left must be renewed now
+    const passportNote = x.what === "passport" && x.days > 0 ? { ar: " يجب تجديد الجواز قبل 6 أشهر من انتهائه.", en: " A passport must be renewed 6 months before it expires." } : { ar: "", en: "" };
     const own = db.prepare("SELECT id FROM users WHERE employee_id=? AND active=1").get(e.id);
-    notify(ctx, hrTeam(db, { except: [own && own.id] }), { ...title, body_ar: `${nameAr}: ${docAr} ${when.ar}`, body_en: `${nameEn}: ${docEn} ${when.en}`, link: `#/staff/${e.id}` });
-    if (own) notify(ctx, [own.id], { ...title, body_ar: `${docAr} ${when.ar}. يرجى التجديد ورفع النسخة الجديدة في ملفك.`, body_en: `Your ${docEn.toLowerCase()} ${when.en}. Please renew it and upload the new copy to your profile.`, link: "#/me" });
+    notify(ctx, hrTeam(db, { except: [own && own.id] }), { ...title, body_ar: `${nameAr}: ${docAr} ${when.ar}.${passportNote.ar}`, body_en: `${nameEn}: ${docEn} ${when.en}.${passportNote.en}`, link: `#/staff/${e.id}` });
+    if (own) notify(ctx, [own.id], { ...title, body_ar: `${docAr} ${when.ar}.${passportNote.ar} يرجى التجديد ورفع النسخة الجديدة في ملفك.`, body_en: `Your ${docEn.toLowerCase()} ${when.en}.${passportNote.en} Please renew it and upload the new copy to your profile.`, link: "#/me" });
     seen[tag] = today; sent++;
   }
   // probation ends today (unchanged)

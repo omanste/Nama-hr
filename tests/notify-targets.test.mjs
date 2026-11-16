@@ -107,3 +107,22 @@ test("Staff Voice to HR stays with HR (private): not Admin, not managers", async
   assert.equal((await s.c.post("/api/voice", { to: "hr", category: "suggestion", subject: "فكرة", body: "نص" })).status, 201);
   assert.deepEqual(who(at, /New/), ["h1", "h2"]);
 });
+
+test("a passport is reminded from 6 months before it expires (it must be renewed then), then at 3 months, 30 and 7 days", async () => {
+  const p = await makePerson(t.base, admin, { emp_no: "P1", name_ar: "جواز", join_date: "2022-01-01", passport_no: "A1234567", passport_expiry: "2027-05-10" }, "staff");
+  const count = () => t.db.prepare("SELECT count(*) n FROM notifications WHERE user_id=? AND title_en LIKE 'Passport%'").get(p.user.id).n;
+  runExpiryCheck(t.app.ctx, "2026-10-01"); assert.equal(count(), 0, "7 months ahead: nothing yet");
+  runExpiryCheck(t.app.ctx, "2026-11-16"); assert.equal(count(), 1, "within 6 months");
+  const n = t.db.prepare("SELECT body_en FROM notifications WHERE user_id=? AND title_en LIKE 'Passport%' ORDER BY id DESC").get(p.user.id);
+  assert.match(n.body_en, /renewed 6 months before/);
+  runExpiryCheck(t.app.ctx, "2026-11-20"); assert.equal(count(), 1, "once per stage");
+  runExpiryCheck(t.app.ctx, "2027-02-15"); assert.equal(count(), 2, "3 months");
+  runExpiryCheck(t.app.ctx, "2027-04-15"); assert.equal(count(), 3, "30 days");
+  // HR sees it on the expiring list already 6 months ahead; a civil ID only from 30 days
+  const list = (await h1.c.get("/api/expiring")).data.items;
+  assert.ok(list.some((x) => x.employee.id === p.emp.id && x.what === "passport"));
+  // HR and Admin are told too (not other staff)
+  const hrGot = t.db.prepare("SELECT count(*) n FROM notifications WHERE user_id IN (?,?) AND title_en LIKE 'Passport%' AND body_ar LIKE '%جواز%'").get(h1.user.id, adminId).n;
+  assert.ok(hrGot >= 2);
+  assert.equal(t.db.prepare("SELECT count(*) n FROM notifications WHERE user_id=? AND title_en LIKE 'Passport%' AND body_ar LIKE 'جواز:%'").get(s2.user.id).n, 0);
+});

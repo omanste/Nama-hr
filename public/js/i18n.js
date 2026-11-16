@@ -142,7 +142,7 @@ const D = {
   // home
   hello: ["مرحباً {name}", "Hello {name}"], apply_leave: ["طلب إجازة", "Apply for leave"], recent_requests: ["آخر الطلبات", "Recent requests"],
   pending_approvals: ["طلبات بانتظار موافقتك", "Requests awaiting your approval"], staff_count: ["الموظفون على رأس العمل", "Active staff"],
-  ids_expiring: ["مستندات تنتهي خلال 30 يوماً", "Documents expiring in 30 days"], all_pending: ["طلبات قيد الموافقة", "Pending requests"],
+  ids_expiring: ["مستندات تنتهي قريباً (الجوازات خلال 6 أشهر)", "Documents expiring soon (passports within 6 months)"], all_pending: ["طلبات قيد الموافقة", "Pending requests"],
   needs_attention: ["بحاجة لاستكمال", "Needs attention"], missing_join: ["بدون تاريخ تعيين", "Missing join date"],
   no_profile: ["حسابك غير مرتبط بملف موظف.", "Your login is not linked to a staff profile."],
   // staff list / profile
@@ -388,7 +388,7 @@ const D = {
   f_perm_wilayat: ["العنوان الدائم (الولاية)", "Permanent address (wilayat)"], f_current_area: ["العنوان الحالي (المنطقة في مسقط)", "Current address (area in Muscat)"],
   expiry_read: ["تم الحفظ — قُرئ تاريخ الانتهاء: {d}", "Saved — expiry date read: {d}"],
   expiry_missing: ["لم نتمكن من قراءة تاريخ الانتهاء. أدخله لتصلك تذكرة قبل انتهائه بـ30 يوماً.", "We couldn't read the expiry date. Enter it so you get a reminder 30 days before it expires."],
-  expiry_hint: ["نذكّرك أنت والموارد البشرية قبل الانتهاء بـ30 يوماً و7 أيام.", "You and HR are reminded 30 days and 7 days before it expires."],
+  expiry_hint: ["نذكّرك أنت والموارد البشرية قبل الانتهاء بـ30 يوماً و7 أيام، والجواز قبل 6 أشهر و3 أشهر أيضاً لأنه يُجدَّد قبل 6 أشهر من انتهائه.", "You and HR are reminded 30 days and 7 days before it expires — and for a passport also 6 and 3 months before, as it must be renewed 6 months ahead."],
   expiry_add: ["إضافة تاريخ الانتهاء", "Add expiry date"], expiry_change: ["تعديل تاريخ الانتهاء", "Change expiry date"], later: ["لاحقاً", "Later"],
   f_passport_no: ["رقم جواز السفر", "Passport number"], f_passport_expiry: ["انتهاء جواز السفر", "Passport expiry"], f_visa_expiry: ["انتهاء التأشيرة", "Visa expiry"],
   view: ["عرض", "View"], previous: ["السابق", "Previous"], page_of: ["صفحة {n} من {total}", "Page {n} of {total}"], document: ["مستند", "Document"],
