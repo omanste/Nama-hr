@@ -10,7 +10,7 @@ import { isIsoDate, addDays, clockMin, TYPES } from "./leave.mjs";
 import { shiftFor, isRestDay } from "./shifts.mjs";
 import { fileForPerson } from "./requests.mjs";
 import { audit } from "./audit.mjs";
-import { notify } from "./notify.mjs";
+import { notify, hrTeam } from "./notify.mjs";
 import { storeUpload, MAX_FILE } from "./files.mjs";
 import { attendanceExempt } from "./attendance.mjs";
 import { approvedDepartments } from "./perm.mjs";
@@ -273,7 +273,7 @@ export function registerCheckin(api, ctx) {
     // outside every site: the manager is asked to approve it (the direct manager, else the department's approver; HR if neither)
     if (row.outside) {
       const to = approversOf(db, emp);
-      notify(ctx, to.length ? to : db.prepare("SELECT id FROM users WHERE role='hr' AND active=1").all().map((u) => u.id), {
+      notify(ctx, to.length ? to : hrTeam(db, { except: [sess.user.id] }), {
         title_ar: `${kind === "in" ? "تسجيل حضور" : "تسجيل انصراف"} خارج مواقع العمل بانتظار موافقتك`, title_en: `${kind === "in" ? "Check-in" : "Check-out"} outside the work sites awaiting your approval`,
         body_ar: `${emp.name_ar || emp.name_en} · ${at.slice(11)} — ${reason}`, body_en: `${emp.name_en || emp.name_ar} · ${at.slice(11)} — ${reason}`, link: "#/approvals" });
     }

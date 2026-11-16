@@ -8,7 +8,7 @@ import { tx, nowIso, getSetting, setSetting } from "./db.mjs";
 import { send, sendRaw, readJson, HttpError } from "./http.mjs";
 import { can, approvedDepartments } from "./perm.mjs";
 import { audit } from "./audit.mjs";
-import { notify } from "./notify.mjs";
+import { notify, hrTeam } from "./notify.mjs";
 import { getEmployee } from "./employees.mjs";
 import { TYPES, PERMISSION_TYPES, isIsoDate, addDays, clockMin, permissionSpan } from "./leave.mjs";
 import { shiftFor, isRestDay } from "./shifts.mjs";
@@ -371,7 +371,7 @@ export function registerAttendance(api, ctx) {
     db.prepare(`INSERT INTO att_reviews(employee_id,month,user_id,note,at) VALUES(?,?,?,?,?)
       ON CONFLICT(employee_id,month) DO UPDATE SET note=excluded.note, at=excluded.at, user_id=excluded.user_id`).run(emp.id, b.month, req.sess.user.id, note, nowIso());
     if (note) {
-      const hr = db.prepare("SELECT id FROM users WHERE role='hr' AND active=1").all().map((u) => u.id);
+      const hr = hrTeam(db, { except: [req.sess.user.id] });
       notify(ctx, hr, { title_ar: "ملاحظة على كشف الحضور", title_en: "A note on an attendance sheet", body_ar: `${emp.name_ar || emp.name_en} · ${b.month}: ${note}`, body_en: `${emp.name_en || emp.name_ar} · ${b.month}: ${note}`, link: `#/attendance?emp=${emp.id}&m=${b.month}` });
     }
     send(req, res, 200, { ok: true });
@@ -429,7 +429,7 @@ export function runWeeklyAttendance(ctx, today) {
   if (!db.prepare("SELECT 1 FROM att_uploads LIMIT 1").get()) return 0;
   const [from, to] = lastWeek(today);
   setSetting(db, "attendance_week_sent", today);
-  const to_ = db.prepare("SELECT id FROM users WHERE role IN ('hr','ceo','chairman') AND active=1").all().map((u) => u.id);
+  const to_ = [...new Set([...hrTeam(db), ...db.prepare("SELECT id FROM users WHERE role IN ('ceo','chairman') AND active=1").all().map((u) => u.id)])];
   const dmy = (iso) => iso.split("-").reverse().join("/");
   notify(ctx, to_, { title_ar: "تقرير الحضور الأسبوعي جاهز", title_en: "The weekly attendance report is ready", body_ar: `${dmy(from)} – ${dmy(to)}`, body_en: `${dmy(from)} – ${dmy(to)}`, link: `#/attendance/report?from=${from}&to=${to}` });
   return to_.length;

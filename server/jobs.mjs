@@ -7,7 +7,7 @@ import { can } from "./perm.mjs";
 import { audit } from "./audit.mjs";
 import { ANNUAL, DAY, dueCredits, capForfeit, probationEnd, addDays, fmtDays, todayMuscat } from "./leave.mjs";
 import { postLedger, balanceOf } from "./ledger.mjs";
-import { notify } from "./notify.mjs";
+import { notify, hrTeam } from "./notify.mjs";
 import { runBirthdayAlerts } from "./calendar.mjs";
 import { runWeeklyAttendance } from "./attendance.mjs";
 import { runCheckinRetention, runReminders } from "./checkin.mjs";
@@ -74,8 +74,8 @@ export function runAnniversaries(ctx, today) {
       }
     });
     if (over > 0) {
-      const hrUsers = db.prepare("SELECT id FROM users WHERE role IN ('hr','admin') AND active=1").all().map((r) => r.id);
-      notify(ctx, hrUsers, { title_ar: "رصيد يتجاوز الحد بحاجة لمراجعة", title_en: "Leave balance over the cap needs review", body_ar: `${emp.name_ar || emp.name_en}: ${fmtDays(over)} يوم فوق ٦٠`, body_en: `${emp.name_en || emp.name_ar}: ${fmtDays(over)} days over 60`, link: "#/cap-reviews", inAppOnly: true });
+      const own = (db.prepare("SELECT id FROM users WHERE employee_id=? AND active=1").get(emp.id) || {}).id;
+      notify(ctx, hrTeam(db, { except: [own] }), { title_ar: "رصيد يتجاوز الحد بحاجة لمراجعة", title_en: "Leave balance over the cap needs review", body_ar: `${emp.name_ar || emp.name_en}: ${fmtDays(over)} يوم فوق ٦٠`, body_en: `${emp.name_en || emp.name_ar}: ${fmtDays(over)} days over 60`, link: "#/cap-reviews", inAppOnly: true });
     }
     const user = db.prepare("SELECT id FROM users WHERE employee_id=? AND active=1").get(emp.id);
     if (user) {
@@ -172,7 +172,6 @@ export function expiringItems(db, today, days = 30) {
 /** Alerts to HR and to the person: 30 days before, 7 days before and on/after the date — once each. */
 export function runExpiryCheck(ctx, today) {
   const { db } = ctx;
-  const hrUsers = db.prepare("SELECT id FROM users WHERE role IN ('hr','admin') AND active=1").all().map((r) => r.id);
   const seen = getSetting(db, "expiry_notified", {});
   let sent = 0;
   for (const x of expiringItems(db, today, 30)) {
@@ -183,18 +182,18 @@ export function runExpiryCheck(ctx, today) {
     const [docAr, docEn] = DOC_NAMES[x.what] || DOC_NAMES.other;
     const when = { ar: x.days <= 0 ? `انتهى في ${dmy(x.expiry)}` : `ينتهي في ${dmy(x.expiry)} (بعد ${x.days} يوم)`, en: x.days <= 0 ? `expired on ${dmy(x.expiry)}` : `expires on ${dmy(x.expiry)} (in ${x.days} days)` };
     const title = x.days <= 0 ? { title_ar: `${docAr} منتهي`, title_en: `${docEn} expired` } : { title_ar: `${docAr} قارب على الانتهاء`, title_en: `${docEn} expiring soon` };
-    notify(ctx, hrUsers, { ...title, body_ar: `${nameAr}: ${docAr} ${when.ar}`, body_en: `${nameEn}: ${docEn} ${when.en}`, link: `#/staff/${e.id}` });
     const own = db.prepare("SELECT id FROM users WHERE employee_id=? AND active=1").get(e.id);
-    if (own && !hrUsers.includes(own.id)) notify(ctx, [own.id], { ...title, body_ar: `${docAr} ${when.ar}. يرجى التجديد ورفع النسخة الجديدة في ملفك.`, body_en: `Your ${docEn.toLowerCase()} ${when.en}. Please renew it and upload the new copy to your profile.`, link: "#/me" });
+    notify(ctx, hrTeam(db, { except: [own && own.id] }), { ...title, body_ar: `${nameAr}: ${docAr} ${when.ar}`, body_en: `${nameEn}: ${docEn} ${when.en}`, link: `#/staff/${e.id}` });
+    if (own) notify(ctx, [own.id], { ...title, body_ar: `${docAr} ${when.ar}. يرجى التجديد ورفع النسخة الجديدة في ملفك.`, body_en: `Your ${docEn.toLowerCase()} ${when.en}. Please renew it and upload the new copy to your profile.`, link: "#/me" });
     seen[tag] = today; sent++;
   }
   // probation ends today (unchanged)
-  const hrOnly = db.prepare("SELECT id FROM users WHERE role='hr' AND active=1").all().map((r) => r.id);
   for (const e of db.prepare("SELECT * FROM employees WHERE status IN ('active','on_leave')").all()) {
     const name = e.name_ar || e.name_en;
     const pe = probationEnd(e.join_date);
     if (pe && pe === today && seen[`probation:${e.id}`] !== pe) {
-      notify(ctx, hrOnly, { title_ar: "انتهاء فترة التجربة", title_en: "Probation ends today", body_ar: `${name}: تنتهي فترة التجربة اليوم`, body_en: `${e.name_en || name}: probation ends today`, link: `#/staff/${e.id}`, inAppOnly: true });
+      const own = (db.prepare("SELECT id FROM users WHERE employee_id=? AND active=1").get(e.id) || {}).id;
+      notify(ctx, hrTeam(db, { except: [own] }), { title_ar: "انتهاء فترة التجربة", title_en: "Probation ends today", body_ar: `${name}: تنتهي فترة التجربة اليوم`, body_en: `${e.name_en || name}: probation ends today`, link: `#/staff/${e.id}`, inAppOnly: true });
       seen[`probation:${e.id}`] = pe; sent++;
     }
   }

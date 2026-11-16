@@ -7,7 +7,7 @@ import { audit } from "./audit.mjs";
 import { TYPES, PERMISSION_TYPES, ATTENDANCE_TYPES, PERM_CLASSES, CORRECTION_CLASSES, clockMin, permissionSpan, requestMinutes, eligibleFrom, isIsoDate, fmtDays, DAY, checkLeaveRules, RuleError, sickPayBands, addMonths, daysBetweenInclusive, addDays, daysExcludingHolidays } from "./leave.mjs";
 import { approverFor } from "./routing.mjs";
 import { postLedger, balanceOf, pendingMinutes, yearStartFor } from "./ledger.mjs";
-import { notify } from "./notify.mjs";
+import { notify, hrTeam } from "./notify.mjs";
 import { getEmployee } from "./employees.mjs";
 import { storeUpload } from "./files.mjs";
 import { blockedOverlap } from "./calendar.mjs";
@@ -494,7 +494,7 @@ export function registerRequests(api, ctx) {
     const { r, emp } = out;
     const d = describe(r, emp);
     if (out.toHr) { // approved by the manager, now with HR
-      notify(ctx, out.toHr, { title_ar: "طلب إجازة بانتظار موافقة الموارد البشرية", title_en: "A leave request awaiting HR approval", body_ar: d.ar, body_en: d.en, link: `#/leave/${r.id}` });
+      notify(ctx, hrTeam(db, { except: [ownerUser(db, r.employee_id), sess.user.id] }), { title_ar: "طلب إجازة بانتظار موافقة الموارد البشرية", title_en: "A leave request awaiting HR approval", body_ar: d.ar, body_en: d.en, link: `#/leave/${r.id}` });
       notify(ctx, [ownerUser(db, r.employee_id)].filter((id) => id && id !== sess.user.id), { title_ar: "وافق مديرك على طلبك — بانتظار موافقة الموارد البشرية", title_en: "Your manager approved — now with HR", body_ar: d.ar, body_en: d.en, link: `#/leave/${r.id}` });
       return send(req, res, 200, { request: r });
     }
@@ -510,7 +510,7 @@ export function registerRequests(api, ctx) {
     notify(ctx, to, { title_ar: T[0], title_en: T[1], body_ar: d.ar + extra.ar, body_en: d.en + extra.en, link: `#/leave/${r.id}` });
     // §5, §8: after the manager, HR classifies a permission or confirms a fingerprint correction
     if (r.status === "approved" && (isPermission(r.type) || r.type === "correction" || r.type === "overtime"))
-      notify(ctx, hrUsers(db).filter((id) => id !== sess.user.id), { title_ar: r.type === "correction" ? "تصحيح بصمة بانتظار اعتماد الموارد البشرية" : r.type === "overtime" ? "عمل بعد الدوام بانتظار اعتماد الموارد البشرية" : "استئذان بانتظار تصنيف الموارد البشرية",
+      notify(ctx, hrTeam(db, { except: [ownerUser(db, r.employee_id), sess.user.id] }), { title_ar: r.type === "correction" ? "تصحيح بصمة بانتظار اعتماد الموارد البشرية" : r.type === "overtime" ? "عمل بعد الدوام بانتظار اعتماد الموارد البشرية" : "استئذان بانتظار تصنيف الموارد البشرية",
         title_en: r.type === "correction" ? "Fingerprint correction awaiting HR" : r.type === "overtime" ? "Extra time after hours awaiting HR" : "Permission awaiting HR classification", body_ar: d.ar, body_en: d.en, link: `#/leave/${r.id}` });
     send(req, res, 200, { request: r });
   }

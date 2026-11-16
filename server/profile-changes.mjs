@@ -5,10 +5,10 @@ import { tx, nowIso } from "./db.mjs";
 import { send, readJson, HttpError } from "./http.mjs";
 import { can } from "./perm.mjs";
 import { audit } from "./audit.mjs";
-import { notify } from "./notify.mjs";
+import { notify, hrTeam } from "./notify.mjs";
 
 const same = (a, b) => String(a ?? "") === String(b ?? "");
-const reviewers = (db, notUserId) => db.prepare("SELECT id FROM users WHERE role IN ('hr','admin') AND active=1 AND id<>?").all(notUserId || 0).map((u) => u.id);
+const reviewers = (db, notUserId) => hrTeam(db, { except: [notUserId] });
 const ownerUser = (db, empId) => (db.prepare("SELECT id FROM users WHERE employee_id=? AND active=1").get(empId) || {}).id;
 const SOURCES = { contact: ["بيانات الاتصال", "contact details"], qualifications: ["المؤهلات", "qualifications"], bank: ["البيانات البنكية", "bank details"],
   id: ["بيانات من البطاقة", "details from an ID"], identity: ["بيانات الهوية والجواز", "ID and passport details"], photo: ["الصورة الشخصية", "profile photo"] };

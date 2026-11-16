@@ -22,6 +22,13 @@ export function configureMail(env) {
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+/** Who gets HR's notifications: the HR accounts and the system Admin (active), minus the person the matter is about and the
+ * one who acted — nobody is told "as HR" about their own case. */
+export function hrTeam(db, { except = [] } = {}) {
+  const skip = new Set(except.filter(Boolean));
+  return db.prepare("SELECT id FROM users WHERE role IN ('hr','admin') AND active=1").all().map((u) => u.id).filter((id) => !skip.has(id));
+}
+
 /** msg: {title_ar, title_en, body_ar, body_en, link} — link is an app hash route like "#/leave/12". */
 export function notify(ctx, userIds, msg) {
   const { db } = ctx;
