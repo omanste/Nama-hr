@@ -178,6 +178,13 @@ const MIGRATIONS = [
    CREATE INDEX rf_status ON read_feedback(status, id);`,
   // 34: the same list also takes a mistake reported on any profile field (no document: file_id 0)
   `ALTER TABLE read_feedback ADD COLUMN source TEXT NOT NULL DEFAULT 'reading';`,
+  // 35: Face ID / fingerprint at check-in (WebAuthn): each registered phone's public key; HR can exempt a person; a check-in
+  //     confirmed that way is marked
+  `CREATE TABLE webauthn_creds(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, cred_id TEXT NOT NULL UNIQUE,
+     public_key TEXT NOT NULL, counter INTEGER NOT NULL DEFAULT 0, transports TEXT, device_name TEXT, created_at TEXT NOT NULL, last_used_at TEXT);
+   CREATE INDEX wc_user ON webauthn_creds(user_id);
+   ALTER TABLE employees ADD COLUMN faceid_exempt INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE att_checkins ADD COLUMN verified INTEGER NOT NULL DEFAULT 0;`,
 ];
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */

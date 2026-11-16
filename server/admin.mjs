@@ -9,6 +9,7 @@ import { isIsoDate } from "./leave.mjs";
 import { rerouteFallbacks } from "./requests.mjs";
 import { shiftTimes, SHIFTS } from "./shifts.mjs";
 import { overtimeRates } from "./overtime.mjs";
+import { faceidMode, FACEID_MODES } from "./webauthn.mjs";
 
 export const DEFAULT_CONTRACT_TYPES = ["Unlimited", "Limited", "Probation", "Part-time"];
 /** Leave that needs the CEO's final approval after the manager's (exceptions to the normal policy). */
@@ -61,6 +62,8 @@ export function readSettings(db) {
     // reminders: minutes after the shift starts with no check-in, and after it ends with no check-out (Admin sets them)
     remind_checkin_min: getSetting(db, "remind_checkin_min", 10),
     remind_checkout_min: getSetting(db, "remind_checkout_min", 10),
+    // Face ID / fingerprint at check-in: required (default), optional, or off — HR can exempt a person on their profile
+    faceid_mode: faceidMode(db),
     // external tasks: the allowance for each day outside Muscat and each overnight stay (OMR; HR sets them)
     mission_day_allowance: getSetting(db, "mission_day_allowance", 0),
     mission_night_allowance: getSetting(db, "mission_night_allowance", 0),
@@ -168,7 +171,7 @@ export function registerAdmin(api, ctx) {
   api.put("/api/settings", async (req, res) => {
     need(req.sess, "settings.edit");
     const b = await readJson(req);
-    const allowed = ["managers_approver_employee_id", "managers_approver_title", "chairman_employee_id", "ceo_final_types", "att_sites", "late_grace_min", "remind_checkin_min", "remind_checkout_min", "contract_types", "shift_1_start", "shift_1_end", "shift_2_start", "shift_2_end", "shift_3_start", "shift_3_end", "shift_4_start", "shift_4_end", "ramadan_start", "ramadan_end", "ramadan_hours", "attendance_start", "shift_self_select", "official_holidays"];
+    const allowed = ["managers_approver_employee_id", "managers_approver_title", "chairman_employee_id", "ceo_final_types", "att_sites", "late_grace_min", "remind_checkin_min", "remind_checkout_min", "faceid_mode", "contract_types", "shift_1_start", "shift_1_end", "shift_2_start", "shift_2_end", "shift_3_start", "shift_3_end", "shift_4_start", "shift_4_end", "ramadan_start", "ramadan_end", "ramadan_hours", "attendance_start", "shift_self_select", "official_holidays"];
     if ("official_holidays" in b) {
       if (!Array.isArray(b.official_holidays) || !b.official_holidays.every((x) => x && isIsoDate(x.date))) throw invalid("official_holidays", "each holiday needs a valid date");
       b.official_holidays = b.official_holidays.map((x) => ({ date: x.date, name: String(x.name || "").trim().slice(0, 80) })).sort((x, y) => (x.date < y.date ? -1 : 1));
@@ -193,6 +196,7 @@ export function registerAdmin(api, ctx) {
     if ("managers_approver_title" in b && !["ceo", "chairman"].includes(b.managers_approver_title)) throw invalid("managers_approver_title", "title must be ceo or chairman");
     if ("chairman_employee_id" in b && b.chairman_employee_id !== null && !getEmployee(db, b.chairman_employee_id)) throw invalid("chairman_employee_id", "unknown employee");
     if ("late_grace_min" in b && !(Number.isInteger(b.late_grace_min) && b.late_grace_min >= 0 && b.late_grace_min <= 60)) throw invalid("late_grace_min", "grace must be 0–60 minutes");
+    if ("faceid_mode" in b && !FACEID_MODES.includes(b.faceid_mode)) throw invalid("faceid_mode", "required, optional or off");
     for (const k of ["remind_checkin_min", "remind_checkout_min"]) if (k in b && !(Number.isInteger(b[k]) && b[k] >= 1 && b[k] <= 120)) throw invalid(k, "Enter 1–120 minutes");
     if ("att_sites" in b) {
       if (!Array.isArray(b.att_sites) || b.att_sites.length > 50) throw invalid("att_sites", "sites must be a list");

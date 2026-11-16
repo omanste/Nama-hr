@@ -119,7 +119,7 @@ export function employeeDays(db, emp, from, to, today, source = "all", nowMin = 
     if (!byDay.has(k)) byDay.set(k, []);
     const s = c.site_id && sites.get(c.site_id);
     byDay.get(k).push({ id: c.id, kind: c.kind, time: c.at.slice(11, 16), outside: !!c.outside, reason: c.reason, site_ar: s ? s.name_ar : null, site_en: s ? s.name_en : null,
-      photo_file_id: c.photo_file_id, lat: c.lat, lng: c.lng, accuracy: c.accuracy_m, approval: c.approval, decision_note: c.decision_note });
+      photo_file_id: c.photo_file_id, lat: c.lat, lng: c.lng, accuracy: c.accuracy_m, approval: c.approval, decision_note: c.decision_note, verified: !!c.verified });
   }
   const grace = Number(getSetting(db, "late_grace_min", 15)) || 0;
   const reqs = db.prepare("SELECT * FROM leave_requests WHERE employee_id=? AND status IN ('pending','approved') AND start_date<=? AND end_date>=?").all(emp.id, to, from);

@@ -20,6 +20,7 @@ export async function checkinCard() {
   const last = st.items[st.items.length - 1];
   const line = (c) => h("div", { class: "ci-line" }, h("b", null, t(c.kind === "in" ? "ci_in_at" : "ci_out_at", { time: c.at.slice(11, 16) })), " · ",
     c.outside ? h("span", { class: "bad-text" }, t("ci_outside")) : h("span", null, "📍 ", siteName(c.site)),
+    c.verified ? h("span", { class: "ci-ico", title: t("ci_faceid_ok"), "aria-label": t("ci_faceid_ok") }, "🔐") : null,
     c.approval ? h("span", { class: `badge ${c.approval === "approved" ? "b-approved" : c.approval === "rejected" ? "b-rejected" : "b-pending"}`, title: c.decision_note || "", style: { marginInlineStart: "6px" } }, t("ci_appr_" + c.approval)) : null);
   const next = st.next;
   const mainBtn = h("button", { class: `btn ${next === "in" ? "primary" : "gold"} ci-btn`, type: "button", onclick: (ev) => start(next, st, ev.currentTarget) },
@@ -70,6 +71,8 @@ async function start(kind, st, btn) {
       if (!c.inside) { reason = await reasonDialog(c); if (!reason) return; }
       if (c.after_hours) { extraReason = await reasonDialog(null, { title: t("ci_extra_title"), hint: t("ci_extra_hint", { t: c.shift_end }) }); if (!extraReason) return; }
     } catch (e) { if (e.status && e.status !== 404) throw e; } // an older server: it asks after the photo instead
+    // Face ID / fingerprint on this phone (required unless HR exempted the person): it's really them
+    if (!(await faceId())) return;
     const photo = await camera();
     if (!photo) return;
     await send(kind, pos, photo, reason, extraReason);
@@ -124,6 +127,69 @@ function locate() {
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
   });
 }
+
+// ---------- Face ID / fingerprint (WebAuthn): the phone checks its owner; the portal keeps only a public key ----------
+const fromB64u = (s) => { const b = atob(String(s).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(b, (c) => c.charCodeAt(0)).buffer; };
+const toB64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const credJSON = (c) => {
+  const r = c.response, out = { id: c.id, rawId: toB64u(c.rawId), type: c.type, clientExtensionResults: c.getClientExtensionResults ? c.getClientExtensionResults() : {}, authenticatorAttachment: c.authenticatorAttachment || undefined, response: { clientDataJSON: toB64u(r.clientDataJSON) } };
+  if (r.attestationObject) { out.response.attestationObject = toB64u(r.attestationObject); out.response.transports = r.getTransports ? r.getTransports() : []; }
+  if (r.authenticatorData) { out.response.authenticatorData = toB64u(r.authenticatorData); out.response.signature = toB64u(r.signature); out.response.userHandle = r.userHandle ? toB64u(r.userHandle) : undefined; }
+  return out;
+};
+export const faceIdSupported = async () => { try { return !!(window.PublicKeyCredential && (await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable())); } catch { return false; } };
+
+/** Register this phone: the phone asks for Face ID / fingerprint once and keeps a key for this portal. */
+export async function registerPhone() {
+  const o = await api.post("/api/webauthn/register/options", {});
+  const pk = { ...o, challenge: fromB64u(o.challenge), user: { ...o.user, id: fromB64u(o.user.id) }, excludeCredentials: (o.excludeCredentials || []).map((c) => ({ ...c, id: fromB64u(c.id) })) };
+  const c = await navigator.credentials.create({ publicKey: pk });
+  if (!c) throw new Error(t("ci_faceid_cancelled"));
+  return api.post("/api/webauthn/register/verify", credJSON(c));
+}
+async function verifyPhone() {
+  const o = await api.post("/api/webauthn/verify/options", {});
+  const pk = { ...o, challenge: fromB64u(o.challenge), allowCredentials: (o.allowCredentials || []).map((c) => ({ ...c, id: fromB64u(c.id) })) };
+  const c = await navigator.credentials.get({ publicKey: pk });
+  if (!c) throw new Error(t("ci_faceid_cancelled"));
+  return api.post("/api/webauthn/verify", credJSON(c));
+}
+/** Before the photo: true to go on, false to stop (a message is shown). Optional mode tries it only on a registered phone. */
+async function faceId() {
+  let st;
+  try { st = await api.get("/api/webauthn/status"); } catch { return true; } // an older server: no Face ID step
+  if (st.mode === "off" || st.exempt || (!st.needed && !st.devices)) return true;
+  const must = st.needed;
+  if (!(await faceIdSupported())) { if (must) { toast(t("ci_faceid_unsupported"), "bad"); return false; } return true; }
+  try {
+    if (!st.devices) {
+      if (!(await faceIdIntro())) return false;
+      await registerPhone(); toast(t("ci_faceid_registered"));
+      return true;
+    }
+    await verifyPhone();
+    return true;
+  } catch (e) {
+    if (!must) return true;
+    // a new phone (the key is on the old one), or the person cancelled: register this phone, or try again later
+    if (e && (e.name === "NotAllowedError" || e.name === "InvalidStateError" || e.error === "unknown_device")) {
+      const choice = await faceIdRetry();
+      if (choice === "register") { try { await registerPhone(); toast(t("ci_faceid_registered")); return true; } catch (e2) { toast(errText(e2) || t("ci_faceid_failed"), "bad"); return false; } }
+      if (choice === "retry") return faceId();
+      return false;
+    }
+    toast(e && (e.status || e.error) ? errText(e) : t("ci_faceid_failed"), "bad");
+    return false;
+  }
+}
+const choiceDialog = (title, text, buttons) => new Promise((resolve) => {
+  const dlg = h("dialog", { class: "dialog" }, h("div", { class: "form" }, h("h2", null, title), h("p", { class: "sub" }, text),
+    h("div", { class: "row end" }, buttons.map(([v, label, cls]) => h("button", { class: `btn ${cls || ""}`, type: "button", onclick: () => { resolve(v); dlg.close(); } }, label)))));
+  dlg.addEventListener("close", () => { dlg.remove(); resolve(null); });
+  document.body.append(dlg); dlg.showModal();
+});
+const faceIdIntro = async () => (await choiceDialog("🔐 " + t("ci_faceid_title"), t("ci_faceid_intro"), [[null, t("cancel")], ["ok", t("ci_faceid_register"), "primary"]])) === "ok";
+const faceIdRetry = () => choiceDialog("🔐 " + t("ci_faceid_title"), t("ci_faceid_retry_text"), [[null, t("cancel")], ["register", t("ci_faceid_register_this")], ["retry", t("ci_faceid_retry"), "primary"]]);
 
 /** Shrink a photo to 640 px wide as a JPEG (like the live camera's), from an image file. */
 function shrinkImage(file) {

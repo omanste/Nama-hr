@@ -15,6 +15,7 @@ import { storeUpload, MAX_FILE } from "./files.mjs";
 import { attendanceExempt } from "./attendance.mjs";
 import { approvedDepartments } from "./perm.mjs";
 import { removeUpload } from "./files.mjs";
+import { faceidNeeded, peekVerified, takeVerified } from "./webauthn.mjs";
 
 const bad = (field, message) => Object.assign(new HttpError(400, "invalid", message), { field });
 const ipOf = (req) => String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",").pop().trim();
@@ -195,7 +196,7 @@ export async function resolveMapLink(text, fetchImpl = fetch) {
 export function registerCheckin(api, ctx) {
   const { db } = ctx;
   const sitesNow = () => getSetting(db, "att_sites", []);
-  const today = (sess) => db.prepare("SELECT c.id, c.kind, c.at, c.site_id, c.outside, c.reason, c.approval, c.decision_note FROM att_checkins c WHERE c.employee_id=? AND substr(c.at,1,10)=? ORDER BY c.at, c.id")
+  const today = (sess) => db.prepare("SELECT c.id, c.kind, c.at, c.site_id, c.outside, c.reason, c.approval, c.decision_note, c.verified FROM att_checkins c WHERE c.employee_id=? AND substr(c.at,1,10)=? ORDER BY c.at, c.id")
     .all(sess.employee.id, ctx.today());
 
   // the home page card: may I check in, have I accepted the notice, what did I record today
@@ -243,6 +244,9 @@ export function registerCheckin(api, ctx) {
     if (!may.ok) throw new HttpError(403, "forbidden", may.why === "exempt" ? "Top management isn't under the attendance policy" : "Online check-in isn't on for you");
     if (!sess.user.checkin_consent_at) throw new HttpError(409, "consent_required", "Please read and accept the notice first");
     const q = req.query;
+    // Face ID / fingerprint just before (required unless HR exempted the person): one verification, one check-in
+    const faceCred = peekVerified(sess); // used up only once the check-in is saved (asking for a reason doesn't spend it)
+    if (faceidNeeded(ctx, emp) && !faceCred) throw new HttpError(403, "faceid_required", "Confirm it's you with your face or fingerprint first");
     const kind = q.get("kind");
     if (!["in", "out"].includes(kind)) throw bad("kind", "Check in or check out?");
     const lat = Number(q.get("lat")), lng = Number(q.get("lng")), acc = q.get("acc") === null ? null : Number(q.get("acc"));
@@ -259,11 +263,13 @@ export function registerCheckin(api, ctx) {
     if (lateOut && !extraReason)
       throw Object.assign(bad("extra_reason", "You're leaving after your working hours — say why"), { extra: { after_hours: true, shift_end: pad2(shift.end) } });
     const photo = await storeUpload(ctx, req, { employeeId: emp.id, kind: "checkin", body: photoBody });
+    const verifiedFace = faceCred ? 1 : 0;
     const at = `${today} ${ctx.clock()}`;
     const row = tx(db, () => {
       const r = db.prepare(`INSERT INTO att_checkins(employee_id,kind,at,lat,lng,accuracy_m,site_id,outside,reason,photo_file_id,device_id,ip,user_agent,created_at)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(emp.id, kind, at, lat, lng, Number.isFinite(acc) ? Math.round(acc) : null, where.inside ? where.inside.id : null,
         where.inside ? 0 : 1, reason || null, photo.id, String(q.get("device") || "").slice(0, 64) || null, ipOf(req), String(req.headers["user-agent"] || "").slice(0, 200), nowIso());
+      if (verifiedFace) { db.prepare("UPDATE att_checkins SET verified=1 WHERE id=?").run(r.lastInsertRowid); takeVerified(sess); }
       // outside every site: it counts only once the manager approves it
       if (!where.inside) db.prepare("UPDATE att_checkins SET approval='pending' WHERE id=?").run(r.lastInsertRowid);
       const c = db.prepare("SELECT * FROM att_checkins WHERE id=?").get(r.lastInsertRowid);
@@ -345,7 +351,7 @@ export function registerCheckin(api, ctx) {
     const sites = sitesNow(), siteName = (id) => sites.find((x) => x.id === id) || null;
     const one = (c) => c && { id: c.id, time: c.at.slice(11, 16), site: c.site_id ? { name_ar: (siteName(c.site_id) || {}).name_ar || null, name_en: (siteName(c.site_id) || {}).name_en || null } : null,
       outside: !!c.outside, reason: c.reason || null, approval: c.approval || null, decision_note: c.decision_note || null,
-      photo_file_id: c.photo_file_id || null, lat: c.lat, lng: c.lng, accuracy: c.accuracy_m };
+      photo_file_id: c.photo_file_id || null, lat: c.lat, lng: c.lng, accuracy: c.accuracy_m, verified: !!c.verified };
     const byKey = new Map();
     for (const c of list) {
       const k = `${c.employee_id}|${c.at.slice(0, 10)}`;

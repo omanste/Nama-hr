@@ -7,6 +7,7 @@ import { appliesTo } from "../leave-types.js";
 import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, errText, confirm, select, field, backLink, todayIso, isPermission, isAttendanceReq, durText, viewFile, busy, saveWithExpiryCheck, emailInput } from "../ui.js";
 import { balanceHero, requestItem } from "./home.js";
 import { render as rerender, refreshMe } from "../app.js";
+import { registerPhone, faceIdSupported } from "../checkin.js";
 
 const DOC_TYPES = ["civil_id", "passport", "visa", "resume", "certificate", "course", "contract", "medical", "consent", "other"]; // also the order the categories are listed in
 // staff may add their own papers (a copy of their contract too); payout consents stay with HR (server enforces the same)
@@ -243,6 +244,7 @@ export async function render(el, params, { me, can, opts }) {
       ["education", "specialization", "experience", "languages", "certifications"].map((k) => h("div", null, h("dt", null, t("f_" + k), oneLangTag(e[k])), h("dd", { dir: "auto" }, tx(e[k]) || "—"))),
       ["skills", "main_tasks"].map((k) => h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("f_" + k), oneLangTag(e[k])), h("dd", { dir: "auto", style: { whiteSpace: "pre-line" } }, tx(e[k]) || "—"))))),
     documents(p, e, can, mayUpload, setPhoto),
+    own || can.edit() ? devicesCard(e, own, can) : null,
     can.edit() && !own ? signIns(e) : null,
     h("section", { class: "card kpi-placeholder" }, h("h2", null, t("sec_kpi")), h("p", null, t("kpi_later"))));
 }
@@ -252,6 +254,35 @@ function oneLangTag(v) {
   const shown = tx(v); if (!shown) return null;
   const other = getLang() === "en" ? /[\u0621-\u064A]/.test(shown) : !/[\u0621-\u064A]/.test(shown) && /[A-Za-z]{2}/.test(shown);
   return other ? h("span", { class: "badge one-lang", title: t("one_lang_hint") }, t(getLang() === "en" ? "only_ar" : "only_en")) : null;
+}
+
+/** Phones registered for the face / fingerprint check at check-in: the person adds this phone or removes a lost one; HR and
+ * Admin see anyone's, remove one, and can exempt the person (e.g. an old phone without it). */
+function devicesCard(e, own, can) {
+  const list = h("div", { class: "list" });
+  const box = h("section", { class: "card devices-card" });
+  const load = async () => {
+    let items = [];
+    try { items = (await api.get(own ? "/api/webauthn/devices" : `/api/employees/${e.id}/devices`)).items; } catch { /* older server */ }
+    list.replaceChildren(...(items.length ? items.map((d) => h("div", { class: "item" },
+      h("div", { class: "grow" }, h("div", { class: "title" }, "📱 ", d.device_name || "—"),
+        h("div", { class: "meta" }, t("dev_added"), " ", dateTime(d.created_at), d.last_used_at ? ` · ${t("dev_used")} ${dateTime(d.last_used_at)}` : "")),
+      h("button", { class: "btn small danger", type: "button", onclick: async () => {
+        if (!(await confirm(t("dev_remove_q"), { danger: true, okText: t("dev_remove") }))) return;
+        try { await api.del(`/api/webauthn/devices/${d.id}`); toast(t("saved")); load(); } catch (er) { toast(errText(er), "bad"); }
+      } }, t("dev_remove")))) : [h("p", { class: "sub" }, t("dev_none"))]));
+  };
+  const addBtn = own ? h("button", { class: "btn", type: "button", onclick: async () => {
+    if (!(await faceIdSupported())) { toast(t("ci_faceid_unsupported"), "bad"); return; }
+    try { await registerPhone(); toast(t("ci_faceid_registered")); load(); } catch (er) { toast(er && (er.status || er.error) ? errText(er) : t("ci_faceid_failed"), "bad"); }
+  } }, "🔐 ", t("ci_faceid_register")) : null;
+  const exempt = can.edit() ? h("label", { class: "row", style: { gap: "8px", alignItems: "flex-start", marginTop: "10px", cursor: "pointer" } },
+    h("input", { type: "checkbox", name: "faceid_exempt", checked: !!e.faceid_exempt, style: { width: "22px", height: "22px", minHeight: "0", flex: "none" }, onchange: async (ev) => {
+      try { await api.put(`/api/employees/${e.id}`, { faceid_exempt: ev.target.checked }); toast(t("saved")); } catch (er) { ev.target.checked = !ev.target.checked; toast(errText(er), "bad"); }
+    } }), h("span", null, t("dev_exempt"), h("div", { class: "sub" }, t("dev_exempt_hint")))) : null;
+  box.append(...[h("h2", null, "🔐 ", t(own ? "dev_title" : "dev_title_hr")), h("p", { class: "sub" }, t("dev_hint")), list, addBtn ? h("div", { class: "row", style: { marginTop: "10px" } }, addBtn) : null, exempt].filter(Boolean));
+  load();
+  return box;
 }
 
 /** A person's recent sign-ins (HR/Admin): time, device, network address and where — loaded when opened. */

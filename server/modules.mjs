@@ -18,6 +18,7 @@ import { registerProfileChanges } from "./profile-changes.mjs";
 
 import { registerCheckin } from "./checkin.mjs";
 import { registerOvertime } from "./overtime.mjs";
+import { registerWebauthn } from "./webauthn.mjs";
 export async function registerModules(api, ctx) {
   registerAuth(api, ctx);
   registerEmployees(api, ctx);
@@ -36,6 +37,7 @@ export async function registerModules(api, ctx) {
   registerAttendance(api, ctx);
   registerCheckin(api, ctx);
   registerOvertime(api, ctx);
+  registerWebauthn(api, ctx);
   registerBackup(api, ctx);
   registerProfileChanges(api, ctx);
 }
