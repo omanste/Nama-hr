@@ -141,8 +141,11 @@ const credJSON = (c) => {
  * although Face ID works, so the phone's own prompt is tried and its answer is what counts.) */
 export const faceIdSupported = async () => !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create);
 /** A message for an error from the phone's prompt, with its code so a report can be traced. */
-export const faceIdError = (e) => {
+const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+export const faceIdError = (e, { registering = false } = {}) => {
   const code = (e && e.name) || "";
+  // an iPhone refuses to save the key when no password app is on (Settings › General › AutoFill & Passwords)
+  if (registering && isIOS() && code === "NotAllowedError") return `${t("ci_faceid_ios_setup")} (${code})`;
   if (code === "NotSupportedError" || code === "SecurityError") return `${t("ci_faceid_unsupported")} (${code})`;
   return `${e && (e.status || e.error) ? errText(e) : t("ci_faceid_failed")}${code && !(e && e.error) ? ` (${code})` : ""}`;
 };
@@ -186,7 +189,8 @@ async function faceId() {
   if (!(await faceIdSupported())) { if (must) { toast(t("ci_faceid_unsupported"), "bad"); return false; } return true; }
   try {
     if (!st.devices) {
-      await registerPhone({ intro: true }); toast(t("ci_faceid_registered"));
+      try { await registerPhone({ intro: true }); } catch (e) { if (e && e.name === "AbortError") return false; toast(faceIdError(e, { registering: true }), "bad"); return false; }
+      toast(t("ci_faceid_registered"));
       return true;
     }
     await verifyPhone();
@@ -197,7 +201,7 @@ async function faceId() {
     // a new phone (the key is on the old one), or the person cancelled: register this phone, or try again later
     if (e && (e.name === "NotAllowedError" || e.name === "InvalidStateError" || e.error === "unknown_device")) {
       const choice = await faceIdRetry();
-      if (choice === "register") { try { await registerPhone(); toast(t("ci_faceid_registered")); return true; } catch (e2) { toast(faceIdError(e2), "bad"); return false; } }
+      if (choice === "register") { try { await registerPhone(); toast(t("ci_faceid_registered")); return true; } catch (e2) { toast(faceIdError(e2, { registering: true }), "bad"); return false; } }
       if (choice === "retry") return faceId();
       return false;
     }

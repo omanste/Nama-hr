@@ -274,7 +274,7 @@ function devicesCard(e, own, can) {
   };
   const addBtn = own ? h("button", { class: "btn", type: "button", onclick: async () => {
     if (!(await faceIdSupported())) { toast(t("ci_faceid_unsupported"), "bad"); return; }
-    try { await registerPhone(); toast(t("ci_faceid_registered")); load(); } catch (er) { toast(faceIdError(er), "bad"); }
+    try { await registerPhone(); toast(t("ci_faceid_registered")); load(); } catch (er) { if (!(er && er.name === "AbortError")) toast(faceIdError(er, { registering: true }), "bad"); }
   } }, "🔐 ", t("ci_faceid_register")) : null;
   const exempt = can.edit() ? h("label", { class: "row", style: { gap: "8px", alignItems: "flex-start", marginTop: "10px", cursor: "pointer" } },
     h("input", { type: "checkbox", name: "faceid_exempt", checked: !!e.faceid_exempt, style: { width: "22px", height: "22px", minHeight: "0", flex: "none" }, onchange: async (ev) => {
