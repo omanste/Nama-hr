@@ -137,20 +137,43 @@ const credJSON = (c) => {
   if (r.authenticatorData) { out.response.authenticatorData = toB64u(r.authenticatorData); out.response.signature = toB64u(r.signature); out.response.userHandle = r.userHandle ? toB64u(r.userHandle) : undefined; }
   return out;
 };
-export const faceIdSupported = async () => { try { return !!(window.PublicKeyCredential && (await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable())); } catch { return false; } };
+/** Can this browser do passkeys at all? (The "is Face ID available" pre-check is not used to block: some iPhones answer "no"
+ * although Face ID works, so the phone's own prompt is tried and its answer is what counts.) */
+export const faceIdSupported = async () => !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create);
+/** A message for an error from the phone's prompt, with its code so a report can be traced. */
+export const faceIdError = (e) => {
+  const code = (e && e.name) || "";
+  if (code === "NotSupportedError" || code === "SecurityError") return `${t("ci_faceid_unsupported")} (${code})`;
+  return `${e && (e.status || e.error) ? errText(e) : t("ci_faceid_failed")}${code && !(e && e.error) ? ` (${code})` : ""}`;
+};
 
+/** iPhone (Safari) shows Face ID only when it starts straight from a tap: the options are fetched first, then a button whose
+ * tap opens the phone's prompt. Resolves with the prompt's answer; rejects with NotAllowedError when the window is closed. */
+function tapThen(title, text, label, start) {
+  return new Promise((resolve, reject) => {
+    let started = false;
+    const go = h("button", { class: "btn primary", type: "button", onclick: () => {
+      started = true; dlg.close();
+      try { Promise.resolve(start()).then(resolve, reject); } catch (e) { reject(e); } // called inside the tap
+    } }, label);
+    const dlg = h("dialog", { class: "dialog" }, h("div", { class: "form" }, h("h2", null, "🔐 ", title), h("p", { class: "sub" }, text),
+      h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), go)));
+    dlg.addEventListener("close", () => { dlg.remove(); if (!started) reject(Object.assign(new Error(t("ci_faceid_cancelled")), { name: "AbortError" })); });
+    document.body.append(dlg); dlg.showModal(); go.focus();
+  });
+}
 /** Register this phone: the phone asks for Face ID / fingerprint once and keeps a key for this portal. */
-export async function registerPhone() {
+export async function registerPhone({ intro = false } = {}) {
   const o = await api.post("/api/webauthn/register/options", {});
   const pk = { ...o, challenge: fromB64u(o.challenge), user: { ...o.user, id: fromB64u(o.user.id) }, excludeCredentials: (o.excludeCredentials || []).map((c) => ({ ...c, id: fromB64u(c.id) })) };
-  const c = await navigator.credentials.create({ publicKey: pk });
+  const c = await tapThen(t("ci_faceid_title"), t(intro ? "ci_faceid_intro" : "ci_faceid_register_hint"), t("ci_faceid_register"), () => navigator.credentials.create({ publicKey: pk }));
   if (!c) throw new Error(t("ci_faceid_cancelled"));
   return api.post("/api/webauthn/register/verify", credJSON(c));
 }
 async function verifyPhone() {
   const o = await api.post("/api/webauthn/verify/options", {});
   const pk = { ...o, challenge: fromB64u(o.challenge), allowCredentials: (o.allowCredentials || []).map((c) => ({ ...c, id: fromB64u(c.id) })) };
-  const c = await navigator.credentials.get({ publicKey: pk });
+  const c = await tapThen(t("ci_faceid_title"), t("ci_faceid_verify_hint"), t("ci_faceid_verify"), () => navigator.credentials.get({ publicKey: pk }));
   if (!c) throw new Error(t("ci_faceid_cancelled"));
   return api.post("/api/webauthn/verify", credJSON(c));
 }
@@ -163,22 +186,22 @@ async function faceId() {
   if (!(await faceIdSupported())) { if (must) { toast(t("ci_faceid_unsupported"), "bad"); return false; } return true; }
   try {
     if (!st.devices) {
-      if (!(await faceIdIntro())) return false;
-      await registerPhone(); toast(t("ci_faceid_registered"));
+      await registerPhone({ intro: true }); toast(t("ci_faceid_registered"));
       return true;
     }
     await verifyPhone();
     return true;
   } catch (e) {
+    if (e && e.name === "AbortError") return false; // closed our window: nothing to say
     if (!must) return true;
     // a new phone (the key is on the old one), or the person cancelled: register this phone, or try again later
     if (e && (e.name === "NotAllowedError" || e.name === "InvalidStateError" || e.error === "unknown_device")) {
       const choice = await faceIdRetry();
-      if (choice === "register") { try { await registerPhone(); toast(t("ci_faceid_registered")); return true; } catch (e2) { toast(errText(e2) || t("ci_faceid_failed"), "bad"); return false; } }
+      if (choice === "register") { try { await registerPhone(); toast(t("ci_faceid_registered")); return true; } catch (e2) { toast(faceIdError(e2), "bad"); return false; } }
       if (choice === "retry") return faceId();
       return false;
     }
-    toast(e && (e.status || e.error) ? errText(e) : t("ci_faceid_failed"), "bad");
+    toast(faceIdError(e), "bad");
     return false;
   }
 }
@@ -188,7 +211,6 @@ const choiceDialog = (title, text, buttons) => new Promise((resolve) => {
   dlg.addEventListener("close", () => { dlg.remove(); resolve(null); });
   document.body.append(dlg); dlg.showModal();
 });
-const faceIdIntro = async () => (await choiceDialog("🔐 " + t("ci_faceid_title"), t("ci_faceid_intro"), [[null, t("cancel")], ["ok", t("ci_faceid_register"), "primary"]])) === "ok";
 const faceIdRetry = () => choiceDialog("🔐 " + t("ci_faceid_title"), t("ci_faceid_retry_text"), [[null, t("cancel")], ["register", t("ci_faceid_register_this")], ["retry", t("ci_faceid_retry"), "primary"]]);
 
 /** Shrink a photo to 640 px wide as a JPEG (like the live camera's), from an image file. */

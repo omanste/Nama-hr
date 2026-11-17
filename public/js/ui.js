@@ -61,7 +61,7 @@ export function toast(msg, kind = "ok") {
   el.className = `toast show ${kind}`;
   el.textContent = msg;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove("show"), 3200);
+  toastTimer = setTimeout(() => el.classList.remove("show"), kind === "bad" ? Math.min(9000, 3200 + msg.length * 30) : 3200); // errors stay long enough to read
 }
 /** A window that stays open while something slow runs (reading a scanned card can take a minute): a spinner, what is
  * happening, a hint that changes as time passes, and the seconds so far. It can't be closed by hand; call close() when done. */

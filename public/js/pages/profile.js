@@ -7,7 +7,7 @@ import { appliesTo } from "../leave-types.js";
 import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, errText, confirm, select, field, backLink, todayIso, isPermission, isAttendanceReq, durText, viewFile, busy, saveWithExpiryCheck, emailInput } from "../ui.js";
 import { balanceHero, requestItem } from "./home.js";
 import { render as rerender, refreshMe } from "../app.js";
-import { registerPhone, faceIdSupported } from "../checkin.js";
+import { registerPhone, faceIdSupported, faceIdError } from "../checkin.js";
 
 const DOC_TYPES = ["civil_id", "passport", "visa", "resume", "certificate", "course", "contract", "medical", "consent", "other"]; // also the order the categories are listed in
 // staff may add their own papers (a copy of their contract too); payout consents stay with HR (server enforces the same)
@@ -274,7 +274,7 @@ function devicesCard(e, own, can) {
   };
   const addBtn = own ? h("button", { class: "btn", type: "button", onclick: async () => {
     if (!(await faceIdSupported())) { toast(t("ci_faceid_unsupported"), "bad"); return; }
-    try { await registerPhone(); toast(t("ci_faceid_registered")); load(); } catch (er) { toast(er && (er.status || er.error) ? errText(er) : t("ci_faceid_failed"), "bad"); }
+    try { await registerPhone(); toast(t("ci_faceid_registered")); load(); } catch (er) { toast(faceIdError(er), "bad"); }
   } }, "🔐 ", t("ci_faceid_register")) : null;
   const exempt = can.edit() ? h("label", { class: "row", style: { gap: "8px", alignItems: "flex-start", marginTop: "10px", cursor: "pointer" } },
     h("input", { type: "checkbox", name: "faceid_exempt", checked: !!e.faceid_exempt, style: { width: "22px", height: "22px", minHeight: "0", flex: "none" }, onchange: async (ev) => {
