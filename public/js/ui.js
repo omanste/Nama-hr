@@ -1,5 +1,5 @@
 // Small DOM helpers shared by every page.
-import { t, getLang, has } from "./i18n.js";
+import { t, getLang, has, nm } from "./i18n.js";
 
 /** h("div", {class:"x", onclick: fn}, "text", child, [more]) */
 export function h(tag, attrs, ...children) {
@@ -83,6 +83,8 @@ export function busy(title, steps) {
 export const errText = (e) => {
   if (!e) return t("error");
   if (e.status === 0) return t("offline");
+  // a staff ID another record has: say whose, so it can be found and sorted out
+  if (e.error === "duplicate_emp_no" && e.holder) return t("err_emp_no_holder", { no: e.holder.emp_no, name: nm(e.holder) || "—" });
   if (e.error && has("err_" + e.error)) {
     const extra = /\(([^)]*\d[^)]*)\)/.exec(e.message || "");
     return t("err_" + e.error) + (extra && e.error !== "invalid" ? ` (${extra[1]})` : "");

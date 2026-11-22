@@ -263,6 +263,7 @@ const D = {
   load_more: ["تحميل المزيد", "Load more"],
   // server error codes
   err_invalid: ["قيمة غير صالحة", "Invalid value"], err_duplicate_emp_no: ["الرقم الوظيفي مستخدم", "This employee ID is already used"],
+  err_emp_no_open: ["فتح ذلك الملف ↗", "Open that record ↗"], err_emp_no_holder: ["الرقم الوظيفي {no} مستخدم في ملف «{name}». غيّر رقم ذلك الملف أولاً (أو عطّله إن كان مكرراً)، ثم احفظ هنا.", "Employee ID {no} is used by “{name}”. Change that record's ID first (or disable it if it's a duplicate), then save here."],
   err_duplicate_username: ["اسم المستخدم مستخدم", "This username is taken"], err_has_login: ["للموظف حساب دخول بالفعل", "This employee already has a login"],
   err_forbidden: ["ليست لديك صلاحية", "You do not have permission"], err_not_found: ["غير موجود", "Not found"],
   err_overlap: ["تتداخل التواريخ مع طلب آخر", "These dates overlap another request"], err_insufficient_balance: ["يتجاوز رصيدك المتاح", "This exceeds your available balance"],

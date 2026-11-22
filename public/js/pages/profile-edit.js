@@ -89,5 +89,8 @@ async function save(ev, form, isNew, e) {
   } catch (er) {
     btn.disabled = false;
     if (!(er.field && showFieldError(form, er.field, errText(er)))) toast(errText(er), "bad");
+    // the staff ID is on another record: a link to open it
+    const box = er.holder && form.querySelector('[data-field="emp_no"] .field-err');
+    if (box) box.append(" ", h("a", { href: `#/staff/${er.holder.id}`, target: "_blank" }, t("err_emp_no_open")));
   }
 }
