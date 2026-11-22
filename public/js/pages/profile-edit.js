@@ -50,7 +50,8 @@ export async function render(el, params, { can, query }) {
       // requests go to the department's approver, or straight to top management (the CEO, the Chairman, or either of them)
       field(t("f_reports_to_top"), select("reports_to_top", [["", t("rtt_dept")], ["ceo", t("rtt_ceo")], ["chairman", t("rtt_chairman")], ["both", t("rtt_both")]], e.reports_to_top || ""), { hint: t("rtt_hint") }),
       field(t("f_join_date"), date("join_date")),
-      field(t("f_status"), select("status", STATUSES.map((s) => [s, t("st_" + s)]), e.status)),
+      field(t("f_status"), select("status", STATUSES.map((s) => [s, t("st_" + s)]), e.status), { hint: t("st_auto_hint") }),
+      field(t("f_last_working_day"), date("last_working_day"), { hint: t("f_last_working_day_hint") }),
       field(t("f_shift"), select("shift", [[5, t("shift_5_full")], [6, t("shift_6_full")], [7, t("shift_7_full")], ...([1, 2, 3, 4].includes(e.shift) ? [[e.shift, `${t(`shift_${e.shift}_full`)} — ${t("shift_old")}`]] : [])], isNew ? 5 : e.shift || 5),
         { hint: isNew ? t("shift_new_hint") : t("shift_change_hint") }),
       field(t("att_mode"), select("att_mode", [["both", t("att_mode_both")], ["online", t("att_mode_online")], ["machine", t("att_mode_machine")]], e.att_mode || "both")),
@@ -70,6 +71,10 @@ export async function render(el, params, { can, query }) {
   form.dataset.home = home;
   el.append(backLink(home), h("h1", null, isNew ? t("new_employee") : `${t("edit_employee")} · ${nm(e)}`), form);
   // ✏️ on a profile section: start at that section
+  // the last working day: only for Resigned / Terminated (and then it must be filled in)
+  { const st = form.elements.status, lw = form.elements.last_working_day, box = lw.closest(".field");
+    const show = () => { const on = ["resigned", "terminated"].includes(st.value); box.hidden = !on; lw.disabled = !on; lw.required = on; };
+    st.addEventListener("change", show); show(); }
   const sec = query && query.get("s");
   if (sec) requestAnimationFrame(() => { const box = el.querySelector(`#sec-${CSS.escape(sec)}`); if (box) { box.scrollIntoView({ block: "start" }); const f = box.querySelector("input,select,textarea"); if (f) f.focus({ preventScroll: true }); } });
 }

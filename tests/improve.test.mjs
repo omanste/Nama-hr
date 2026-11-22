@@ -59,7 +59,7 @@ test("nobody approves their own request — not even Admin", async () => {
 });
 
 test("only Admin can mark an Admin or CEO as resigned", async () => {
-  assert.equal((await hr.c.put(`/api/employees/${ceo.emp.id}`, { status: "resigned" })).status, 403);
+  assert.equal((await hr.c.put(`/api/employees/${ceo.emp.id}`, { status: "resigned", last_working_day: "2026-01-31" })).status, 403);
   assert.equal((await hr.c.put(`/api/employees/${ceo.emp.id}`, { job_title: "CEO" })).status, 200, "other edits are fine");
   assert.equal((await hr.c.put(`/api/employees/${other.emp.id}`, { status: "on_leave" })).status, 200);
   await hr.c.put(`/api/employees/${other.emp.id}`, { status: "active" });

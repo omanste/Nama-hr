@@ -44,6 +44,7 @@ const ROUTES = [
   ["/attendance/overtime", "att-overtime"],
   ["/attendance/upload", "att-upload"],
   ["/profile-changes", "profile-changes"],
+  ["/hr-updates", "updates"],
   ["/menu", "menu"],
 ].map(([pattern, page, opts = {}]) => {
   const keys = [];
@@ -69,7 +70,7 @@ function navItems() {
   if (me.employee && !me.attendanceExempt) items.push(["#/attendance", "nav_attendance", "finger"]);
   if (can.approve()) items.push(["#/approvals", "nav_approvals", "check", me.pendingApprovals]);
   if (me.employee || ["hr", "ceo", "chairman", "admin"].includes(me.user.role)) items.push(["#/voice", "nav_voice", "chat", me.voiceInbox]);
-  if (can.staffList()) items.push(["#/staff", "nav_staff", "people"]);
+  if (can.edit()) items.push(["#/staff", "nav_staff", "people"]); // the Staff tab: HR and Admin only
   items.push(["#/calendar", "nav_calendar", "leave"]); // everyone: holidays, occasions, birthdays and their own leave
   if (me.isApprover && !can.viewAll()) items.push(["#/team", "team_requests", "list"]);
   if (can.viewAll()) items.push(["#/requests", "nav_requests", "list"]);
@@ -78,6 +79,7 @@ function navItems() {
   if (["hr", "admin", "ceo", "chairman", "consultant", "accounts"].includes(me.user.role) || me.isApprover || me.hasTeam) items.push(["#/attendance/online", "nav_att_online", "finger"]);
   if (["hr", "admin", "accounts", "ceo", "chairman"].includes(me.user.role)) items.push(["#/attendance/allowances", "nav_allowances", "list"], ["#/attendance/overtime", "nav_overtime", "clock"]);
   if (can.edit()) items.push(["#/profile-changes", "nav_profile_changes", "check", me.pendingProfileChanges], ["#/cap-reviews", "nav_cap_reviews", "clock", me.pendingCapReviews], ["#/import", "nav_import", "upload"]);
+  if (can.edit()) items.push(["#/hr-updates", "nav_hr_updates", "list"]); // what changed in the HR portal (HR and Admin)
   if (can.admin()) items.push(["#/settings", "nav_settings", "gear"], ["#/users", "nav_users", "key"], ["#/hr-backup", "nav_hr_backup", "upload"]);
   if (can.viewAll() && me.user.role !== "consultant") items.push(["#/audit", "nav_audit", "clock"]);
   if (me.employee) items.push(["#/me", "nav_me", "user"]); // my profile is always the last entry

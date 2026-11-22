@@ -51,6 +51,13 @@ export async function startServer({ dataDir, port = 3000, env = process.env } = 
     });
     if (r) console.log(`phone conversion: ${JSON.stringify({ phones: r.phones, relations: r.relations })}`);
   } catch (e) { console.error(`phone conversion: ${e.message}`); }
+  // what changed in the HR portal: the changelog shipped with this build, for this environment (and this deploy)
+  try {
+    const { syncChangelog, registerUpdates } = await import("./updates.mjs");
+    registerUpdates(api, ctx);
+    const r = syncChangelog(ctx, { file: env.CHANGELOG_FILE || path.join(ROOT, "CHANGELOG-HR.md"), root: ROOT });
+    if (r.added || r.stamped) console.log(`HR updates: ${r.added} new, ${r.stamped} recorded for ${r.env} (${r.version})`);
+  } catch (e) { console.error(`HR updates: ${e.message}`); }
   const serveStatic = makeStatic(path.join(ROOT, "public"), { watch: (env.APP_ENV || "") === "test" || !!env.STATIC_WATCH });
 
   const server = http.createServer(async (req, res) => {

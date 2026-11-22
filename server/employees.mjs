@@ -5,7 +5,7 @@ import { nowIso, tx, getSetting } from "./db.mjs";
 import { send, readJson, HttpError } from "./http.mjs";
 import { can, canViewEmployee, approvedDepartments } from "./perm.mjs";
 import { audit } from "./audit.mjs";
-import { isIsoDate, ANNUAL, DAY, fmtDays, addDays } from "./leave.mjs";
+import { isIsoDate, ANNUAL, DAY, fmtDays, addDays, TYPES } from "./leave.mjs";
 import { postLedger, leaveSummary, ledgerRows, yearStartFor, balanceOf, pendingMinutes } from "./ledger.mjs";
 import { tempPassword, hashPassword } from "./auth.mjs";
 import { toCountryCode } from "../public/js/countries.js";
@@ -33,8 +33,9 @@ export function validIban(s) {
 }
 export const STATUSES = ["active", "on_leave", "resigned", "terminated", "disabled"];
 const GONE = ["resigned", "terminated", "disabled"]; // no access to the portal
+const LEFT = ["resigned", "terminated"]; // left the company: the last working day is kept
 const TEXT = ["name_ar", "name_en", "civil_id", "passport_no", "nationality", "mobile", "address", "emergency_name", "emergency_relation", "emergency_phone", "job_title", "contract_type"];
-const DATES = ["civil_id_expiry", "passport_expiry", "visa_expiry", "dob", "join_date", "contract_end"];
+const DATES = ["civil_id_expiry", "passport_expiry", "visa_expiry", "dob", "join_date", "contract_end", "last_working_day"];
 export const LONG = ["education", "specialization", "experience", "languages", "skills", "certifications", "main_tasks"];
 export const FIELDS = ["emp_no", ...TEXT, ...LONG, "email", ...DATES, "department_id", "manager_employee_id", "status", "gender", "shift", "shift_locked", "faceid_exempt", "verify_photo", "verify_faceid", "verify_location", "att_mode", "reports_to_top", "personal_email", "personal_phone", "perm_wilayat", "current_area", ...BANK];
 export const GENDERS = ["male", "female"];
@@ -109,7 +110,14 @@ export function cleanEmployee(db, body, cur = null, { today = null, form = false
     if (typeof v === "string" && v.length > (LONG.includes(k) ? 4000 : 300)) throw bad(k, `${k} is too long`);
     out[k] = v;
   }
+  // a status set by hand: no longer the automatic "On leave"; Resigned / Terminated keep the last working day (needed on
+  // the form), back to Active or On leave clears it
+  if ("status" in out) {
+    out.status_auto = 0;
+    if (!LEFT.includes(out.status) && out.status !== "disabled" && !("last_working_day" in out)) out.last_working_day = null;
+  }
   const merged = { ...(cur || {}), ...out };
+  if (form && "status" in out && LEFT.includes(merged.status) && !merged.last_working_day) throw bad("last_working_day", "Enter the last working day");
   // the emergency contact: name, relationship and phone together (when any of them is given)
   const EM = ["emergency_name", "emergency_relation", "emergency_phone"];
   if (form && EM.some((k) => k in out && out[k] !== null)) for (const k of EM) if (!merged[k]) throw bad(k, "The emergency contact needs a name, a relationship and a phone number");
@@ -173,6 +181,26 @@ export function notSelf(sess, emp) {
   if (sess.employee && sess.employee.id === emp.id) throw new HttpError(403, "forbidden", "You can't do this on your own record");
 }
 
+/** The leave types that make a person "On leave" for the day (not short permissions, corrections or external tasks). */
+const AWAY_TYPES = Object.keys(TYPES).filter((k) => !TYPES[k].permission && !TYPES[k].attendance && !TYPES[k].hours);
+/** "On leave" follows approved leave: set while the person has approved leave today, back to Active when it ends — only
+ * for people who are Active (or were put on leave this way); a status HR set by hand is never touched. Logged. */
+export function syncLeaveStatus(db, today) {
+  const onLeave = new Set(db.prepare(`SELECT DISTINCT employee_id id FROM leave_requests WHERE status='approved' AND start_date<=? AND coalesce(end_date,start_date)>=?
+    AND type IN (${AWAY_TYPES.map(() => "?").join(",")})`).all(today, today, ...AWAY_TYPES).map((r) => r.id));
+  const changed = [];
+  tx(db, () => {
+    for (const e of db.prepare("SELECT id, status, status_auto FROM employees WHERE status='active' OR (status='on_leave' AND status_auto=1)").all()) {
+      const to = onLeave.has(e.id) ? "on_leave" : "active";
+      if (to === e.status) continue;
+      db.prepare("UPDATE employees SET status=?, status_auto=?, updated_at=? WHERE id=?").run(to, to === "on_leave" ? 1 : 0, nowIso(), e.id);
+      audit(db, null, "employee.status", "employee", e.id, { status: e.status }, { status: to, auto: true, date: today });
+      changed.push({ id: e.id, from: e.status, to });
+    }
+  });
+  return changed;
+}
+
 export function registerEmployees(api, ctx) {
   const { db } = ctx;
   const need = (sess, action) => { if (!can(sess, action)) throw new HttpError(403, "forbidden", "You do not have permission for this"); };
@@ -203,6 +231,20 @@ export function registerEmployees(api, ctx) {
     // Art. 81: at least 30 days of annual leave every 2 years
     for (const e of items) { e.under_30_in_2y = !!e.join_date && e.join_date <= twoYearsAgo && e.annual_taken_2y < 30 * DAY; if (isConsultant(sess)) delete e.civil_id_expiry; }
     send(req, res, 200, { items });
+  });
+
+  // the Staff tab (HR and Admin only): every record with its department in both languages, job title, join date, leave left
+  // and status — the page filters, sorts and exports; and what is missing on the records
+  api.get("/api/staff-list", (req, res) => {
+    need(req.sess, "employee.edit");
+    syncLeaveStatus(db, ctx.today());
+    const items = db.prepare(`SELECT e.id,e.emp_no,e.name_ar,e.name_en,e.department_id,d.name_ar dept_ar,d.name_en dept_en,e.job_title,e.join_date,e.status,e.status_auto,
+        e.last_working_day,e.photo_file_id,e.gender,(SELECT coalesce(sum(minutes),0) FROM leave_ledger l WHERE l.employee_id=e.id) remaining
+      FROM employees e LEFT JOIN departments d ON d.id=e.department_id ORDER BY e.emp_no`).all();
+    const current = items.filter((e) => e.status === "active" || e.status === "on_leave");
+    const missing = { department: current.filter((e) => !e.department_id).length, job_title: current.filter((e) => !String(e.job_title || "").trim()).length,
+      join_date: current.filter((e) => !e.join_date).length, name_ar: current.filter((e) => !String(e.name_ar || "").trim()).length, name_en: current.filter((e) => !String(e.name_en || "").trim()).length };
+    send(req, res, 200, { items, missing, day: DAY, generated_at: nowIso(), by: req.sess.employee ? { name_ar: req.sess.employee.name_ar, name_en: req.sess.employee.name_en } : { name_en: req.sess.user.username, name_ar: req.sess.user.username } });
   });
 
   api.get("/api/employees/:id", (req, res) => send(req, res, 200, profile(db, req.sess, load(req.sess, req.params.id), ctx.today())));
@@ -296,6 +338,7 @@ export function registerEmployees(api, ctx) {
         postLedger(db, e, { kind: "annual_credit", minutes: ANNUAL, date: today, yearStart: yearStartFor(e, today), note: "Yearly entitlement", by: req.sess.user.id });
       }
       audit(db, req.sess.user.id, "employee.update", "employee", e.id, cur, e);
+      if (e.status !== cur.status) audit(db, req.sess.user.id, "employee.status", "employee", e.id, { status: cur.status }, { status: e.status, last_working_day: e.last_working_day || null });
       return e;
     });
     // a new direct manager: their waiting requests go to them

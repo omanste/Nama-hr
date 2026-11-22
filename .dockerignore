@@ -2,6 +2,9 @@ node_modules
 data
 tests
 docs
-.git
+.git/*
+!.git/HEAD
+!.git/refs
+!.git/packed-refs
 .superpowers
 .env

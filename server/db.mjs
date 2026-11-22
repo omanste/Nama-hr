@@ -218,6 +218,27 @@ const MIGRATIONS = [
       db.prepare("INSERT INTO audit_log(at,actor_user_id,action,entity,entity_id,before,after) VALUES(?,?,?,?,?,?,?)").run(now, null, "shifts.replace", "settings", null,
         JSON.stringify({ shifts: [1, 2, 3, 4] }), JSON.stringify({ shifts: [5, 6, 7], everyone: "Flexible (5)", from: today }));
   },
+  // 40: the staff status — the last working day of someone who resigned or was terminated, and whether "On leave" was set
+  //     by the system (it then goes back to Active when the leave ends); a record whose login was switched off is Inactive
+  (db) => {
+    db.exec("ALTER TABLE employees ADD COLUMN last_working_day TEXT; ALTER TABLE employees ADD COLUMN status_auto INTEGER NOT NULL DEFAULT 0;");
+    const off = db.prepare(`SELECT e.id FROM employees e WHERE e.status='active' AND EXISTS(SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.active=0)
+      AND NOT EXISTS(SELECT 1 FROM users u WHERE u.employee_id=e.id AND u.active=1)`).all();
+    const now = new Date().toISOString();
+    for (const e of off) {
+      db.prepare("UPDATE employees SET status='disabled' WHERE id=?").run(e.id);
+      db.prepare("INSERT INTO audit_log(at,actor_user_id,action,entity,entity_id,before,after) VALUES(?,?,?,?,?,?,?)").run(now, null, "employee.status", "employee", String(e.id), JSON.stringify({ status: "active" }), JSON.stringify({ status: "disabled", reason: "login switched off" }));
+    }
+  },
+  // 41: HR system updates — every change to the HR portal (from the HR changelog shipped with each deploy, or added by
+  //     Admin), the environments it reached and when, and each deploy
+  `CREATE TABLE hr_updates(id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, day TEXT NOT NULL, area TEXT NOT NULL, type TEXT NOT NULL,
+     title_en TEXT NOT NULL DEFAULT '', title_ar TEXT NOT NULL DEFAULT '', desc_en TEXT NOT NULL DEFAULT '', desc_ar TEXT NOT NULL DEFAULT '',
+     commit_sha TEXT, source TEXT NOT NULL DEFAULT 'file' CHECK(source IN ('file','manual')), hidden INTEGER NOT NULL DEFAULT 0,
+     edited_by INTEGER, edited_at TEXT, created_at TEXT NOT NULL);
+   CREATE TABLE hr_update_envs(update_id INTEGER NOT NULL REFERENCES hr_updates(id) ON DELETE CASCADE, env TEXT NOT NULL, at TEXT NOT NULL,
+     version TEXT, by TEXT, PRIMARY KEY(update_id, env));
+   CREATE TABLE hr_deploys(id INTEGER PRIMARY KEY, env TEXT NOT NULL, at TEXT NOT NULL, version TEXT, by TEXT, entries INTEGER NOT NULL DEFAULT 0);`,
 ];
 
 /** Staff IDs in one format: NAMA- and three digits (NAMA-07 → NAMA-007), wherever that number isn't on another record

@@ -155,7 +155,7 @@ test("users: admin manages roles and resets passwords; HR may only create staff 
 
 test("resigning an employee disables their login", async () => {
   const p = await makePerson(t.base, admin, { emp_no: "Q1", name_ar: "مستقيل" }, "staff");
-  assert.equal((await hr.c.put(`/api/employees/${p.emp.id}`, { status: "resigned" })).status, 200);
+  assert.equal((await hr.c.put(`/api/employees/${p.emp.id}`, { status: "resigned", last_working_day: "2026-01-31" })).status, 200);
   assert.equal((await p.c.get("/api/me")).status, 401);
 });
 

@@ -9,6 +9,10 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY public ./public
 COPY server ./server
+# what changed (the HR system updates page) and which commit this build is: the changelog and git's HEAD/refs
+# (.dockerignore lets only those git files through; .gitignore is always there, so the copy never finds nothing)
+COPY CHANGELOG-HR.md ./
+COPY .gitignore .gi[t] ./.gitmeta/
 RUN mkdir -p /data && chown -R node:node /data
 ENV PORT=3000 DATA_DIR=/data APP_ENV=production
 EXPOSE 3000

@@ -161,7 +161,8 @@ td.num,th.num{text-align:end;font-variant-numeric:tabular-nums;white-space:nowra
 .b-pending{background:var(--warn-soft);color:var(--warn)}
 .b-approved,.b-active{background:var(--ok-soft);color:var(--ok)}
 .b-rejected,.b-terminated{background:var(--bad-soft);color:var(--bad)}
-.b-cancelled,.b-resigned,.b-disabled{background:var(--surface-2);color:var(--muted)}
+.b-cancelled,.b-disabled{background:var(--surface-2);color:var(--muted)}
+.b-resigned{background:var(--warn-soft);color:var(--warn)}
 .b-on_leave{background:var(--info-soft);color:var(--info)}
 .avatar{border-radius:50%;object-fit:cover;flex:none;background:var(--surface-2)}
 .avatar.ph{display:inline-grid;place-items:center;background:var(--gold-soft);color:var(--gold);font-family:var(--font-display);font-weight:600}
@@ -580,3 +581,36 @@ dialog.push-ask .row.end{justify-content:center}
 .phone-opt .f{flex:0 0 auto;font-size:18px}
 .phone-opt .n{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
 .ph-report.warn{border-color:var(--warn)} .ph-report ul{margin:6px 0 10px;padding-inline-start:20px}
+/* the Staff tab: fixed columns, every row the same height, the name on one line */
+.sl-table{table-layout:fixed;width:100%}
+.sl-table th,.sl-table td{vertical-align:middle;height:52px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-block:6px}
+.sl-table thead th{white-space:normal;height:auto;line-height:1.25;overflow:visible}.sl-table thead .th-sort{white-space:normal;text-align:inherit}
+.sl-table td .btn.small{padding:4px 10px}.sl-table td .badge{max-width:100%}
+.sl-table th.c,.sl-table td.c{text-align:center}.sl-table th.c .th-sort{justify-content:center;width:100%}
+.sl-table td.sl-nm{overflow:visible;text-overflow:clip;font-size:var(--sl-name,14px)}
+.sl-table td.sl-nm a{display:flex;align-items:center;gap:8px;white-space:nowrap;color:inherit;font-weight:500;text-decoration:none}
+.sl-table td.sl-nm a:hover span{text-decoration:underline}
+.sl-table td.sl-nm a>*{flex:none}
+.sl-tag{font-size:.78em;color:var(--muted);font-weight:400;margin-inline-start:4px;white-space:nowrap}
+.sl-table td.cut{color:var(--fg)}
+.sl-table .mono{font-variant-numeric:tabular-nums}
+.sl-cards .item{align-items:flex-start}.sl-cards .grow{min-width:0}.sl-cards .sl-nm{white-space:nowrap;overflow:hidden;text-overflow:clip}.sl-cards .meta.row{flex-wrap:wrap;align-items:center}
+.sl-count{margin:4px 0 8px}
+/* HR system updates */
+.upd-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:10px 0}
+.upd-tiles .tile{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.upd-tiles .tile b{display:block;font-size:22px}.upd-tiles .tile span{color:var(--muted);font-size:13px}
+.upd-areas{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.upd-day{margin:16px 0 6px;display:flex;gap:8px;align-items:baseline}.upd-day h3{margin:0;font-size:16px}
+.upd-item{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}
+.upd-item.hid{opacity:.55;border-style:dashed}
+.upd-item .top{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.upd-item .top b{flex:1 1 240px}
+.upd-item p{margin:4px 0 0;color:var(--muted);font-size:14px}
+.upd-item .envs{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;font-size:12px}
+.env{display:inline-block;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:500;white-space:nowrap}
+.env-dev{background:var(--warn-soft);color:var(--warn)}.env-test{background:var(--info-soft);color:var(--info)}.env-production{background:var(--ok-soft);color:var(--ok)}
+.ut{display:inline-block;border-radius:999px;padding:2px 9px;font-size:12px;background:var(--surface-2);color:var(--fg)}
+.ut-feature{background:var(--gold-soft)}.ut-fix{background:var(--bad-soft);color:var(--bad)}
+.pill{display:inline-block;border-radius:999px;font-size:12px;padding:1px 8px;background:var(--surface-2);color:var(--muted)}
+.chip.on{background:var(--gold);color:#fff;border-color:var(--gold)}
+.upd-areas .chip{cursor:pointer;background:var(--surface);font:inherit;font-size:13px}

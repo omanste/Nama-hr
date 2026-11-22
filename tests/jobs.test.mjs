@@ -64,7 +64,7 @@ test("imported balance over 60 is kept; the next credit opens an HR review", asy
 
 test("no join date or resigned staff get no credit", async () => {
   const a = await create({ emp_no: "L5", name_ar: "بدون تاريخ", opening_days: 30 }, "2026-01-01");
-  const b = await create({ emp_no: "L6", name_ar: "مستقيل", join_date: "2020-01-01", status: "resigned" }, "2026-01-01");
+  const b = await create({ emp_no: "L6", name_ar: "مستقيل", join_date: "2020-01-01", status: "resigned", last_working_day: "2025-12-31" }, "2026-01-01");
   const before = [kinds(a.id).length, kinds(b.id).length];
   runAnniversaries(ctx, "2027-02-01");
   assert.deepEqual([kinds(a.id).length, kinds(b.id).length], before);
