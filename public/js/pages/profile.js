@@ -1,4 +1,8 @@
 import { api } from "../api.js";
+import { relations, relationInput, relationText } from "../relation.js";
+import { phoneText } from "../phone.js";
+let REL = []; // the relationship list (loaded with the page), to show a saved one in the reader's language
+const relLabel = (v) => relationText(v, REL);
 import { t, nm, getLang, tx, splitLangs, joinLangs } from "../i18n.js";
 import { BANKS, bankName, ibanText, validIban } from "../banks.js";
 import { GOVERNORATES, MUSCAT_GROUPS, wilayatName, areaName, isWilayat, isArea } from "../places.js";
@@ -152,7 +156,8 @@ function pickButtons(onFile, { scanLabel = t("scan_camera"), fileLabel = t("uplo
 export async function render(el, params, { me, can, opts }) {
   const id = opts.me ? me.employee?.id : params.id;
   if (!id) { el.append(empty(t("no_profile"))); return; }
-  const p = await api.get(`/api/employees/${id}`);
+  const [p, rl] = await Promise.all([api.get(`/api/employees/${id}`), relations()]);
+  REL = rl;
   const e = p.employee, L = p.leave;
   const own = me.employee && me.employee.id === e.id;
   const mayUpload = can.edit() || own;
@@ -218,12 +223,12 @@ export async function render(el, params, { me, can, opts }) {
       h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_contact")), badgeIfPending(p, "contact"),
           mayUpload ? h("button", { class: "btn small", type: "button", onclick: () => contactDialog(e) }, t("edit")) : null),
         facts([
-          ["f_mobile", e.mobile && h("a", { href: `tel:${e.mobile}`, dir: "ltr" }, e.mobile)], ["f_personal_phone", e.personal_phone && h("a", { href: `tel:${e.personal_phone}`, dir: "ltr" }, e.personal_phone)],
+          ["f_mobile", e.mobile && h("a", { href: `tel:${e.mobile}`, dir: "ltr" }, phoneText(e.mobile))], ["f_personal_phone", e.personal_phone && h("a", { href: `tel:${e.personal_phone}`, dir: "ltr" }, phoneText(e.personal_phone))],
           ["f_email", e.email && h("a", { href: `mailto:${e.email}` }, e.email)], ["f_personal_email", e.personal_email && h("a", { href: `mailto:${e.personal_email}`, dir: "ltr" }, e.personal_email)]]),
         h("div", { class: "sub-box" }, h("h3", null, t("sec_address")), facts([
           ["f_perm_wilayat", wilayatName(e.perm_wilayat)], ["f_current_area", areaName(e.current_area)], ["f_address", e.address]])),
         h("div", { class: "sub-box" }, h("h3", null, t("sec_emergency")), facts([
-          ["emergency_person", e.emergency_name], ["f_emergency_relation", e.emergency_relation], ["f_emergency_phone", e.emergency_phone && h("a", { href: `tel:${e.emergency_phone}`, dir: "ltr" }, e.emergency_phone)]]))),
+          ["emergency_person", e.emergency_name], ["f_emergency_relation", e.emergency_relation && relLabel(e.emergency_relation)], ["f_emergency_phone", e.emergency_phone && h("a", { href: `tel:${e.emergency_phone}`, dir: "ltr" }, phoneText(e.emergency_phone))]]))),
       h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_job")), can.edit() ? editLink(e, "job", !!opts.me) : null), facts([
         ["f_department_id", nm(p.department)], ["f_job_title", tx(e.job_title)], ["f_manager_employee_id", h("span", null, p.manager ? nm(p.manager) : can.edit() ? h("span", { class: "muted" }, t("mgr_none")) : null, " ", can.edit() && !opts.me ? h("button", { class: "btn small mgr-btn", type: "button", onclick: () => managerDialog(e) }, p.manager ? t("shift_change") : t("mgr_assign")) : null, p.manager ? h("div", { class: "muted", style: { fontSize: ".85rem" } }, t("mgr_routes")) : null)], ["f_join_date", dmy(e.join_date)], ["f_status", t("st_" + e.status)],
         ["f_shift", h("span", null, t(`shift_${[1, 2, 3, 4, 5, 6, 7].includes(p.shiftToday ?? e.shift) ? p.shiftToday ?? e.shift : 5}_full`), p.shiftNext ? h("span", { class: "muted" }, ` · ${t("shift_next", { name: t("shift_" + p.shiftNext.shift), d: dmy(p.shiftNext.from) })}`) : null)]])),
@@ -702,13 +707,14 @@ function placePicker(name, groups, current, known) {
   return { el: h("div", { class: "grid", style: { gap: "6px" } }, sel, other), sel, value: () => (sel.value === "__other" ? other.value.trim() : sel.value) || null };
 }
 
-function contactDialog(e) {
+async function contactDialog(e) {
   const ar = getLang() === "ar";
+  const rels = await relations();
   const inp = (k, attrs = {}) => h("input", { name: k, value: e[k] || "", ...attrs });
   const tel = { type: "tel", dir: "ltr", inputmode: "tel" };
   const inputs = {
     mobile: inp("mobile", tel), personal_phone: inp("personal_phone", tel), personal_email: emailInput("personal_email", e.personal_email),
-    address: inp("address", { placeholder: t("address_hint") }), emergency_name: inp("emergency_name"), emergency_relation: inp("emergency_relation"), emergency_phone: inp("emergency_phone", tel),
+    address: inp("address", { placeholder: t("address_hint") }), emergency_name: inp("emergency_name"), emergency_relation: relationInput("emergency_relation", e.emergency_relation, rels), emergency_phone: inp("emergency_phone", tel),
   };
   const perm = placePicker("perm_wilayat", GOVERNORATES.map(([gEn, gAr, ws]) => [ar ? gAr : gEn, ws.map(([en, a]) => [en, ar ? a : en])]), e.perm_wilayat, isWilayat);
   const cur = placePicker("current_area", MUSCAT_GROUPS.map(([wEn, wAr, list]) => [ar ? wAr : wEn, list.map(([en, a]) => [en, ar ? a : en])]), e.current_area, isArea);

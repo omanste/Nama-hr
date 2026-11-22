@@ -564,3 +564,19 @@ dialog.push-ask .row.end{justify-content:center}
 /* permissions report: the same compact grid; a totals row */
 .att-grid tr.tot td{border-top:2px solid var(--gold);background:color-mix(in srgb,var(--gold-soft) 70%,transparent);font-weight:600}
 .perm-grid th.name-col{min-width:200px}
+/* one phone field: country (flag, code) + number, left to right */
+.phone-w{display:flex;gap:6px;align-items:stretch;min-width:0;width:100%}
+.phone-w>input{flex:1 1 auto;min-width:0}
+.phone-cc{flex:0 0 auto;min-width:84px;padding:0 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--fg);font:inherit;font-variant-numeric:tabular-nums;cursor:pointer;white-space:nowrap}
+.phone-cc::after{content:" ▾";color:var(--muted);font-size:11px}
+.phone-w.bad>input{border-color:var(--bad)}
+.phone-err{color:var(--bad);font-size:12px;min-height:0}
+.phone-pop{position:fixed;z-index:400;background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.28);padding:8px;display:grid;gap:6px}
+.phone-pop input{width:100%;box-sizing:border-box}
+.phone-list{max-height:280px;overflow:auto;display:grid;gap:2px}
+.phone-opt{display:flex;gap:8px;align-items:center;text-align:start;padding:7px 8px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;cursor:pointer;width:100%}
+.phone-opt:hover,.phone-opt.on{background:var(--surface-2)}
+.phone-opt b{flex:0 0 56px;font-variant-numeric:tabular-nums}
+.phone-opt .f{flex:0 0 auto;font-size:18px}
+.phone-opt .n{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+.ph-report.warn{border-color:var(--warn)} .ph-report ul{margin:6px 0 10px;padding-inline-start:20px}

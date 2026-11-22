@@ -1,5 +1,6 @@
 // App shell: session, layout (header, sidebar / bottom bar), hash router.
 import { outChip } from "./checkin.js";
+import { watchPhones } from "./phone.js";
 import { api } from "./api.js";
 import { t, setLang, getLang, nm, has } from "./i18n.js";
 import { h, clear, errText, empty } from "./ui.js";
@@ -246,4 +247,5 @@ let initialLang = "ar";
 try { initialLang = localStorage.getItem("hr_lang") || "ar"; } catch {}
 setLang(initialLang);
 window.addEventListener("hashchange", render);
+watchPhones(document.body); // every phone field: country + number
 render();

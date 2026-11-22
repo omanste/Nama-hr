@@ -39,6 +39,18 @@ export async function startServer({ dataDir, port = 3000, env = process.env } = 
   const api = router();
   api.get("/api/health", (req, res) => send(req, res, 200, { ok: true, env: ctx.appEnv }));
   await registerModules(api, ctx);
+  // once: phone numbers to the full international format, relationships to the list (after a full HR backup)
+  try {
+    const { convertOnce } = await import("./phone.mjs"), { backupFile } = await import("./hrbackup.mjs");
+    const r = convertOnce(ctx, () => {
+      const f = backupFile(ctx, { type: "full", photos: true, by: "system (before the phone conversion)" });
+      const dir = path.join(DATA, "hr-backups"); fs.mkdirSync(dir, { recursive: true });
+      const name = f.name.replace("nama-hr-full-", "nama-hr-before-phones-"); fs.writeFileSync(path.join(dir, name), f.body);
+      db.prepare("INSERT INTO hr_backups(kind,type,sections,counts,env,file,by_user_id,at) VALUES('auto','full',?,?,?,?,NULL,?)").run(JSON.stringify(["settings", "staff", "attendance", "requests", "calendar", "documents"]), JSON.stringify(f.header.counts), ctx.appEnv, name, new Date().toISOString());
+      return name;
+    });
+    if (r) console.log(`phone conversion: ${JSON.stringify({ phones: r.phones, relations: r.relations })}`);
+  } catch (e) { console.error(`phone conversion: ${e.message}`); }
   const serveStatic = makeStatic(path.join(ROOT, "public"), { watch: (env.APP_ENV || "") === "test" || !!env.STATIC_WATCH });
 
   const server = http.createServer(async (req, res) => {

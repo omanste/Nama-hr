@@ -194,7 +194,7 @@ test("update import: matches by employee ID (or exact name), changes only filled
   const t2 = await boot({ FAKE_TODAY: "2026-10-26" });
   try {
     const a = await adminClient(t2.base);
-    const e = (await a.post("/api/employees", { emp_no: "NAMA-006", name_ar: "أحمد العبيداني", name_en: "Ahmed", join_date: "2022-01-01", main_tasks: "تحصيل الايجارات", mobile: "9000", opening_days: 12 })).data.employee;
+    const e = (await a.post("/api/employees", { emp_no: "NAMA-006", name_ar: "أحمد العبيداني", name_en: "Ahmed", join_date: "2022-01-01", main_tasks: "تحصيل الايجارات", mobile: "90001111", opening_days: 12 })).data.employee;
     const before = (await a.get(`/api/employees/${e.id}`)).data.leave.remaining;
     const mapping = { emp_no: 0, main_tasks: 1, mobile: 2, dob: 3, opening_days: 4 };
     const rows = [["NAMA-006", "Rent collection | تحصيل الإيجارات", "", "1990-05-01", "99"], ["NAMA-999", "x", "", "", ""], ["", "", "", "", ""]];
@@ -206,12 +206,16 @@ test("update import: matches by employee ID (or exact name), changes only filled
     const after = (await a.get(`/api/employees/${e.id}`)).data;
     assert.equal(after.employee.main_tasks, "Rent collection | تحصيل الإيجارات");
     assert.equal(after.employee.dob, "1990-05-01");
-    assert.equal(after.employee.mobile, "9000");           // empty cell → unchanged
+    assert.equal(after.employee.mobile, "+96890001111");           // empty cell → unchanged
     assert.equal(after.leave.remaining, before);           // balances never change
     assert.equal((await a.get("/api/employees")).data.items.length, 1); // nobody was added
     // without an employee ID column, an exact name works
-    const byName = (await a.post("/api/import/commit", { rows: [["أحمد العبيداني", "+968 1"]], mapping: { name_ar: 0, mobile: 1 }, mode: "update" })).data;
+    const byName = (await a.post("/api/import/commit", { rows: [["أحمد العبيداني", "9000 2222"]], mapping: { name_ar: 0, mobile: 1 }, mode: "update" })).data;
     assert.equal(byName.updated, 1);
-    assert.equal((await a.get(`/api/employees/${e.id}`)).data.employee.mobile, "+968 1");
+    assert.equal((await a.get(`/api/employees/${e.id}`)).data.employee.mobile, "+96890002222", "no code: Oman");
+    // an unclear number is flagged and left out; the rest of the row still goes in
+    const pv = (await a.post("/api/import/preview", { rows: [["أحمد العبيداني", "+968 1", "أخوي"]], mapping: { name_ar: 0, mobile: 1, emergency_relation: 2 }, mode: "update" })).data;
+    assert.deepEqual(pv.rows[0].warnings.map((w) => w.code), ["unclear_phone"]);
+    assert.equal(pv.rows[0].values.emergency_relation, "Brother");
   } finally { await t2.close(); }
 });

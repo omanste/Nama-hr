@@ -51,9 +51,9 @@ test("holidays save as a sorted list of dates", async () => {
 });
 
 test("staff edit their own contact details, but not the work e-mail or anyone else's", async () => {
-  const r = await staff.c.put(`/api/employees/${staff.emp.id}/contact`, { mobile: "+968 9000 1111", emergency_name: "أخ", emergency_phone: "99999999", email: "hack@x.om", civil_id: "1" });
+  const r = await staff.c.put(`/api/employees/${staff.emp.id}/contact`, { mobile: "+968 9000 1111", emergency_name: "أخ", emergency_relation: "Brother", emergency_phone: "99999999", email: "hack@x.om", civil_id: "1" });
   assert.equal(r.status, 200);
-  assert.equal(r.data.employee.mobile, "+968 9000 1111");
+  assert.equal(r.data.employee.mobile, "+96890001111"); assert.equal(r.data.employee.emergency_phone, "+96899999999");
   assert.equal(r.data.employee.emergency_name, "أخ");
   assert.equal(r.data.employee.email, null);     // e-mail is HR/Admin only
   assert.notEqual(r.data.employee.civil_id, "1"); // so is everything outside contact details

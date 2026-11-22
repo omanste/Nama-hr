@@ -12,6 +12,7 @@ import { toCountryCode } from "../public/js/countries.js";
 import { permissionSummary } from "./permissions.mjs";
 import { rerouteFallbacks, rerouteFor } from "./requests.mjs";
 import { SHIFTS, SELF_SHIFTS, defaultShiftNo, shiftOn } from "./shifts.mjs";
+import { PHONE_FIELDS, cleanPhone, cleanRelation } from "./phone.mjs";
 import { recordSelfChange, pendingChangesOf } from "./profile-changes.mjs";
 import { removeUpload } from "./files.mjs";
 
@@ -63,7 +64,7 @@ export function nextEmpNo(db) {
 }
 
 /** Validate and clean a profile payload; `cur` is the existing row on update. */
-export function cleanEmployee(db, body, cur = null, { today = null } = {}) {
+export function cleanEmployee(db, body, cur = null, { today = null, form = false } = {}) {
   const out = {};
   for (const k of FIELDS) {
     if (!(k in body)) continue;
@@ -89,6 +90,9 @@ export function cleanEmployee(db, body, cur = null, { today = null } = {}) {
     if (k === "reports_to_top" && v !== null && !["ceo", "chairman", "both"].includes(v)) throw bad(k, "reports to must be the CEO, the Chairman or both");
     if (k === "att_mode") { if (v === null) v = "both"; if (!["machine", "online", "both"].includes(v)) throw bad(k, "attendance method must be machine, online or both"); }
     if ((k === "name_ar" || k === "name_en") && v === null) v = ""; // names are never NULL, just empty
+    // every phone: the full international number (+96899123456); an 8-digit number is Omani
+    if (PHONE_FIELDS.includes(k)) { const p = cleanPhone(v); if (p.error) throw bad(k, p.error); v = p.value; }
+    if (k === "emergency_relation") { const r = cleanRelation(db, v); if (r.error) throw bad(k, r.error); v = r.value; }
     if (k === "nationality" && v !== null) v = toCountryCode(v); // stored as a country code, e.g. "OM"
     if (k === "department_id" && v !== null && !db.prepare("SELECT 1 FROM departments WHERE id=?").get(Number(v))) throw bad(k, "unknown department");
     if (k === "manager_employee_id" && v !== null) {
@@ -106,6 +110,9 @@ export function cleanEmployee(db, body, cur = null, { today = null } = {}) {
     out[k] = v;
   }
   const merged = { ...(cur || {}), ...out };
+  // the emergency contact: name, relationship and phone together (when any of them is given)
+  const EM = ["emergency_name", "emergency_relation", "emergency_phone"];
+  if (form && EM.some((k) => k in out && out[k] !== null)) for (const k of EM) if (!merged[k]) throw bad(k, "The emergency contact needs a name, a relationship and a phone number");
   if (!merged.name_ar && !merged.name_en) throw bad("name_ar", "Arabic or English name is required");
   if ("emp_no" in out || !cur) {
     if (!out.emp_no && !cur) out.emp_no = nextEmpNo(db);
@@ -209,7 +216,7 @@ export function registerEmployees(api, ctx) {
       if (!Number.isFinite(opening) || opening < 0) throw bad("opening_days", "Opening balance must be a number of days, 0 or more");
     }
     const emp = tx(db, () => {
-      const e = insertEmployee(db, cleanEmployee(db, body, null, { today: ctx.today() }), req.sess.user.id);
+      const e = insertEmployee(db, cleanEmployee(db, body, null, { today: ctx.today(), form: true }), req.sess.user.id);
       const today = ctx.today();
       if (opening !== null) postLedger(db, e, { kind: "opening", minutes: Math.round(opening * DAY), date: today, note: "Opening balance", by: req.sess.user.id });
       else if (e.join_date) postLedger(db, e, { kind: "annual_credit", minutes: ANNUAL, date: today, yearStart: yearStartFor(e, today), note: "Yearly entitlement", by: req.sess.user.id });
@@ -227,7 +234,7 @@ export function registerEmployees(api, ctx) {
     if (!can(req.sess, "employee.edit") && cur.id !== req.sess.user.employee_id) throw new HttpError(403, "forbidden", "You do not have permission for this");
     const b = await readJson(req);
     const body = Object.fromEntries(fields.filter((k) => k in b).map((k) => [k, b[k]]));
-    const values = cleanEmployee(db, { ...body, confirm_past: !!b.confirm_past }, cur, { today: ctx.today() });
+    const values = cleanEmployee(db, { ...body, confirm_past: !!b.confirm_past }, cur, { today: ctx.today(), form: true });
     const emp = tx(db, () => {
       const cols = Object.keys(values);
       if (cols.length) db.prepare(`UPDATE employees SET ${cols.map((c) => `${c}=?`).join(",")},updated_at=? WHERE id=?`).run(...cols.map((c) => values[c]), nowIso(), cur.id);
@@ -263,7 +270,7 @@ export function registerEmployees(api, ctx) {
     need(req.sess, "employee.edit");
     const cur = getEmployee(db, req.params.id);
     if (!cur) throw new HttpError(404, "not_found", "Employee not found");
-    const values = cleanEmployee(db, await readJson(req), cur, { today: ctx.today() });
+    const values = cleanEmployee(db, await readJson(req), cur, { today: ctx.today(), form: true });
     // a person's check-in verification (Default / On / Off): Admin only
     if (["verify_photo", "verify_faceid", "verify_location"].some((k) => k in values) && req.sess.user.role !== "admin")
       throw new HttpError(403, "forbidden", "Only Admin can change a person's check-in verification");

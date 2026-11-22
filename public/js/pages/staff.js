@@ -9,6 +9,21 @@ const SORT_KEY = "nama.staffSort";
 const loadSort = () => { try { const v = JSON.parse(localStorage.getItem(SORT_KEY)); if (v && COLS.some(([k]) => k === v.key)) return v; } catch {} return { key: "emp_no", dir: 1 }; };
 const saveSort = (v) => { try { localStorage.setItem(SORT_KEY, JSON.stringify(v)); } catch {} };
 
+/** HR / Admin: the phone and relationship conversion report, and what still needs a look (each with a link to the person). */
+async function phoneReport() {
+  let r; try { r = await api.get("/api/admin/phone-report"); } catch { return null; }
+  if (!r.report && !r.phones.length && !r.relations.length) return null;
+  const R = r.report || { phones: {}, relations: {} };
+  const who = (x) => h("a", { href: `#/staff/${x.id}/edit` }, `${x.emp_no} · ${nm(x)}`);
+  const left = r.phones.length + r.relations.length;
+  return h("details", { class: `card ph-report${left ? " warn" : ""}`, open: left > 0 && left <= 20 },
+    h("summary", null, h("b", null, t("ph_report")), left ? h("span", { class: "pill" }, left) : " ✓"),
+    r.report ? h("p", { class: "sub" }, t("ph_report_counts", { c: R.phones.converted || 0, o: R.phones.ok || 0, r: R.phones.review || 0, rc: R.relations.converted || 0, ro: R.relations.ok || 0, rr: R.relations.review || 0 })) : null,
+    r.phones.length ? [h("h3", null, t("ph_review_phones")), h("ul", null, r.phones.map((x) => h("li", null, who(x), ` — ${t("f_" + x.field)}: `, h("span", { dir: "ltr" }, x.value))))] : null,
+    r.relations.length ? [h("h3", null, t("ph_review_rel")), h("ul", null, r.relations.map((x) => h("li", null, who(x), ` — «${x.value}»`)))] : null,
+    !left ? h("p", { class: "sub" }, t("ph_none_left")) : null);
+}
+
 export async function render(el, _p, { can, query }) {
   const depts = (await api.get("/api/departments")).items;
   const q = h("input", { type: "search", placeholder: t("search"), "aria-label": t("search"), value: query.get("q") || "" });
@@ -61,7 +76,8 @@ export async function render(el, _p, { can, query }) {
   }
   q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(load, 250); });
   dept.addEventListener("change", load); status.addEventListener("change", load);
-  el.append(pageHead(t("staff_title"), can.edit() ? h("a", { class: "btn primary", href: "#/staff/new" }, t("add_employee")) : null),
+  const report = can.edit() ? await phoneReport() : null;
+  el.append(pageHead(t("staff_title"), can.edit() ? h("a", { class: "btn primary", href: "#/staff/new" }, t("add_employee")) : null), report,
     h("div", { class: "toolbar" }, q, dept, status, h("span", { class: "sort-mobile" }, sortSel)), out);
   await load();
 }

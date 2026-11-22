@@ -11,6 +11,7 @@ import { shiftTimes, LEGACY_SHIFTS, NEW_SHIFTS, shiftDefs } from "./shifts.mjs";
 import { overtimeRates } from "./overtime.mjs";
 import { faceidMode, FACEID_MODES } from "./webauthn.mjs";
 import { verifyDefaults, CHECKS } from "./verify.mjs";
+import { relationList, DEFAULT_RELATIONS, reviewList } from "./phone.mjs";
 
 export const DEFAULT_CONTRACT_TYPES = ["Unlimited", "Limited", "Probation", "Part-time"];
 /** Leave that needs the CEO's final approval after the manager's (exceptions to the normal policy). */
@@ -64,7 +65,7 @@ export function readSettings(db) {
     remind_checkin_min: getSetting(db, "remind_checkin_min", 10),
     remind_checkout_min: getSetting(db, "remind_checkout_min", 10),
     // the three shifts (Flexible, 10–5, 10–6): start, end, flexible window, work hours, break (Admin)
-    shifts: shiftDefs(db), remind_before_out_min: getSetting(db, "remind_before_out_min", 10),
+    shifts: shiftDefs(db), emergency_relations: relationList(db), remind_before_out_min: getSetting(db, "remind_before_out_min", 10),
     // Face ID / fingerprint at check-in: required (default), optional, or off — HR can exempt a person on their profile
     faceid_mode: faceidMode(db),
     // check-in verification for everyone (each person can be set apart on their profile): photo, Face ID, location
@@ -86,6 +87,13 @@ export function readSettings(db) {
 }
 
 export function registerAdmin(api, ctx) {
+  // the emergency contact relationships (family only) — for every profile form
+  api.get("/api/emergency-relations", (req, res) => send(req, res, 200, { items: relationList(ctx.db) }));
+  // the phone / relationship conversion report and what still needs a look (HR and Admin)
+  api.get("/api/admin/phone-report", (req, res) => {
+    if (!["hr", "admin"].includes(req.sess.user.role)) throw new HttpError(403, "forbidden", "You do not have permission for this");
+    send(req, res, 200, { report: getSetting(ctx.db, "phone_conversion_report", null), ...reviewList(ctx.db) });
+  });
   const { db } = ctx;
   const need = (sess, action) => { if (!can(sess, action)) throw new HttpError(403, "forbidden", "You do not have permission for this"); };
   const invalid = (field, message) => Object.assign(new HttpError(400, "invalid", message), { field });
@@ -176,7 +184,7 @@ export function registerAdmin(api, ctx) {
   api.put("/api/settings", async (req, res) => {
     need(req.sess, "settings.edit");
     const b = await readJson(req);
-    const allowed = ["managers_approver_employee_id", "managers_approver_title", "chairman_employee_id", "ceo_final_types", "att_sites", "late_grace_min", "remind_checkin_min", "remind_checkout_min", "remind_before_out_min", "shifts", "faceid_mode", "verify", "verify_photo", "verify_faceid", "verify_location", "contract_types", "shift_1_start", "shift_1_end", "shift_2_start", "shift_2_end", "shift_3_start", "shift_3_end", "shift_4_start", "shift_4_end", "ramadan_start", "ramadan_end", "ramadan_hours", "attendance_start", "shift_self_select", "official_holidays"];
+    const allowed = ["managers_approver_employee_id", "managers_approver_title", "chairman_employee_id", "ceo_final_types", "att_sites", "late_grace_min", "remind_checkin_min", "remind_checkout_min", "remind_before_out_min", "shifts", "emergency_relations", "faceid_mode", "verify", "verify_photo", "verify_faceid", "verify_location", "contract_types", "shift_1_start", "shift_1_end", "shift_2_start", "shift_2_end", "shift_3_start", "shift_3_end", "shift_4_start", "shift_4_end", "ramadan_start", "ramadan_end", "ramadan_hours", "attendance_start", "shift_self_select", "official_holidays"];
     if ("official_holidays" in b) {
       if (!Array.isArray(b.official_holidays) || !b.official_holidays.every((x) => x && isIsoDate(x.date))) throw invalid("official_holidays", "each holiday needs a valid date");
       b.official_holidays = b.official_holidays.map((x) => ({ date: x.date, name: String(x.name || "").trim().slice(0, 80) })).sort((x, y) => (x.date < y.date ? -1 : 1));
@@ -210,6 +218,17 @@ export function registerAdmin(api, ctx) {
       delete b.verify;
     } else if ("faceid_mode" in b) b.verify_faceid = b.faceid_mode === "required";
     for (const c of CHECKS) if (`verify_${c}` in b && typeof b[`verify_${c}`] !== "boolean") throw invalid(`verify_${c}`, "must be true or false");
+    if ("emergency_relations" in b) {
+      const L = b.emergency_relations;
+      if (!Array.isArray(L) || L.length < 2 || L.length > 40) throw invalid("emergency_relations", "a list of 2–40 relationships");
+      b.emergency_relations = L.map((r, i) => {
+        const en = String((r && r.en) || "").trim().slice(0, 40), ar = String((r && r.ar) || "").trim().slice(0, 40);
+        if (!en || !ar) throw invalid("emergency_relations", `line ${i + 1}: English and Arabic are both needed`);
+        if (/friend|colleague|neighbou?r|صديق|زميل|جار/i.test(`${en} ${ar}`)) throw invalid("emergency_relations", `line ${i + 1}: family relationships only`);
+        return { en, ar, ...(r.other ? { other: true } : {}) };
+      });
+      if (b.emergency_relations.filter((r) => r.other).length !== 1) b.emergency_relations = [...b.emergency_relations.filter((r) => !r.other), DEFAULT_RELATIONS.at(-1)];
+    }
     if ("shifts" in b) {
       const T = /^([01]\d|2[0-3]):[0-5]\d$/, cur = shiftDefs(db);
       if (!b.shifts || typeof b.shifts !== "object") throw invalid("shifts", "shifts: an object");

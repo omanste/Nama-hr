@@ -6,6 +6,14 @@ import { can } from "./perm.mjs";
 import { audit } from "./audit.mjs";
 import { isIsoDate, DAY, CAP } from "./leave.mjs";
 import { cleanEmployee, insertEmployee, nextEmpNo, createUser, STATUSES, LONG, normEmpNo, empNoHolder } from "./employees.mjs";
+import { PHONE_FIELDS, cleanPhone, guessRelation } from "./phone.mjs";
+
+/** Phones and the emergency relationship in an imported row: with or without the country code (+968 when missing); an
+ * unclear number or relationship is flagged and left out, so the rest of the row still goes in. */
+function importContacts(db, values, warnings) {
+  for (const f of PHONE_FIELDS) if (values[f]) { const p = cleanPhone(values[f]); if (p.error) { warnings.push({ field: f, code: "unclear_phone" }); delete values[f]; } else values[f] = p.value; }
+  if (values.emergency_relation) { const g = guessRelation(db, values.emergency_relation); if (g.review) { warnings.push({ field: "emergency_relation", code: "unclear_relation" }); delete values.emergency_relation; } else values.emergency_relation = g.value; }
+}
 import { postLedger } from "./ledger.mjs";
 import { toCountryCode } from "../public/js/countries.js";
 
@@ -87,6 +95,7 @@ export function validateRows(db, rawRows, mapping, today, mode = "add") {
   const out = rows.map((raw, i) => {
     const { values, issues } = normalizeRow(raw, mapping);
     const errors = [...issues], warnings = [];
+    importContacts(db, values, warnings);
     if (values.emp_no) values.emp_no = normEmpNo(values.emp_no); // NAMA-7 / NAMA-07 → NAMA-007
     if (values.emp_no && empNoHolder(db, values.emp_no)) errors.push({ field: "emp_no", code: "exists" });
     if (!values.emp_no && !errors.some((e) => e.field === "join_date") && sameName(values).some((e) => (e.join_date || null) === (values.join_date || null)))
@@ -134,6 +143,7 @@ function validateUpdates(db, rawRows, mapping, today) {
   const out = rows.map((raw, i) => {
     const { values, issues } = normalizeRow(raw, mapping);
     const errors = [...issues].filter((e) => e.field !== "opening_days"), warnings = [];
+    importContacts(db, values, warnings);
     delete values.opening_days; // balances never change through an update import
     let target = values.emp_no ? people.filter((p) => norm(p.emp_no) === norm(values.emp_no)) : [];
     if (!target.length && !values.emp_no) target = people.filter((p) => (values.name_ar && norm(p.name_ar) === norm(values.name_ar)) || (values.name_en && norm(p.name_en) === norm(values.name_en)));

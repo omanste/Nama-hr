@@ -63,6 +63,7 @@ export async function render(el, _p, { can }) {
       h("div", { class: "row end", style: { marginTop: "12px" } }, h("span", { class: "sub" }, t("holidays_save_hint")), h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", {
         official_holidays: hol.value(),
       })) }, t("save")))),
+    relationsCard(settings, save),
     h("section", { class: "card" }, h("h2", null, t("contract_types")),
       field(t("contract_types"), types, { hint: t("contract_types_hint") }),
       h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", { contract_types: types.value.split("\n").map((x) => x.trim()).filter(Boolean) })) }, t("save")))),
@@ -104,6 +105,17 @@ function verifyCard(settings, save) {
     h("p", { class: "note" }, t("ver_flag_note")),
     h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", {
       verify: { photo: boxes.photo.checked, faceid: boxes.faceid.checked, location: boxes.location.checked } })) }, t("save"))));
+}
+
+/** Lists › Emergency contact relationship (family only): one per line "English | Arabic"; "Other family member" stays last. */
+function relationsCard(settings, save) {
+  const L = settings.emergency_relations || [];
+  const box = h("textarea", { rows: 8, dir: "auto" }); box.value = L.filter((r) => !r.other).map((r) => `${r.en} | ${r.ar}`).join("\n");
+  const other = L.find((r) => r.other);
+  return h("section", { class: "card", id: "relations" }, h("h2", null, t("rel_list")), h("p", { class: "sub" }, t("rel_list_hint")),
+    field(t("rel_list"), box, { hint: other ? `+ ${other.en} · ${other.ar}` : null }),
+    h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", {
+      emergency_relations: [...box.value.split("\n").map((l) => l.split("|").map((x) => x.trim())).filter((p) => p[0]).map(([en, ar]) => ({ en, ar: ar || "" })), other || { en: "Other family member", ar: "فرد آخر من العائلة", other: true }] })) }, t("save"))));
 }
 
 /** The three shifts (Admin): Flexible (the default), 10–5 and 10–6 — start, end, the flexible window, work hours and

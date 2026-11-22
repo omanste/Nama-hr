@@ -1,4 +1,5 @@
 import { api } from "../api.js";
+import { relations, relationInput } from "../relation.js";
 import { t, nm, getLang, splitLangs, joinLangs, tx } from "../i18n.js";
 import { countryOptions, countryName } from "../countries.js";
 import { h, field, select, toast, errText, showFieldError, backLink, emailInput, saveWithExpiryCheck } from "../ui.js";
@@ -12,6 +13,7 @@ export async function render(el, params, { can, query }) {
     isNew ? null : api.get(`/api/employees/${params.id}`), api.get("/api/departments"), api.get("/api/employees"), api.get("/api/settings"),
   ]);
   const e = cur ? cur.employee : { status: "active" };
+  const rels = await relations();
   const inp = (name, attrs = {}) => h("input", { name, value: e[name] ?? "", ...attrs });
   const date = (name) => inp(name, { type: "date" });
   // text that can be written in both languages: an Arabic box and an English box side by side
@@ -39,7 +41,7 @@ export async function render(el, params, { can, query }) {
       field(t("f_email"), emailInput("email", e.email)),
       field(t("f_address"), inp("address"), { full: true }),
       field(t("f_emergency_name"), inp("emergency_name")),
-      field(t("f_emergency_relation"), inp("emergency_relation")),
+      field(t("f_emergency_relation"), relationInput("emergency_relation", e.emergency_relation, rels)),
       field(t("f_emergency_phone"), inp("emergency_phone", { type: "tel", dir: "ltr" })))),
     h("section", { class: "card", id: "sec-job" }, h("h2", null, t("sec_job")), h("div", { class: "fields" },
       field(t("f_department_id"), select("department_id", [["", "—"], ...depts.items.map((d) => [d.id, nm(d)])], e.department_id)),
