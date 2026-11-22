@@ -19,7 +19,7 @@ function outsideSection(list) {
     else if (action === "reject") { note = await confirm(t("ci_reject_q"), { input: t("reject_reason"), required: true, okText: t("reject"), danger: true }); if (note === null) return; }
     try { await api.post(`/api/attendance/checkins/${c.id}/${action}`, { note }); toast(t("saved")); rerender(); } catch (e) { toast(errText(e), "bad"); }
   };
-  const near = (c) => (c.nearest ? t("ci_nearest", { name: getLang() === "en" ? c.nearest.name_en || c.nearest.name_ar : c.nearest.name_ar || c.nearest.name_en, km: ((c.distance || 0) / 1000).toFixed(1) }) : "");
+  const near = (c) => (c.outside && c.nearest ? t("ci_nearest", { name: getLang() === "en" ? c.nearest.name_en || c.nearest.name_ar : c.nearest.name_ar || c.nearest.name_en, km: ((c.distance || 0) / 1000).toFixed(1) }) : "");
   return h("section", { class: "card" }, h("h2", null, t("ci_flags_title"), " ", h("span", { class: "badge b-pending" }, list.length)),
     h("p", { class: "sub" }, t("ci_flags_hint")),
     h("div", { class: "list" }, list.map((c) => h("div", { class: "item", style: { flexWrap: "wrap" } },

@@ -44,7 +44,7 @@ export function figures(s) {
     ["att_work_days", num(s.workDays)], ["att_compliance", pct(s.compliance)], ["att_late", pair(s.late, s.lateMin)], ["att_early", pair(s.early, s.earlyMin)],
     ["att_missing", num(s.missing)], ["att_absent", num(s.absent)], ["att_pending_abs", num(s.pending)], ["att_leave_days", num(s.leave)],
     ["att_mission_days", num(s.mission)], ["ci_outside", num(s.outside || 0)], ["att_after", s.afterMin ? pair(s.afterDays, s.afterMin) : "—"],
-    ["att_extra", hours(s.extraMin)], ["att_flagged", num(s.flagged || 0)], ["att_total_hours", hours(s.onSite)],
+    ["att_extra", hours(s.extraMin)], ["att_flagged", s.unverified ? `${num(s.flagged || 0)} · ${t("att_unverified")} ${num(s.unverified)}` : num(s.flagged || 0)], ["att_total_hours", hours(s.onSite)],
   ];
 }
 const COLS = ["att_h_work", "att_h_compliance", "att_h_late", "att_h_early", "att_h_missing", "att_h_absent", "att_h_pending", "att_h_leave", "att_h_mission", "att_h_outside", "att_h_after", "att_h_extra", "att_h_flagged", "att_h_hours"];
@@ -82,7 +82,8 @@ tr.tot td{background:#efe6cf!important;font-weight:600;border-top:2px solid #a88
 .days th{padding:3px 3px}
 .days td.st{font-weight:600;text-align:start;padding-inline:6px}
 .days tr.q td{color:#8a9794}
-.days td.st .flag{color:#a3670b;font-weight:600}
+.days td.st{white-space:normal;line-height:1.2}
+.days td.st .flag{color:#a3670b;font-weight:600;font-size:9px;display:block}
 .who{display:flex;gap:18px;align-items:baseline;margin:9px 0 5px}
 .who b{font-size:16px;font-weight:600;color:#154540}
 .who span{color:#5b6b68}
@@ -247,13 +248,13 @@ export async function downloadXlsx(D) {
     [t("att_on_time_days"), T.onTime], [`${t("att_late")} (${t("pdf_times")})`, T.late], [`${t("att_late")} (${t("pdf_hours_unit")})`, H2(T.lateMin)],
     [`${t("att_early")} (${t("pdf_times")})`, T.early], [`${t("att_early")} (${t("pdf_hours_unit")})`, H2(T.earlyMin)], [t("att_missing"), T.missing], [t("att_absent"), T.absent],
     [t("att_pending_abs"), T.pending], [t("att_leave_days"), T.leave], [t("att_mission_days"), T.mission], [t("ci_outside"), T.outside || 0],
-    [`${t("att_after")} (${t("pdf_hours_unit")})`, H2(T.afterMin)], [`${t("att_extra")} (${t("pdf_hours_unit")})`, H2(T.extraMin)], [t("att_flagged"), T.flagged || 0], [`${t("att_total_hours")} (${t("pdf_hours_unit")})`, H2(T.onSite)]];
+    [`${t("att_after")} (${t("pdf_hours_unit")})`, H2(T.afterMin)], [`${t("att_extra")} (${t("pdf_hours_unit")})`, H2(T.extraMin)], [t("att_flagged"), T.flagged || 0], [t("att_unverified"), T.unverified || 0], [`${t("att_total_hours")} (${t("pdf_hours_unit")})`, H2(T.onSite)]];
   const ws1 = X.utils.aoa_to_sheet(summary); ws1["!cols"] = [{ wch: 36 }, { wch: 24 }];
   const cell = ws1["B9"]; if (cell && cell.v !== "") cell.z = "0.0%";
   const head = [t("emp_no_short"), t("employee"), t("f_department"), t("att_work_days"), t("att_compliance"), `${t("att_late")} (${t("pdf_times")})`, `${t("att_late")} (${t("pdf_hours_unit")})`,
     `${t("att_early")} (${t("pdf_times")})`, `${t("att_early")} (${t("pdf_hours_unit")})`, t("att_missing"), t("att_absent"), t("att_pending_abs"), t("att_leave_days"), t("att_mission_days"),
-    t("ci_outside"), `${t("att_after")} (${t("pdf_hours_unit")})`, `${t("att_extra")} (${t("pdf_hours_unit")})`, t("att_flagged"), `${t("att_total_hours")} (${t("pdf_hours_unit")})`, t("ver_checks_off")];
-  const line = (s) => [s.workDays, s.compliance === null ? "" : s.compliance, s.late, H2(s.lateMin), s.early, H2(s.earlyMin), s.missing, s.absent, s.pending, s.leave, s.mission, s.outside || 0, H2(s.afterMin), H2(s.extraMin), s.flagged || 0, H2(s.onSite)];
+    t("ci_outside"), `${t("att_after")} (${t("pdf_hours_unit")})`, `${t("att_extra")} (${t("pdf_hours_unit")})`, t("att_flagged"), t("att_unverified"), `${t("att_total_hours")} (${t("pdf_hours_unit")})`, t("ver_checks_off")];
+  const line = (s) => [s.workDays, s.compliance === null ? "" : s.compliance, s.late, H2(s.lateMin), s.early, H2(s.earlyMin), s.missing, s.absent, s.pending, s.leave, s.mission, s.outside || 0, H2(s.afterMin), H2(s.extraMin), s.flagged || 0, s.unverified || 0, H2(s.onSite)];
   const offText = (p) => (p.checksOff || []).map((k) => t("ver_" + k)).join(", ");
   const staff = [head, ...D.people.map((p) => [p.employee.emp_no, nameOf(p.employee), dept(p.employee), ...line(p.summary), offText(p)]), ["", t("pdf_totals"), "", ...line(T)]];
   const ws2 = X.utils.aoa_to_sheet(staff); ws2["!cols"] = [{ wch: 10 }, { wch: 32 }, { wch: 18 }, ...head.slice(3).map(() => ({ wch: 12 }))];

@@ -70,11 +70,11 @@ after(async () => { await t.close(); });
 const register = async (p, ph) => { const o = (await p.c.post("/api/webauthn/register/options", {})).data; return p.c.post("/api/webauthn/register/verify", ph.create(o, t.base)); };
 const verify = async (p, ph, opts) => { const o = (await p.c.post("/api/webauthn/verify/options", {})).data; return p.c.post("/api/webauthn/verify", ph.get(o, t.base, opts)); };
 
-test("on by default: a check-in without the phone's face / fingerprint check is saved but flagged ⚠️", async () => {
+test("on by default: no Face ID → the photo is the check, flagged 'Face ID failed — photo taken'", async () => {
   assert.equal((await s.c.get("/api/webauthn/status")).data.needed, true);
   const r = await ci(s2, "in");
-  assert.equal(r.status, 201); assert.deepEqual(r.data.checkin.flags.map((f) => f.code), ["faceid_failed"]); assert.equal(r.data.checkin.checks.faceid, false);
-  assert.ok((await hr.c.get("/api/notifications")).data.items.some((n) => /Face ID \/ fingerprint not confirmed/.test(n.title_en)));
+  assert.equal(r.status, 201); assert.deepEqual(r.data.checkin.flags.map((f) => f.code), ["faceid_failed_photo"]); assert.equal(r.data.checkin.checks.faceid, false); assert.equal(r.data.checkin.checks.photo, true);
+  assert.ok((await hr.c.get("/api/notifications")).data.items.some((n) => /Face ID failed — photo taken/.test(n.title_en)));
   assert.equal((await s.c.post("/api/webauthn/verify/options", {})).data.error, "no_device", "register a phone first");
 });
 
@@ -90,7 +90,7 @@ test("registering this phone counts as the check; the person, HR and Admin are t
   assert.equal(c.data.checkin.flags.length, 0, "verified: no flag");
   // one check, one check-in: the next one without a fresh check is flagged
   t.app.ctx.fakeClock = "17:00";
-  assert.deepEqual((await ci(s, "out")).data.checkin.flags.map((f) => f.code), ["faceid_failed"]);
+  assert.deepEqual((await ci(s, "out")).data.checkin.flags.map((f) => f.code), ["faceid_failed_photo"]);
   // verify with the phone, then check out: not flagged
   assert.equal((await verify(s, ph)).status, 200);
   const o = await ci(s, "out");

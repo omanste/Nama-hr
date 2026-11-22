@@ -109,7 +109,7 @@ function verifyCard(settings, save) {
   const boxes = { photo: sw("photo"), faceid: sw("faceid"), location: sw("location") };
   const row = (k, ico) => h("label", { class: "verify-row" }, boxes[k], h("span", null, h("b", null, ico, " ", t(`ver_${k}`)), h("div", { class: "sub" }, t(`ver_${k}_hint`))));
   return h("section", { class: "card", id: "verify" }, h("h2", null, t("ver_title")), h("p", { class: "sub" }, t("ver_hint")),
-    h("div", { class: "verify-list" }, row("photo", "📷"), row("faceid", "🔐"), row("location", "📍")),
+    h("div", { class: "verify-list" }, row("location", "📍"), row("faceid", "🔐"), row("photo", "📷")),
     h("p", { class: "note" }, t("ver_flag_note")),
     h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", {
       verify: { photo: boxes.photo.checked, faceid: boxes.faceid.checked, location: boxes.location.checked } })) }, t("save"))));

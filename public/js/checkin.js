@@ -63,17 +63,17 @@ async function start(kind, st, btn) {
   if (running) return;
   running = true;
   btn.disabled = true;
-  // what this person is asked for (Admin's switches, or their own): a check that fails never stops the check-in —
-  // after asking, it goes ahead flagged ⚠️ for the manager
+  // what this person is asked for (Admin's switches, or their own), in this order: location (required), Face ID,
+  // a photo only when Face ID fails (or is off) — two more tries — else the punch is saved Unverified
   const V = st.verify || { photo: true, faceid: true, location: true };
   try {
     if (!st.consent) { if (!(await notice())) return; await api.post("/api/attendance/checkin/consent", {}); st.consent = true; }
     let pos = null;
     if (V.location) {
       toast(t("ci_locating"));
-      try { pos = await locate(); } catch (e) { if (!(await goOnFlagged(e.message || t("ci_geo_failed")))) return; }
+      try { pos = await locate(); } catch (e) { toast(`${e.message} ${t("ci_loc_required")}`, "bad", 9000); return; }
     }
-    // before the photo: does this place need a reason (outside the work sites), or leaving after hours?
+    // before Face ID / the photo: outside the work sites (why), leaving early (sure?), after hours (why)?
     let reason = "", extraReason = "";
     try {
       const q = { kind, ...(pos ? { lat: pos.coords.latitude, lng: pos.coords.longitude } : {}) };
@@ -82,30 +82,51 @@ async function start(kind, st, btn) {
       if (kind === "out" && c.early && !(await confirm(t("ci_early_q", { t: c.shift_end }), { okText: t("ci_early_go") }))) return;
       if (c.after_hours) { extraReason = await reasonDialog(null, { title: t("ci_extra_title"), hint: t("ci_extra_hint", { t: c.shift_end }) }); if (!extraReason) return; }
     } catch (e) { if (e.status && e.status !== 404) throw e; } // an older server: it asks after the photo instead
-    // Face ID / fingerprint on this phone (when on for this person): it's really them
-    if (V.faceid && !(await faceId()) && !(await goOnFlagged(t("ci_faceid_not_done")))) return;
-    let photo = null;
-    if (V.photo) {
-      try { photo = await camera(); } catch (e) { if (!(await goOnFlagged(e.message || t("ci_camera_denied")))) return; }
-      if (!photo && !(await goOnFlagged(t("ci_no_photo_taken")))) return;
+    const faceOk = V.faceid ? await faceId() : false;
+    let photo = null, bad = false;
+    if (!faceOk && V.photo) {
+      if (V.faceid) toast(t("ci_faceid_photo_next"), "ok", 4500);
+      const r = await photoStep();
+      if (!r) return; // closed: nothing is saved
+      photo = r.photo; bad = !!r.bad;
     }
-    await send(kind, pos, photo, reason, extraReason);
+    await send(kind, pos, photo, reason, extraReason, bad);
   } catch (e) { toast(e.status || e.error ? errText(e) : (e.message && !/load failed|failed to fetch|network/i.test(e.message) ? e.message : t("ci_conn_lost")), "bad"); }
   finally { btn.disabled = false; running = false; }
 }
-/** A check couldn't be done: go on anyway (the record is flagged ⚠️ and the manager is told), or stop. */
-const goOnFlagged = (why) => choiceDialog("⚠️ " + t("ci_flag_title"), `${why} — ${t("ci_flag_text")}`, [[false, t("cancel")], [true, t("ci_flag_go"), "primary"]]).then((v) => v === true);
+/** The photo, with two more tries ("face the camera in good light"); then { photo, bad: true } (saved Unverified), or
+ * null when the window was closed (nothing saved). A try fails on a refused camera, no picture, an almost-black one,
+ * or — where the browser can tell — no face in it. */
+async function photoStep() {
+  let last = null;
+  for (let i = 0; i < 3; i++) {
+    let b = null, why = "";
+    try { b = await camera(); } catch (e) { why = e.message || t("ci_camera_denied"); }
+    if (b && !b.dark && !b.noFace) return { photo: b };
+    if (b) last = b;
+    if (!why) why = t(!b ? "ci_no_photo_taken" : b.dark ? "ci_photo_dark" : "ci_photo_noface");
+    if (i === 2) { toast(`${why} — ${t("ci_saved_unverified_soon")}`, "bad", 6000); break; }
+    const again = await choiceDialog("📷 " + t("ci_photo_retry_title"), `${why} ${t("ci_photo_hint_light")} ${t("ci_tries_left", { n: 2 - i })}`,
+      [[false, t("ci_unverified_go")], [true, t("ci_retry"), "primary"]]);
+    if (again === null) return null;
+    if (!again) break;
+  }
+  return { photo: last, bad: true };
+}
 
-async function send(kind, pos, photo, reason, extraReason = "") {
+async function send(kind, pos, photo, reason, extraReason = "", bad = false) {
   const qs = new URLSearchParams({ kind, ...(pos ? { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: Math.round(pos.coords.accuracy || 0) } : {}), device: deviceId(), name: `checkin-${kind}.jpg` });
-  if (photo && photo.dark) qs.set("photo_dark", "1"); // almost black: flagged as unclear
+  if (bad) qs.set("photo_bad", "1"); // not a usable photo: the server saves the punch Unverified
   if (reason) qs.set("reason", reason);
   if (extraReason) qs.set("extra_reason", extraReason);
+  // a dropped connection while sending: two more tries with the same photo
+  const upload = async () => { for (let i = 0; ; i++) { try { return await api.upload(`/api/attendance/checkin?${qs}`, photo || new Blob([], { type: "image/jpeg" })); } catch (e) { if (i >= 2 || (e && (e.status || e.error))) throw e; await new Promise((r) => setTimeout(r, 1500)); } } };
   try {
-    const r = await api.upload(`/api/attendance/checkin?${qs}`, photo || new Blob([], { type: "image/jpeg" }));
+    const r = await upload();
     const done = r.checkin.site ? `${t(kind === "in" ? "ci_done_in" : "ci_done_out", { time: r.checkin.at.slice(11, 16) })} · ${siteName(r.checkin.site)}` : t("ci_outside_needs_ok");
     // flexible hours: say when the day ends for them (in 08:45 → "Your check-out time today: 16:45")
-    if (r.checkin.flags && r.checkin.flags.length) setTimeout(() => toast(`⚠️ ${t("ci_flagged_sent")}`, "ok", 6000), 3000);
+    const fl = (r.checkin.flags || []).map((f) => f.code);
+    if (fl.length) setTimeout(() => toast(`⚠️ ${t(fl.includes("unverified") ? "ci_saved_unverified" : "ci_flagged_sent")}`, "ok", 6000), 3000);
     toast(kind === "in" && r.expected_out ? `${done} · ${t("ci_out_time_today", { t: r.expected_out })}` : done, "ok", kind === "in" && r.expected_out ? 9000 : undefined);
     if (r.extra) setTimeout(() => toast(t("ci_extra_sent")), 2500);
     rerender();
@@ -113,13 +134,13 @@ async function send(kind, pos, photo, reason, extraReason = "") {
     // outside every work site: ask why, then send again with the same photo and location
     if (e.outside) {
       const why = await reasonDialog(e);
-      if (why) return send(kind, pos, photo, why, extraReason);
+      if (why) return send(kind, pos, photo, why, extraReason, bad);
       return;
     }
     // leaving well after the shift: why (the extra time goes to the manager, then HR)
     if (e.after_hours) {
       const why = await reasonDialog(null, { title: t("ci_extra_title"), hint: t("ci_extra_hint", { t: e.shift_end }) });
-      if (why) return send(kind, pos, photo, reason, why);
+      if (why) return send(kind, pos, photo, reason, why, bad);
       return;
     }
     throw e;
@@ -247,6 +268,11 @@ function isDark(canvas) {
     return sum / (d.length / 4) < 18;
   } catch { return false; }
 }
+/** No face in the picture? Only where the browser can tell (FaceDetector); elsewhere false (never blocks). */
+async function noFace(canvas) {
+  if (!("FaceDetector" in window)) return false;
+  try { return (await new window.FaceDetector({ fastMode: true, maxDetectedFaces: 1 }).detect(canvas)).length === 0; } catch { return false; }
+}
 /** Shrink a photo to 640 px wide as a JPEG (like the live camera's), from an image file. */
 function shrinkImage(file) {
   return new Promise((resolve) => {
@@ -256,7 +282,7 @@ function shrinkImage(file) {
       const c = document.createElement("canvas"); c.width = w; c.height = hgt;
       c.getContext("2d").drawImage(img, 0, 0, w, hgt); URL.revokeObjectURL(url);
       const dark = isDark(c);
-      c.toBlob((b) => { const out = b || file; if (dark) out.dark = true; resolve(out); }, "image/jpeg", 0.82);
+      noFace(c).then((nf) => c.toBlob((b) => { const out = b || file; if (dark) out.dark = true; if (nf) out.noFace = true; resolve(out); }, "image/jpeg", 0.82));
     };
     img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
     img.src = url;
@@ -315,7 +341,7 @@ function camera() {
       const c = document.createElement("canvas"); c.width = w; c.height = hgt;
       c.getContext("2d").drawImage(video, 0, 0, w, hgt);
       const dark = isDark(c);
-      c.toBlob((b) => { if (b && dark) b.dark = true; stop(); finish(b); close(); }, "image/jpeg", 0.82);
+      noFace(c).then((nf) => c.toBlob((b) => { if (b && dark) b.dark = true; if (b && nf) b.noFace = true; stop(); finish(b); close(); }, "image/jpeg", 0.82));
     };
   });
 }
@@ -341,7 +367,9 @@ export function checkinPlace(c, { reason = true } = {}) {
   const site = c.site || { name_ar: c.site_ar, name_en: c.site_en };
   const ch = c.checks, flags = c.flags || [];
   const used = ch ? h("span", { class: "ci-checks", title: t("ci_checks_used") }, ch.photo ? h("span", { title: t("ci_chk_photo") }, "📷") : null, ch.faceid || c.verified ? h("span", { title: t("ci_chk_faceid") }, "🔐") : null, ch.location ? h("span", { title: t("ci_chk_location") }, "📍") : null) : null;
-  const flagged = flags.length ? h("span", { class: "ci-flag", title: c.flag_note || "" }, "⚠️ ", flags.map(flagLabel).join(getLang() === "ar" ? "، " : ", "),
+  const unv = flags.some((f) => f.code === "unverified");
+  const flagged = flags.length ? h("span", { class: "ci-flag", title: c.flag_note || "" }, "⚠️ ", unv ? h("span", { class: "badge b-rejected ci-unv" }, t("ci_unverified")) : null,
+    flags.filter((f) => f.code !== "unverified").map(flagLabel).join(getLang() === "ar" ? "، " : ", "),
     h("span", { class: `badge ${c.flag_status === "accepted" ? "b-approved" : c.flag_status === "rejected" ? "b-rejected" : "b-pending"}` }, t("ci_flag_" + (c.flag_status || "open"))),
     c.flag_note ? h("span", { class: "muted" }, ` “${c.flag_note}”`) : null) : null;
   return h("span", { class: "ci-place" }, used, flagged,

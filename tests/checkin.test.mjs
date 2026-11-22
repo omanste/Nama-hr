@@ -104,7 +104,7 @@ test("check-in: notice first, then location and a photo; inside the site; the se
   assert.equal(st.enabled, true); assert.equal(st.consent, false); assert.equal(st.next, "in");
   assert.equal((await ci(s, "in")).status, 409, "the notice comes first");
   assert.equal((await s.c.post("/api/attendance/checkin/consent", {})).status, 200);
-  assert.equal((await s.c.upload(`/api/attendance/checkin?kind=sideways&lat=${OFFICE.lat}&lng=${OFFICE.lng}`, jpg, "image/jpeg")).status, 400, "in or out"); // no location: allowed and flagged (verify.test)
+  assert.equal((await s.c.upload("/api/attendance/checkin?kind=in&device=x", jpg, "image/jpeg")).data.error, "location_required", "no location: no check-in");
   assert.equal((await s.c.upload(`/api/attendance/checkin?kind=in&lat=${OFFICE.lat}&lng=${OFFICE.lng}`, Buffer.from("%PDF-1.4"), "application/pdf")).status, 415, "a photo, not a file");
   t.app.ctx.fakeClock = "09:12";
   const r = await ci(s, "in");
@@ -367,7 +367,7 @@ test("outside the sites from a phone: the quick check asks for the reason first;
   assert.equal(out.inside, false); assert.equal(out.nearest.name_en, "Head office"); assert.ok(out.distance > 1000); assert.equal(out.after_hours, false);
   const inn = (await p.c.get(`/api/attendance/checkin/check?kind=in&lat=${OFFICE.lat}&lng=${OFFICE.lng}`)).data;
   assert.equal(inn.inside, true); assert.equal(inn.site.name_en, "Head office");
-  assert.equal((await p.c.get("/api/attendance/checkin/check?kind=in")).data.inside, true, "no location: nothing to compare (the check-in is flagged)");
+  assert.equal((await p.c.get("/api/attendance/checkin/check?kind=in")).data.error, "location_required", "location first");
   // a phone-sized photo sent slowly: no answer before the last byte arrived
   const net = await import("node:net");
   const url = new URL(t.base), photo = Buffer.alloc(600 * 1024, 7); photo[0] = 0xff; photo[1] = 0xd8;

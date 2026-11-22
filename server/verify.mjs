@@ -34,6 +34,8 @@ export function flagText(f) {
     case "no_photo": return { ar: "بدون صورة", en: "no photo" };
     case "photo_unclear": return { ar: "الصورة غير واضحة", en: "photo unclear" };
     case "faceid_failed": return { ar: "لم يُتحقق بالوجه أو البصمة", en: "Face ID / fingerprint not confirmed" };
+    case "faceid_failed_photo": return { ar: "فشل التحقق بالوجه — التُقطت صورة", en: "Face ID failed — photo taken" };
+    case "unverified": return { ar: "غير موثق", en: "unverified" };
     default: return { ar: f.code, en: f.code };
   }
 }

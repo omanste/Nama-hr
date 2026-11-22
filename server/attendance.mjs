@@ -75,6 +75,8 @@ export function computeDay(c) {
   const open = c.now !== null && c.now !== undefined && c.now < c.shift.end;
   if (!any) {
     if (c.missions.length) return { ...d, status: "mission" };
+    // the day's check-ins were rejected by the manager: a missing punch (asked to be corrected), not an absence
+    if (c.rejected && c.rejected.length && !(open && !c.pending)) return { ...d, status: "missing", missing: c.rejected.includes("in") ? "in" : "out" };
     if (open && !c.pending) return { ...d, status: "today" };
     return { ...d, status: c.pending ? "pending" : "absent" };
   }
@@ -110,11 +112,12 @@ export function employeeDays(db, emp, from, to, today, source = "all", nowMin = 
   const online = db.prepare("SELECT * FROM att_checkins WHERE employee_id=? AND at>=? AND at<? ORDER BY at, id").all(emp.id, from, addDays(to, 1));
   const firstOnline = (db.prepare("SELECT min(substr(at,1,10)) d FROM att_checkins WHERE employee_id=?").get(emp.id) || {}).d || null;
   const sites = new Map(getSetting(db, "att_sites", []).map((s) => [s.id, s]));
-  const byDay = new Map(), waiting = new Set(), labelled = new Map();
+  const byDay = new Map(), waiting = new Set(), labelled = new Map(), rejected = new Map();
   for (const c of online) {
     const k = c.at.slice(0, 10);
     // outside the work sites it counts once the manager approves it; waiting, the day reads "pending", not "absent"
     if (useOnline && c.approval === "pending") waiting.add(k);
+    if (useOnline && (c.approval === "rejected" || c.flag_status === "rejected")) { if (!rejected.has(k)) rejected.set(k, []); rejected.get(k).push(c.kind); }
     // counted (inside a site, or approved outside): the day's first arrival and last leaving, by their own label
     if (useOnline && c.approval !== "pending" && c.approval !== "rejected") {
       const m = toMin(c.at), o = labelled.get(k) || { in: null, out: null };
@@ -146,7 +149,7 @@ export function employeeDays(db, emp, from, to, today, source = "all", nowMin = 
     const day = computeDay({
       shift, shiftAt: shift.flex ? (inn) => shiftFor(db, emp, date, inn) : null, excusedAt, covered, grace, rest: isRestDay(date), holiday: holidays.has(date), leave: leaveReq ? leaveReq.type : null,
       pending: on.some((r) => r.status === "pending" && r.type !== "comp_day") || waiting.has(date),
-      waitingCheckin: waiting.has(date),
+      waitingCheckin: waiting.has(date), rejected: rejected.get(date) || [],
       now: date === today ? nowMin : null, // today's time: the day isn't judged before its shift ends
       punches: punches.get(date) || [],
       onlineIn: labelled.has(date) ? labelled.get(date).in : null, onlineOut: labelled.has(date) ? labelled.get(date).out : null,
@@ -173,7 +176,7 @@ export function employeeDays(db, emp, from, to, today, source = "all", nowMin = 
 
 /** Totals over days (policy §18: approved leave and tasks are left out of the compliance rate). */
 export function summarize(days) {
-  const s = { flagged: 0, afterMin: 0, afterDays: 0, extraMin: 0, outside: 0, workDays: 0, present: 0, onTime: 0, late: 0, lateMin: 0, early: 0, earlyMin: 0, missing: 0, absent: 0, pending: 0, leave: 0, mission: 0, restWorked: 0, onSite: 0, onSiteDays: 0, compliance: null };
+  const s = { flagged: 0, unverified: 0, afterMin: 0, afterDays: 0, extraMin: 0, outside: 0, workDays: 0, present: 0, onTime: 0, late: 0, lateMin: 0, early: 0, earlyMin: 0, missing: 0, absent: 0, pending: 0, leave: 0, mission: 0, restWorked: 0, onSite: 0, onSiteDays: 0, compliance: null };
   for (const d of days) {
     if (["rest_worked", "holiday_worked"].includes(d.status)) s.restWorked++;
     if (d.status === "leave") s.leave++;
@@ -194,6 +197,7 @@ export function summarize(days) {
     if (d.onSite) { s.onSite += d.onSite; s.onSiteDays++; }
     if (d.checkins && d.checkins.some((c) => c.outside)) s.outside++; // a day with an online check-in outside the work sites
     if (d.checkins) s.flagged += d.checkins.filter((c) => c.flags && c.flags.length).length; // check-ins with a failed check (⚠️)
+    if (d.checkins) s.unverified += d.checkins.filter((c) => c.flags && c.flags.some((f) => f.code === "unverified")).length;
   }
   s.compliance = s.workDays ? Math.round((s.onTime / s.workDays) * 1000) / 10 : null;
   return s;
@@ -455,8 +459,8 @@ export function registerAttendance(api, ctx) {
     r.source = source;
     if (req.query.get("format") === "csv") {
       const h = (m) => (m / 60).toFixed(1);
-      const head = ["Work days", "On time", "Compliance %", "Late (times)", "Late (hours)", "Left early (times)", "Left early (hours)", "Missing punch", "Absent (unexcused)", "Absence pending a request", "Leave days", "External task days", "Worked on a rest day", "Outside work sites (days)", "Worked after official hours (days)", "Worked after official hours (hours)", "Approved extra time (hours)", "Flagged check-ins"];
-      const vals = (s) => [s.workDays, s.onTime, s.compliance ?? "", s.late, h(s.lateMin), s.early, h(s.earlyMin), s.missing, s.absent, s.pending, s.leave, s.mission, s.restWorked, s.outside || 0, s.afterDays || 0, h(s.afterMin || 0), h(s.extraMin || 0), s.flagged || 0];
+      const head = ["Work days", "On time", "Compliance %", "Late (times)", "Late (hours)", "Left early (times)", "Left early (hours)", "Missing punch", "Absent (unexcused)", "Absence pending a request", "Leave days", "External task days", "Worked on a rest day", "Outside work sites (days)", "Worked after official hours (days)", "Worked after official hours (hours)", "Approved extra time (hours)", "Flagged check-ins", "Unverified check-ins"];
+      const vals = (s) => [s.workDays, s.onTime, s.compliance ?? "", s.late, h(s.lateMin), s.early, h(s.earlyMin), s.missing, s.absent, s.pending, s.leave, s.mission, s.restWorked, s.outside || 0, s.afterDays || 0, h(s.afterMin || 0), h(s.extraMin || 0), s.flagged || 0, s.unverified || 0];
       const lines = [["Department", "Staff", ...head].join(",")];
       for (const d of r.departments) lines.push([d.name_en || d.name_ar || "—", d.staff, ...vals(d)].join(","));
       if (r.people.length) {

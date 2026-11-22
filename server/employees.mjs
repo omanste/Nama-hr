@@ -261,6 +261,9 @@ export function registerEmployees(api, ctx) {
     const cur = getEmployee(db, req.params.id);
     if (!cur) throw new HttpError(404, "not_found", "Employee not found");
     const values = cleanEmployee(db, await readJson(req), cur, { today: ctx.today() });
+    // a person's check-in verification (Default / On / Off): Admin only
+    if (["verify_photo", "verify_faceid", "verify_location"].some((k) => k in values) && req.sess.user.role !== "admin")
+      throw new HttpError(403, "forbidden", "Only Admin can change a person's check-in verification");
     if (GONE.includes(values.status) && req.sess.user.role !== "admin"
       && db.prepare("SELECT 1 FROM users WHERE employee_id=? AND role IN ('admin','ceo','chairman')").get(cur.id))
       throw new HttpError(403, "forbidden", "Only Admin can end the service of an Admin or CEO");

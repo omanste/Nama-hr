@@ -263,22 +263,28 @@ export function registerCheckin(api, ctx) {
     if (!may.ok) throw new HttpError(403, "forbidden", may.why === "exempt" ? "Top management isn't under the attendance policy" : "Online check-in isn't on for you");
     if (!sess.user.checkin_consent_at) throw new HttpError(409, "consent_required", "Please read and accept the notice first");
     const q = req.query;
-    // what this person is asked for (Admin's switches, or their own): a check that is on but fails still saves the
-    // check-in — flagged, for the manager to accept or not
+    // what this person is asked for (Admin's switches, or their own). Location first (required when on); then Face ID;
+    // a photo only when Face ID failed (or is off) — decided here, never by the page
     const V = verifyFor(db, emp), flags = [];
-    const faceCred = V.faceid ? peekVerified(sess) : null; // used up only once the check-in is saved (asking for a reason doesn't spend it)
-    if (V.faceid && !faceCred) flags.push({ code: "faceid_failed" });
     const kind = q.get("kind");
     if (!["in", "out"].includes(kind)) throw bad("kind", "Check in or check out?");
     let lat = Number(q.get("lat")), lng = Number(q.get("lng"));
     const acc = q.get("acc") === null ? null : Number(q.get("acc"));
     const hasLoc = V.location && !!q.get("lat") && !!q.get("lng") && Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+    if (V.location && !hasLoc) throw Object.assign(new HttpError(400, "location_required", "Your location is needed — allow location for this site and try again"), { field: "location" });
     if (!hasLoc) { lat = null; lng = null; }
-    if (V.location && !hasLoc) flags.push({ code: "no_location" });
     const where = hasLoc ? siteOf(sitesNow(), { lat, lng }) : { inside: null, nearest: null, distance: null };
     const reason = String(q.get("reason") || "").trim().slice(0, 300);
     if (hasLoc && !where.inside && !reason) throw Object.assign(bad("reason", "You're outside every work site — say why"), { extra: { outside: true, nearest: where.nearest, distance: where.distance } });
     if (hasLoc && !where.inside) flags.push({ code: "outside", km: where.distance === null ? null : Math.round(where.distance / 100) / 10 });
+    const faceCred = V.faceid ? peekVerified(sess) : null; // the server's own record of a Face ID check just now (used up once saved)
+    const gotPhoto = !!(photoBody && photoBody.length), goodPhoto = gotPhoto && q.get("photo_bad") !== "1";
+    // Face ID done: no photo needed. Failed (or off) → the photo is the check; none usable → unverified
+    const needPhoto = !faceCred && (V.faceid || V.photo);
+    if (needPhoto) {
+      if (V.photo && goodPhoto) { if (V.faceid) flags.push({ code: "faceid_failed_photo" }); }
+      else flags.push({ code: "unverified", why: V.faceid ? (V.photo ? "faceid_photo" : "faceid") : "photo" });
+    }
     // leaving more than 30 minutes after the shift on a working day: why (the extra time goes to the manager, then HR)
     const today = ctx.today(), now = clockMin(ctx.clock()), shift = dayShift(db, emp, today);
     const lateOut = kind === "out" && workingDay(db, emp, today) && now > shift.end + AFTER_HOURS_MIN;
@@ -286,14 +292,10 @@ export function registerCheckin(api, ctx) {
     const extraReason = String(q.get("extra_reason") || "").trim().slice(0, 300) || (open && open.reason) || "";
     if (lateOut && !extraReason)
       throw Object.assign(bad("extra_reason", "You're leaving after your working hours — say why"), { extra: { after_hours: true, shift_end: pad2(shift.end) } });
-    let photo = null;
-    if (V.photo) {
-      if (photoBody && photoBody.length) photo = await storeUpload(ctx, req, { employeeId: emp.id, kind: "checkin", body: photoBody });
-      else flags.push({ code: "no_photo" });
-      if (photo && q.get("photo_dark") === "1") flags.push({ code: "photo_unclear" }); // the page measured it almost black
-    }
+    // the photo is kept when it was the check (even a poor one: the manager looks at it)
+    const photo = needPhoto && V.photo && gotPhoto ? await storeUpload(ctx, req, { employeeId: emp.id, kind: "checkin", body: photoBody }) : null;
     const verifiedFace = faceCred ? 1 : 0;
-    const checks = { photo: !!photo, faceid: !!verifiedFace, location: hasLoc };
+    const checks = { photo: !!photo && goodPhoto, faceid: !!verifiedFace, location: hasLoc, ...(flags.some((f) => f.code === "unverified") ? { unverified: true } : {}) };
     const at = `${today} ${ctx.clock()}`;
     const row = tx(db, () => {
       const r = db.prepare(`INSERT INTO att_checkins(employee_id,kind,at,lat,lng,accuracy_m,site_id,outside,reason,photo_file_id,device_id,ip,user_agent,created_at,checks,flags,flag_status)
@@ -309,8 +311,10 @@ export function registerCheckin(api, ctx) {
     if (flags.length) {
       const to = [...new Set([...approversOf(db, emp), ...hrTeam(db, { except: [sess.user.id] })])].filter((id) => id !== sess.user.id);
       const verb = (lang) => (kind === "in" ? (lang === "ar" ? "سجّل حضوره" : "checked in") : lang === "ar" ? "سجّل انصرافه" : "checked out");
+      const unv = flags.some((f) => f.code === "unverified");
       notify(ctx, to, {
-        title_ar: `⚠️ ${emp.name_ar || emp.name_en} ${verb("ar")} ${at.slice(11)} — ${flagsText(flags, "ar")}`, title_en: `⚠️ ${emp.name_en || emp.name_ar} ${verb("en")} ${at.slice(11)} — ${flagsText(flags, "en")}`,
+        title_ar: unv ? `⚠️ ${emp.name_ar || emp.name_en} — ${kind === "in" ? "تسجيل حضور" : "تسجيل انصراف"} غير موثق ${at.slice(11)}${flags.length > 1 ? ` — ${flagsText(flags.filter((f) => f.code !== "unverified"), "ar")}` : ""}` : `⚠️ ${emp.name_ar || emp.name_en} ${verb("ar")} ${at.slice(11)} — ${flagsText(flags, "ar")}`,
+        title_en: unv ? `⚠️ ${emp.name_en || emp.name_ar} — unverified ${kind === "in" ? "check-in" : "check-out"} ${at.slice(11)}${flags.length > 1 ? ` — ${flagsText(flags.filter((f) => f.code !== "unverified"), "en")}` : ""}` : `⚠️ ${emp.name_en || emp.name_ar} ${verb("en")} ${at.slice(11)} — ${flagsText(flags, "en")}`,
         body_ar: reason ? `السبب: ${reason}` : "راجع التسجيل واقبله أو لا تقبله", body_en: reason ? `Reason: ${reason}` : "Review it: accept it or not", link: "#/approvals" });
     }
     let extra = null;
@@ -333,6 +337,7 @@ export function registerCheckin(api, ctx) {
     const kind = q.get("kind") === "out" ? "out" : "in", lat = Number(q.get("lat")), lng = Number(q.get("lng"));
     // no location (switched off for this person, or the phone couldn't give one): nothing to compare with the sites
     const hasLoc = verifyFor(db, emp).location && !!q.get("lat") && !!q.get("lng") && Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+    if (verifyFor(db, emp).location && !hasLoc) throw Object.assign(new HttpError(400, "location_required", "Your location is needed — allow location for this site and try again"), { field: "location" });
     const where = hasLoc ? siteOf(sitesNow(), { lat, lng }) : { inside: true, nearest: null, distance: null };
     const today = ctx.today(), now = clockMin(ctx.clock()), shift = dayShift(db, emp, today);
     const after = kind === "out" && workingDay(db, emp, today) && now > shift.end + AFTER_HOURS_MIN;
@@ -443,8 +448,8 @@ export function registerCheckin(api, ctx) {
       }
     });
     const owner = (db.prepare("SELECT id FROM users WHERE employee_id=? AND active=1").get(c.employee_id) || {}).id;
-    if (owner) notify(ctx, [owner], { ...(flagged ? { title_ar: approval === "approved" ? "قُبل تسجيلك المعلَّم ⚠️" : "لم يُقبل تسجيلك المعلَّم ⚠️",
-      title_en: approval === "approved" ? "Your flagged check-in was accepted" : "Your flagged check-in was not accepted" } : { title_ar: approval === "approved" ? "تمت الموافقة على تسجيلك خارج مواقع العمل" : "رُفض تسجيلك خارج مواقع العمل",
+    if (owner) notify(ctx, [owner], { ...(flagged ? { title_ar: approval === "approved" ? "قُبل تسجيلك المعلَّم ⚠️" : "رُفض تسجيلك المعلَّم ⚠️ — يُحتسب بصمة ناقصة، ويمكنك طلب تصحيح",
+      title_en: approval === "approved" ? "Your flagged check-in was accepted" : "Your flagged check-in was rejected — it counts as a missing punch; you can ask for a correction" } : { title_ar: approval === "approved" ? "تمت الموافقة على تسجيلك خارج مواقع العمل" : "رُفض تسجيلك خارج مواقع العمل",
       title_en: approval === "approved" ? "Your check-in outside the work sites was approved" : "Your check-in outside the work sites was rejected" }),
       body_ar: `${c.at}${note ? ` — ${note}` : ""}`, body_en: `${c.at}${note ? ` — ${note}` : ""}`, link: `#/attendance?m=${c.at.slice(0, 7)}` });
     send(req, res, 200, { ok: true, approval });

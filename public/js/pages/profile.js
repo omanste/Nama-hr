@@ -278,8 +278,8 @@ function devicesCard(e, own, can) {
     try { await registerPhone(); toast(t("ci_faceid_registered")); load(); } catch (er) { if (!(er && er.name === "AbortError")) toast(faceIdError(er, { registering: true }), "bad"); }
   } }, "🔐 ", t("ci_faceid_register")) : null;
   // check-in verification for this person (HR / Admin): Default (the company's switch) / On / Off, for each check
-  const verify = can.edit() ? h("div", { class: "verify-person" }, h("h3", null, t("ver_person_title")), h("p", { class: "sub" }, t("ver_person_hint")),
-    h("div", { class: "fields" }, [["photo", "📷"], ["faceid", "🔐"], ["location", "📍"]].map(([k, ico]) => {
+  const verify = can.admin() ? h("div", { class: "verify-person" }, h("h3", null, t("ver_person_title")), h("p", { class: "sub" }, t("ver_person_hint")),
+    h("div", { class: "fields" }, [["location", "📍"], ["faceid", "🔐"], ["photo", "📷"]].map(([k, ico]) => {
       const cur = e[`verify_${k}`] || (k === "faceid" && e.faceid_exempt ? "off" : "");
       const sel = select(`verify_${k}`, [["", t("ver_default")], ["on", t("ver_on")], ["off", t("ver_off")]], cur);
       sel.addEventListener("change", async () => {

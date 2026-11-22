@@ -31,7 +31,7 @@ export function summaryTiles(s) {
     s.restWorked ? tile(num(s.restWorked), t("att_rest_worked")) : null,
     tile(s.afterMin ? durText(s.afterMin) : "—", `${t("att_after")} · ${t("att_n_days", { n: num(s.afterDays || 0) })}`),
     s.extraMin ? tile(durText(s.extraMin), t("att_extra")) : null,
-    tile(num(s.flagged || 0), `⚠️ ${t("att_flagged")}`, s.flagged ? "warn" : ""),
+    tile(num(s.flagged || 0), `⚠️ ${t("att_flagged")}${s.unverified ? ` · ${t("att_unverified")} ${num(s.unverified)}` : ""}`, s.flagged ? "warn" : ""),
     tile(s.onSite ? durText(s.onSite) : "—", t("att_total_hours")),
     tile(s.onSiteDays ? durText(Math.round(s.onSite / s.onSiteDays)) : "—", t("att_avg_on_site")));
 }
