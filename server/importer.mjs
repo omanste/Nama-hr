@@ -5,7 +5,7 @@ import { send, readJson, HttpError } from "./http.mjs";
 import { can } from "./perm.mjs";
 import { audit } from "./audit.mjs";
 import { isIsoDate, DAY, CAP } from "./leave.mjs";
-import { cleanEmployee, insertEmployee, nextEmpNo, createUser, STATUSES, LONG } from "./employees.mjs";
+import { cleanEmployee, insertEmployee, nextEmpNo, createUser, STATUSES, LONG, normEmpNo, empNoHolder } from "./employees.mjs";
 import { postLedger } from "./ledger.mjs";
 import { toCountryCode } from "../public/js/countries.js";
 
@@ -87,7 +87,8 @@ export function validateRows(db, rawRows, mapping, today, mode = "add") {
   const out = rows.map((raw, i) => {
     const { values, issues } = normalizeRow(raw, mapping);
     const errors = [...issues], warnings = [];
-    if (values.emp_no && db.prepare("SELECT 1 FROM employees WHERE emp_no=?").get(values.emp_no)) errors.push({ field: "emp_no", code: "exists" });
+    if (values.emp_no) values.emp_no = normEmpNo(values.emp_no); // NAMA-7 / NAMA-07 → NAMA-007
+    if (values.emp_no && empNoHolder(db, values.emp_no)) errors.push({ field: "emp_no", code: "exists" });
     if (!values.emp_no && !errors.some((e) => e.field === "join_date") && sameName(values).some((e) => (e.join_date || null) === (values.join_date || null)))
       errors.push({ field: "name_ar", code: "already_exists" });
     if (values.opening_days !== undefined && values.opening_days !== null) {

@@ -44,6 +44,18 @@ export const EMAIL_RE = /^[a-z0-9._%+'-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}
 
 const bad = (field, message) => Object.assign(new HttpError(400, "invalid", message), { field });
 
+/** Staff IDs are written one way: NAMA- and at least three digits ("nama 7", "NAMA-07" → "NAMA-007"). Others stay as typed. */
+export function normEmpNo(v) {
+  const s = String(v ?? "").trim();
+  const m = /^nama\s*[-_ ]?\s*(\d{1,6})$/i.exec(s);
+  return m ? `NAMA-${String(Number(m[1])).padStart(3, "0")}` : s;
+}
+/** The record that already has this staff ID — NAMA-07 and NAMA-007 are the same number. */
+export function empNoHolder(db, empNo, exceptId = 0) {
+  const key = normEmpNo(empNo).toUpperCase();
+  return db.prepare("SELECT id, emp_no, name_ar, name_en FROM employees WHERE id<>?").all(exceptId || 0).find((e) => normEmpNo(e.emp_no).toUpperCase() === key) || null;
+}
+
 export function nextEmpNo(db) {
   const rows = db.prepare("SELECT emp_no FROM employees WHERE emp_no LIKE 'NAMA-%'").all();
   const max = rows.reduce((m, r) => Math.max(m, Number((/^NAMA-(\d+)$/i.exec(r.emp_no) || [0, 0])[1])), 0);
@@ -98,8 +110,10 @@ export function cleanEmployee(db, body, cur = null, { today = null } = {}) {
   if ("emp_no" in out || !cur) {
     if (!out.emp_no && !cur) out.emp_no = nextEmpNo(db);
     if ("emp_no" in out && !out.emp_no) throw bad("emp_no", "Employee ID is required");
-    const dup = db.prepare("SELECT id FROM employees WHERE emp_no=? AND id<>?").get(out.emp_no, cur ? cur.id : 0);
-    if (dup) throw Object.assign(new HttpError(409, "duplicate_emp_no", `Employee ID ${out.emp_no} already exists`), { field: "emp_no" });
+    out.emp_no = normEmpNo(out.emp_no);
+    // already used (the same number written another way counts too): say by whom, so it can be sorted out
+    const dup = empNoHolder(db, out.emp_no, cur ? cur.id : 0);
+    if (dup) throw Object.assign(new HttpError(409, "duplicate_emp_no", `Employee ID ${out.emp_no} is already used by ${dup.name_en || dup.name_ar} (${dup.emp_no}) — change that record first`), { field: "emp_no", extra: { holder: dup } });
   }
   return out;
 }

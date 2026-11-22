@@ -197,7 +197,28 @@ const MIGRATIONS = [
    ALTER TABLE att_checkins ADD COLUMN flag_status TEXT CHECK(flag_status IN ('open','accepted','rejected'));
    ALTER TABLE att_checkins ADD COLUMN flag_by INTEGER; ALTER TABLE att_checkins ADD COLUMN flag_at TEXT; ALTER TABLE att_checkins ADD COLUMN flag_note TEXT;
    CREATE INDEX ac_flag ON att_checkins(flag_status);`,
+  // 37: staff IDs in one format — NAMA- and three digits (NAMA-07 → NAMA-007), wherever that number isn't already taken;
+  //     each change is in the activity log
+  (db) => { formatEmpNos(db); },
 ];
+
+/** Staff IDs in one format: NAMA- and three digits (NAMA-07 → NAMA-007), wherever that number isn't on another record
+ * (then HR sorts it out); each change goes in the activity log. Returns the changes. */
+export function formatEmpNos(db) {
+  const norm = (v) => { const m = /^nama\s*[-_ ]?\s*(\d{1,6})$/i.exec(String(v || "").trim()); return m ? `NAMA-${String(Number(m[1])).padStart(3, "0")}` : null; };
+  const rows = db.prepare("SELECT id, emp_no FROM employees").all(), changed = [];
+  for (const r of rows) {
+    const to = norm(r.emp_no);
+    if (!to || to === r.emp_no) continue;
+    if (rows.some((o) => o.id !== r.id && (norm(o.emp_no) || String(o.emp_no).toUpperCase()) === to)) continue;
+    db.prepare("UPDATE employees SET emp_no=? WHERE id=?").run(to, r.id);
+    db.prepare("INSERT INTO audit_log(at,actor_user_id,action,entity,entity_id,before,after) VALUES(?,?,?,?,?,?,?)")
+      .run(new Date().toISOString(), null, "employee.emp_no_format", "employee", String(r.id), JSON.stringify({ emp_no: r.emp_no }), JSON.stringify({ emp_no: to }));
+    changed.push({ id: r.id, from: r.emp_no, to });
+    r.emp_no = to;
+  }
+  return changed;
+}
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */
 function rebuildWithCheck(db, table, from, to) {
