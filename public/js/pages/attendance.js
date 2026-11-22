@@ -5,6 +5,7 @@ import { t, nm, getLang, tx } from "../i18n.js";
 import { h, select, pageHead, empty, num, dmy, todayIso, toast, errText, confirm, clockText, durText, dateTime, viewFile } from "../ui.js";
 import { render as rerender } from "../app.js";
 import { checkinPlace } from "../checkin.js";
+import { monthlyData, downloadPdf } from "../att-pdf.js";
 
 const pad = (n) => String(n).padStart(2, "0");
 const loc = () => (getLang() === "ar" ? "ar-OM-u-nu-latn" : "en-GB");
@@ -13,7 +14,7 @@ const weekday = (iso) => new Intl.DateTimeFormat(loc(), { weekday: "short", time
 const STATUS_CLASS = { present: "b-approved", missing: "b-pending", absent: "b-rejected", pending: "b-pending", leave: "b-on_leave", mission: "b-on_leave", holiday: "b-on_leave", rest: "", rest_worked: "", holiday_worked: "", no_data: "", today: "", on_duty: "b-approved" };
 
 /** "Shift 2 · 09:00–18:00" */
-export const shiftText = (sh) => `${t("shift_" + sh.no)} · ${clockText(sh.start)}–${clockText(sh.end)}${sh.ramadan ? ` (${t("ramadan")})` : ""}`;
+export const shiftText = (sh) => (sh.flex ? `${t("pdf_flex_short")} · ${clockText(sh.from)}–${clockText(sh.to)} · ${t("hours", { n: num(sh.hours) })}` : `${t("shift_" + sh.no)} · ${clockText(sh.start)}–${clockText(sh.end)}`) + (sh.ramadan ? ` (${t("ramadan")})` : "");
 
 /** The month's totals as tiles. */
 export function summaryTiles(s) {
@@ -30,6 +31,7 @@ export function summaryTiles(s) {
     s.restWorked ? tile(num(s.restWorked), t("att_rest_worked")) : null,
     tile(s.afterMin ? durText(s.afterMin) : "—", `${t("att_after")} · ${t("att_n_days", { n: num(s.afterDays || 0) })}`),
     s.extraMin ? tile(durText(s.extraMin), t("att_extra")) : null,
+    tile(s.onSite ? durText(s.onSite) : "—", t("att_total_hours")),
     tile(s.onSiteDays ? durText(Math.round(s.onSite / s.onSiteDays)) : "—", t("att_avg_on_site")));
 }
 
@@ -62,6 +64,7 @@ export async function render(el, _p, { me, query, can }) {
   if (d.start && `${month}-01` < d.start) notes.push(h("div", { class: "note" }, t("att_info_before", { d: dmy(d.start) })));
   if (d.dataTo) notes.push(h("p", { class: "sub" }, t("att_data_to", { d: dmy(d.dataTo) }), " · ", t("att_shift_now"), ": ", h("b", null, t("shift_" + (d.employee.shift || 2)))));
 
+  const flex = d.days.some((x) => x.shift && x.shift.flex);
   const rows = d.days.filter((x) => x.status !== "no_data" || x.date <= todayIso()).map((x) => {
     const reqLinks = x.requests.filter((r) => r.type !== "comp_day").map((r) => h("a", { class: "chip", href: `#/leave/${r.id}` }, t("lt_" + r.type),
       r.type === "overtime" && r.minutes ? ` ${durText(r.minutes)}` : "",
@@ -90,7 +93,9 @@ export async function render(el, _p, { me, query, can }) {
     const quiet = ["rest", "holiday", "no_data", "today"].includes(x.status);
     return h("tr", { class: quiet ? "muted-row" : null },
       h("td", null, h("b", null, dmy(x.date).slice(0, 5)), " ", h("span", { class: "muted" }, weekday(x.date)), x.holiday ? h("div", { class: "muted" }, tx(x.holiday)) : null),
-      punchCell(x.in, "in"), punchCell(x.out, "out"),
+      punchCell(x.in, "in"),
+      flex ? h("td", { class: "num" }, x.expectedOut !== null && x.expectedOut !== undefined && !quiet && !["leave", "mission"].includes(x.status) ? clockText(x.expectedOut) : "") : null,
+      punchCell(x.out, "out"),
       h("td", { class: "num" }, x.onSite ? durText(x.onSite) : quiet ? "" : "—"),
       h("td", { class: "num" }, x.late ? h("span", { class: "bad-text" }, durText(x.late)) : quiet ? "" : "—"),
       h("td", { class: "num" }, x.early ? h("span", { class: "bad-text" }, durText(x.early)) : quiet ? "" : "—"),
@@ -110,6 +115,11 @@ export async function render(el, _p, { me, query, can }) {
 
   el.append(
     pageHead(own ? t("my_attendance") : t("att_of", { name: nm(d.employee) }),
+      h("button", { class: "btn primary", type: "button", onclick: async (ev) => {
+        const b = ev.currentTarget, label = b.textContent; b.disabled = true;
+        try { await downloadPdf(await monthlyData(month, empId), (n, of) => { b.textContent = t("pdf_making", { n: num(n), of: num(of) }); }); }
+        catch (e) { toast(errText(e), "bad"); } finally { b.disabled = false; b.textContent = label; }
+      } }, "📄 ", t(own ? "pdf_my" : "pdf_person")),
       own ? h("a", { class: "btn", href: "#/attendance/correction" }, t("lt_correction")) : null,
       // the external work task is asked for from Permissions and the home page, not here
       !own && (can.viewAll() || me.isApprover) ? h("a", { class: "btn", href: `#/staff/${empId}` }, t("open_profile")) : null),
@@ -123,9 +133,9 @@ export async function render(el, _p, { me, query, can }) {
     notes,
     summaryTiles(d.summary),
     h("section", { class: "card", style: { marginTop: "16px" } },
-      h("div", { class: "card-head" }, h("h2", null, t("att_days")), h("span", { class: "sub" }, t("att_policy_note", { n: d.grace ?? 15 }))),
+      h("div", { class: "card-head" }, h("h2", null, t("att_days")), h("span", { class: "sub" }, flex ? t("att_policy_flex", { a: clockText(d.flex.from), b: clockText(d.flex.to), n: num(d.flex.hours) }) : t("att_policy_note", { n: d.grace ?? 15 }))),
       rows.length ? h("div", { class: "table-wrap" }, h("table", { class: "att-table" },
-        h("thead", null, h("tr", null, [t("date"), t("att_in"), t("att_out"), t("att_on_site"), t("att_late"), t("att_early"), t("att_after"), t("status"), ""].map((x, i) => h("th", { class: i > 0 && i < 7 ? "num" : null }, x)))),
+        h("thead", null, h("tr", null, [t("date"), t("att_in"), flex ? t("att_expected_out") : null, t("att_out"), t("att_on_site"), t("att_late"), t("att_early"), t("att_after"), t("status"), ""].filter((x) => x !== null).map((x, i, all) => h("th", { class: i > 0 && i < all.length - 2 ? "num" : null }, x)))),
         h("tbody", null, rows))) : empty()),
     reviewBox);
 }

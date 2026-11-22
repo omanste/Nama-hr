@@ -55,13 +55,13 @@ export const durText = (m) => (m ? `${Math.floor(m / 60)}:${String(m % 60).padSt
 export const badge = (status, prefix = "rs_") => h("span", { class: `badge b-${status}` }, t(prefix + status));
 
 let toastTimer;
-export function toast(msg, kind = "ok") {
+export function toast(msg, kind = "ok", ms) {
   let el = document.getElementById("toast");
   if (!el) { el = h("div", { id: "toast", role: "status", "aria-live": "polite" }); document.body.append(el); }
   el.className = `toast show ${kind}`;
   el.textContent = msg;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove("show"), kind === "bad" ? Math.min(9000, 3200 + msg.length * 30) : 3200); // errors stay long enough to read
+  toastTimer = setTimeout(() => el.classList.remove("show"), ms || (kind === "bad" ? Math.min(9000, 3200 + msg.length * 30) : 3200)); // errors stay long enough to read
 }
 /** A window that stays open while something slow runs (reading a scanned card can take a minute): a spinner, what is
  * happening, a hint that changes as time passes, and the seconds so far. It can't be closed by hand; call close() when done. */

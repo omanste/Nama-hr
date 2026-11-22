@@ -11,7 +11,7 @@ import { notify, hrTeam } from "./notify.mjs";
 import { getEmployee } from "./employees.mjs";
 import { storeUpload } from "./files.mjs";
 import { blockedOverlap } from "./calendar.mjs";
-import { shiftFor, isRestDay } from "./shifts.mjs";
+import { dayShift, isRestDay } from "./shifts.mjs";
 import { overtimeRates } from "./overtime.mjs";
 
 export const TYPE_NAMES = {
@@ -173,7 +173,7 @@ export function validateRequest(db, emp, body, today) {
   if (type === "overtime") throw err(400, "invalid", "Extra time is recorded from the check-out (or \"I'm still working\")", "type");
   if (TYPES[type].attendance) return validateAttendance(db, emp, type, start, body, today, end);
   let minutes;
-  const sh = shiftFor(db, emp, start), dayStart = sh.start, dayEnd = sh.end;
+  const sh = dayShift(db, emp, start, { latest: true }), dayStart = sh.start, dayEnd = sh.end; // flexible hours: the day ends at the person's own check-out time (not known yet: the latest)
   if (isPermission(type) && isRestDay(start)) throw err(400, "invalid", "This day is a weekly rest day", "date");
   try { minutes = requestMinutes(type, { start, end, time, endTime, dayStart, dayEnd }); }
   catch (e) { throw err(400, "invalid", e.message, isPermission(type) ? (type === "break" && /end|after/.test(e.message) ? "end_time" : "time") : "end"); }

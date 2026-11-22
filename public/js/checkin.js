@@ -2,7 +2,7 @@
 // the location, a photo taken live with the camera, and (outside every work site) a reason. The server keeps the time.
 import { api } from "./api.js";
 import { t, nm, getLang } from "./i18n.js";
-import { h, toast, errText, viewFile } from "./ui.js";
+import { h, toast, errText, viewFile, confirm } from "./ui.js";
 import { render as rerender } from "./app.js";
 
 const DEVICE_KEY = "nama.device";
@@ -17,6 +17,7 @@ export async function checkinCard() {
   let st;
   try { st = await api.get("/api/attendance/checkin/today"); } catch { return null; }
   if (!st.enabled) return null;
+  setOutState(st);
   const last = st.items[st.items.length - 1];
   const line = (c) => h("div", { class: "ci-line" }, h("b", null, t(c.kind === "in" ? "ci_in_at" : "ci_out_at", { time: c.at.slice(11, 16) })), " · ",
     c.outside ? h("span", { class: "bad-text" }, t("ci_outside")) : h("span", null, "📍 ", siteName(c.site)),
@@ -33,9 +34,13 @@ export async function checkinCard() {
     st.missed ? h("div", { class: "note warn ci-missed" }, t("ci_missed", { d: dmyShort(st.missed.date) }), " ",
       h("a", { class: "btn small", href: `#/attendance/correction?date=${st.missed.date}` }, t("att_ask_correction"))) : null,
     st.items.length ? h("div", { class: "ci-lines" }, st.items.map(line)) : h("p", { class: "sub" }, t("ci_none_today")),
+    // flexible hours: before arriving, the on-time window; once arrived, today's own check-out time with a live countdown
+    st.flex && !st.items.length ? h("p", { class: "sub" }, t("ci_flex_window", { a: st.flex.from, b: st.flex.to, n: st.flex.hours })) : null,
+    st.expected_out && next === "out" ? h("div", { class: "ci-outtime" }, "🏁 ", h("b", null, t("ci_out_time_today", { t: st.expected_out })), " · ", h("span", { class: "ci-countdown" }, leftText())) : null,
     !st.sites ? h("p", { class: "sub" }, t("ci_no_sites")) : null,
     st.after_hours ? h("p", { class: "note" }, st.staying ? [t("ci_staying"), st.staying.reason ? ` — “${st.staying.reason}”` : ""] : t("ci_after_hours", { t: st.shift_end })) : null,
-    mainBtn, stayBtn);
+    mainBtn, stayBtn,
+    h("a", { class: "btn small ci-mine", href: "#/attendance" }, "📊 ", t("nav_attendance")));
   // opened from a reminder's buttons ("check out now" / "I'm still working")
   const want = new URLSearchParams(location.hash.split("?")[1] || "").get("ci");
   if (want && (want === "out" ? next === "out" : stayBtn)) {
@@ -69,6 +74,7 @@ async function start(kind, st, btn) {
     try {
       const c = await api.get(`/api/attendance/checkin/check?${new URLSearchParams({ kind, lat: pos.coords.latitude, lng: pos.coords.longitude })}`);
       if (!c.inside) { reason = await reasonDialog(c); if (!reason) return; }
+      if (kind === "out" && c.early && !(await confirm(t("ci_early_q", { t: c.shift_end }), { okText: t("ci_early_go") }))) return;
       if (c.after_hours) { extraReason = await reasonDialog(null, { title: t("ci_extra_title"), hint: t("ci_extra_hint", { t: c.shift_end }) }); if (!extraReason) return; }
     } catch (e) { if (e.status && e.status !== 404) throw e; } // an older server: it asks after the photo instead
     // Face ID / fingerprint on this phone (required unless HR exempted the person): it's really them
@@ -86,7 +92,9 @@ async function send(kind, pos, photo, reason, extraReason = "") {
   if (extraReason) qs.set("extra_reason", extraReason);
   try {
     const r = await api.upload(`/api/attendance/checkin?${qs}`, photo);
-    toast(r.checkin.site ? `${t(kind === "in" ? "ci_done_in" : "ci_done_out", { time: r.checkin.at.slice(11, 16) })} · ${siteName(r.checkin.site)}` : t("ci_outside_needs_ok"));
+    const done = r.checkin.site ? `${t(kind === "in" ? "ci_done_in" : "ci_done_out", { time: r.checkin.at.slice(11, 16) })} · ${siteName(r.checkin.site)}` : t("ci_outside_needs_ok");
+    // flexible hours: say when the day ends for them (in 08:45 → "Your check-out time today: 16:45")
+    toast(kind === "in" && r.expected_out ? `${done} · ${t("ci_out_time_today", { t: r.expected_out })}` : done, "ok", kind === "in" && r.expected_out ? 9000 : undefined);
     if (r.extra) setTimeout(() => toast(t("ci_extra_sent")), 2500);
     rerender();
   } catch (e) {
@@ -313,4 +321,37 @@ export function checkinPlace(c, { reason = true } = {}) {
     c.approval ? h("span", { class: `badge ${c.approval === "approved" ? "b-approved" : c.approval === "rejected" ? "b-rejected" : "b-pending"}`, title: c.decision_note || "" }, t("ci_appr_" + c.approval)) : null,
     c.photo_file_id ? h("button", { class: "linkish ci-ico", type: "button", title: t("ci_photo"), "aria-label": t("ci_photo"), onclick: () => viewFile({ id: c.photo_file_id, name: `${t("ci_photo")} · ${c.time || ""}`, mime: "image/jpeg" }) }, "📷") : null,
     c.lat !== null && c.lat !== undefined ? h("a", { class: "ci-ico", href: `https://maps.google.com/?q=${c.lat},${c.lng}`, target: "_blank", rel: "noopener", title: t("ci_map") + (c.accuracy ? ` (±${c.accuracy} m)` : ""), "aria-label": t("ci_map") }, "🗺") : null);
+}
+
+/* ---- today's own check-out time (flexible hours): the home card and the header chip count down to it, all day ---- */
+let outState = null; // { out: minutes, offset: server minus this device, in minutes }
+const hmMin = (x) => { const [a, b] = String(x).split(":").map(Number); return a * 60 + b; };
+const devMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60; };
+function setOutState(st) {
+  outState = st && st.enabled && st.expected_out && st.next === "out" ? { out: hmMin(st.expected_out), label: st.expected_out, offset: st.now ? hmMin(st.now) - Math.floor(devMin()) : 0 } : null;
+  tick();
+}
+/** "2:15 left" until the check-out time, or "time to check out". */
+function leftText() {
+  if (!outState) return "";
+  const left = Math.ceil(outState.out - (devMin() + outState.offset));
+  return left > 0 ? t("ci_left", { d: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` }) : t("ci_out_due");
+}
+function tick() {
+  for (const el of document.querySelectorAll(".ci-countdown")) el.textContent = leftText();
+  for (const el of document.querySelectorAll(".out-chip")) {
+    el.hidden = !outState;
+    if (outState) { el.querySelector(".oc-t").textContent = outState.label; el.querySelector(".oc-l").textContent = leftText(); el.title = t("ci_out_time_today", { t: outState.label }); }
+  }
+}
+setInterval(tick, 20000);
+let outFetched = 0;
+/** The header chip "🏁 16:45 · 2:15 left" (hidden unless checked in today with a check-out time). */
+export function outChip() {
+  const el = h("a", { class: "hbtn out-chip", href: "#/", hidden: !outState, "aria-live": "off" }, "🏁 ", h("b", { class: "oc-t" }, outState ? outState.label : ""), h("span", { class: "oc-l" }, leftText()));
+  if (Date.now() - outFetched > 5 * 60e3) { // refreshed every few minutes as pages change
+    outFetched = Date.now();
+    api.get("/api/attendance/checkin/today").then(setOutState).catch(() => {});
+  } else setTimeout(tick, 0);
+  return el;
 }

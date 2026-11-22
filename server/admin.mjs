@@ -7,7 +7,7 @@ import { createUser, ROLES, getEmployee } from "./employees.mjs";
 import { tempPassword, setPassword } from "./auth.mjs";
 import { isIsoDate } from "./leave.mjs";
 import { rerouteFallbacks } from "./requests.mjs";
-import { shiftTimes, SHIFTS } from "./shifts.mjs";
+import { shiftTimes, SHIFTS, flexOn, FLEX_DEFAULTS } from "./shifts.mjs";
 import { overtimeRates } from "./overtime.mjs";
 import { faceidMode, FACEID_MODES } from "./webauthn.mjs";
 
@@ -62,6 +62,9 @@ export function readSettings(db) {
     // reminders: minutes after the shift starts with no check-in, and after it ends with no check-out (Admin sets them)
     remind_checkin_min: getSetting(db, "remind_checkin_min", 10),
     remind_checkout_min: getSetting(db, "remind_checkout_min", 10),
+    // flexible hours for everyone (Admin): on-time arrival window, required hours, the reminder before one's check-out time
+    flex_on: flexOn(db), flex_start: getSetting(db, "flex_start", FLEX_DEFAULTS.flex_start), flex_end: getSetting(db, "flex_end", FLEX_DEFAULTS.flex_end),
+    flex_hours: getSetting(db, "flex_hours", FLEX_DEFAULTS.flex_hours), remind_before_out_min: getSetting(db, "remind_before_out_min", 10),
     // Face ID / fingerprint at check-in: required (default), optional, or off — HR can exempt a person on their profile
     faceid_mode: faceidMode(db),
     // external tasks: the allowance for each day outside Muscat and each overnight stay (OMR; HR sets them)
@@ -171,7 +174,7 @@ export function registerAdmin(api, ctx) {
   api.put("/api/settings", async (req, res) => {
     need(req.sess, "settings.edit");
     const b = await readJson(req);
-    const allowed = ["managers_approver_employee_id", "managers_approver_title", "chairman_employee_id", "ceo_final_types", "att_sites", "late_grace_min", "remind_checkin_min", "remind_checkout_min", "faceid_mode", "contract_types", "shift_1_start", "shift_1_end", "shift_2_start", "shift_2_end", "shift_3_start", "shift_3_end", "shift_4_start", "shift_4_end", "ramadan_start", "ramadan_end", "ramadan_hours", "attendance_start", "shift_self_select", "official_holidays"];
+    const allowed = ["managers_approver_employee_id", "managers_approver_title", "chairman_employee_id", "ceo_final_types", "att_sites", "late_grace_min", "remind_checkin_min", "remind_checkout_min", "remind_before_out_min", "flex_on", "flex_start", "flex_end", "flex_hours", "faceid_mode", "contract_types", "shift_1_start", "shift_1_end", "shift_2_start", "shift_2_end", "shift_3_start", "shift_3_end", "shift_4_start", "shift_4_end", "ramadan_start", "ramadan_end", "ramadan_hours", "attendance_start", "shift_self_select", "official_holidays"];
     if ("official_holidays" in b) {
       if (!Array.isArray(b.official_holidays) || !b.official_holidays.every((x) => x && isIsoDate(x.date))) throw invalid("official_holidays", "each holiday needs a valid date");
       b.official_holidays = b.official_holidays.map((x) => ({ date: x.date, name: String(x.name || "").trim().slice(0, 80) })).sort((x, y) => (x.date < y.date ? -1 : 1));
@@ -197,7 +200,12 @@ export function registerAdmin(api, ctx) {
     if ("chairman_employee_id" in b && b.chairman_employee_id !== null && !getEmployee(db, b.chairman_employee_id)) throw invalid("chairman_employee_id", "unknown employee");
     if ("late_grace_min" in b && !(Number.isInteger(b.late_grace_min) && b.late_grace_min >= 0 && b.late_grace_min <= 60)) throw invalid("late_grace_min", "grace must be 0–60 minutes");
     if ("faceid_mode" in b && !FACEID_MODES.includes(b.faceid_mode)) throw invalid("faceid_mode", "required, optional or off");
-    for (const k of ["remind_checkin_min", "remind_checkout_min"]) if (k in b && !(Number.isInteger(b[k]) && b[k] >= 1 && b[k] <= 120)) throw invalid(k, "Enter 1–120 minutes");
+    if ("flex_on" in b && typeof b.flex_on !== "boolean") throw invalid("flex_on", "must be true or false");
+    for (const k of ["flex_start", "flex_end"]) if (k in b && !/^(0[5-9]|1[0-2]):[0-5]\d$/.test(String(b[k]))) throw invalid(k, "time must be 05:00–12:59 (HH:MM)");
+    { const fs_ = "flex_start" in b ? b.flex_start : getSetting(db, "flex_start", FLEX_DEFAULTS.flex_start), fe = "flex_end" in b ? b.flex_end : getSetting(db, "flex_end", FLEX_DEFAULTS.flex_end);
+      if (fe < fs_) throw invalid("flex_end", "the latest on-time arrival can't be before the earliest"); }
+    if ("flex_hours" in b && !(typeof b.flex_hours === "number" && b.flex_hours >= 4 && b.flex_hours <= 12 && (b.flex_hours * 4) % 1 === 0)) throw invalid("flex_hours", "required hours must be 4–12 (in quarter hours)");
+    for (const k of ["remind_checkin_min", "remind_checkout_min", "remind_before_out_min"]) if (k in b && !(Number.isInteger(b[k]) && b[k] >= 1 && b[k] <= 120)) throw invalid(k, "Enter 1–120 minutes");
     if ("att_sites" in b) {
       if (!Array.isArray(b.att_sites) || b.att_sites.length > 50) throw invalid("att_sites", "sites must be a list");
       b.att_sites = b.att_sites.map((x, i) => {

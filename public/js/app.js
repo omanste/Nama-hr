@@ -1,4 +1,5 @@
 // App shell: session, layout (header, sidebar / bottom bar), hash router.
+import { outChip } from "./checkin.js";
 import { api } from "./api.js";
 import { t, setLang, getLang, nm, has } from "./i18n.js";
 import { h, clear, errText, empty } from "./ui.js";
@@ -132,6 +133,7 @@ function header() {
         h("span", { class: "app" }, t("app_name"))),
       me.env === "dev" || me.env === "test" ? h("span", { class: "dev" }, t("dev_badge")) : null,
       h("span", { class: "spacer" }),
+      me.employee && !me.attendanceExempt ? outChip() : null,
       h("a", { class: "hbtn bell", href: "#/notifications", "aria-label": t("nav_notifications") }, icon("bell"), h("span", { class: "count", hidden: !unread }, unread)),
       themeButton("hbtn"),
       h("button", { class: "hbtn", type: "button", onclick: toggleLang, lang: getLang() === "ar" ? "en" : "ar" }, t("lang_toggle")),

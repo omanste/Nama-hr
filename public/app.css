@@ -514,3 +514,36 @@ dialog.push-ask .row.end{justify-content:center}
 .fb-box{margin-top:6px}
 .fb-box summary{cursor:pointer;font-weight:600}
 .fb-box textarea{width:100%;margin-top:6px}
+/* flexible hours: today's own check-out time (header chip + home card), counting down */
+.out-chip{background:rgba(201,162,39,.28);font-variant-numeric:tabular-nums;white-space:nowrap}
+.out-chip .oc-l{opacity:.9;font-size:12px}
+.out-chip .oc-l::before{content:"· "}
+.out-chip[hidden]{display:none}
+@media (max-width:520px){ .out-chip .oc-l{display:none} .out-chip{padding:7px 8px} }
+.checkin-card .ci-outtime{margin:0 0 12px;padding:8px 12px;border-radius:10px;background:var(--gold-soft, rgba(201,162,39,.14));font-variant-numeric:tabular-nums}
+/* attendance report: every column inside the card (no sideways scrolling); phones (<700px): one card per row */
+.att-grid{overflow-x:visible}
+.att-grid table{table-layout:auto;font-size:12.5px}
+.att-grid th{white-space:pre-line;font-size:11px;line-height:1.25;padding:7px 4px;vertical-align:bottom;text-align:center}
+.att-grid th.name-col{text-align:start;padding-inline:10px}
+.att-grid td{padding:7px 4px;vertical-align:middle}
+.att-grid td.num{text-align:center;font-size:12px}
+.att-grid td.name-col{white-space:nowrap;padding-inline:10px;font-size:13.5px}
+.att-grid td.name-col .muted{font-size:11px;white-space:nowrap}
+.att-grid tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--surface-2) 55%,transparent)}
+.pair{display:inline-flex;flex-direction:column;align-items:center;line-height:1.15}
+.pair small{font-size:10.5px;color:var(--muted)}
+.att-cards{display:none}
+@media (max-width:699px){
+  .att-grid{display:none}
+  .att-cards{display:grid;gap:10px}
+  .att-pcard{padding:12px 14px;margin:0}
+  .att-pcard .pc-head{margin-bottom:8px}
+  .att-pcard .pc-head a,.att-pcard .pc-head b{font-weight:700;font-size:15px}
+  .att-pcard .pc-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .att-pcard .pc-grid>div{background:var(--surface-2);border-radius:8px;padding:6px 8px;display:flex;flex-direction:column;gap:2px;min-width:0}
+  .att-pcard .pc-grid>div>span{font-size:11px;color:var(--muted);white-space:pre-line;line-height:1.2}
+  .att-pcard .pc-grid b{font-size:14px;font-variant-numeric:tabular-nums}
+  .att-pcard .pair{flex-direction:row;gap:6px;align-items:baseline}
+}
+.checkin-card .ci-mine{margin-top:10px}

@@ -4,6 +4,7 @@
  * One Node.js process: JSON API under /api, static app from /public, SQLite in DATA_DIR/hr.db,
  * uploads in DATA_DIR/uploads, nightly backups in DATA_DIR/backups. Optional SMTP for e-mail.
  */
+import { setFlexDefault } from "./shifts.mjs";
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
@@ -30,6 +31,7 @@ export async function startServer({ dataDir, port = 3000, env = process.env } = 
   const db = openDb(DATA);
   const ctx = { db, env, dataDir: DATA, appEnv: env.APP_ENV || "production", timers: [] };
   // tests may pin "today" (APP_ENV=test only); everyone else uses the Muscat calendar date
+  setFlexDefault(env.FLEX_DEFAULT !== "off");
   ctx.fakeToday = ctx.appEnv === "test" ? env.FAKE_TODAY || null : null;
   ctx.today = () => ctx.fakeToday || todayMuscat();
   // the time of day in Muscat, "HH:MM" (tests may pin it through ctx.fakeClock)

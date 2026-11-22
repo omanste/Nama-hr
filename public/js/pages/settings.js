@@ -64,6 +64,7 @@ export async function render(el, _p, { can }) {
         shift_1_start: sh[1].start.value, shift_1_end: sh[1].end.value, shift_2_start: sh[2].start.value, shift_2_end: sh[2].end.value, shift_3_start: sh[3].start.value, shift_3_end: sh[3].end.value, shift_4_start: sh[4].start.value, shift_4_end: sh[4].end.value,
         ...(attStart.value ? { attendance_start: attStart.value } : {}), shift_self_select: selfShift.value === "1",
         ramadan_start: rStart.value || null, ramadan_end: rEnd.value || null, ramadan_hours: Number(rHours.value) })) }, t("save")))),
+    flexCard(settings, save),
     sitesCard(settings, save),
     h("section", { class: "card" }, h("h2", null, t("official_holidays")),
       hol.el,
@@ -97,6 +98,27 @@ function restoreCard() {
     h("div", { class: "note bad" }, t("restore_warn")),
     h("div", { class: "fields", style: { marginTop: "12px" } }, field(t("restore_file"), file), field(t("restore_type"), word)),
     h("div", { class: "row end", style: { marginTop: "12px" } }, btn), out);
+}
+
+/** Flexible hours for all staff and shifts (Admin): the on-time arrival window, the required hours, the reminder before one's check-out time. */
+function flexCard(settings, save) {
+  const on = h("input", { type: "checkbox", name: "flex_on", checked: settings.flex_on !== false });
+  const tm = (k, v) => h("input", { type: "time", name: k, value: v, step: 60, dir: "ltr", style: { maxWidth: "140px" } });
+  const a = tm("flex_start", settings.flex_start || "08:30"), b = tm("flex_end", settings.flex_end || "09:15");
+  const hrs = h("input", { type: "number", name: "flex_hours", min: 4, max: 12, step: 0.25, value: settings.flex_hours ?? 8, style: { maxWidth: "120px" } });
+  const rem = h("input", { type: "number", name: "remind_before_out_min", min: 1, max: 120, step: 1, value: settings.remind_before_out_min ?? 10, style: { maxWidth: "120px" } });
+  const eg = h("p", { class: "note" });
+  const hm = (x) => { const [p, q] = String(x || "0:0").split(":").map(Number); return p * 60 + q; };
+  const fmt = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  const example = () => { const n = Number(hrs.value) * 60 || 480, mid = Math.min(hm(b.value), hm(a.value) + 15); eg.textContent = t("flex_example", { a: a.value, b: b.value, i: fmt(mid), o: fmt(mid + n), lo: fmt(hm(b.value) + n), early: fmt(hm(a.value) + n) }); };
+  for (const x of [a, b, hrs]) x.addEventListener("input", example);
+  example();
+  return h("section", { class: "card" }, h("h2", null, t("flex_title")), h("p", { class: "sub" }, t("flex_hint")),
+    h("label", { class: "row", style: { gap: "8px" } }, on, t("flex_on")),
+    h("div", { class: "fields", style: { marginTop: "10px" } }, field(t("flex_start"), a), field(t("flex_end"), b), field(t("flex_hours"), hrs), field(t("remind_before_out"), rem, { hint: t("remind_before_out_hint") })),
+    eg,
+    h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", {
+      flex_on: on.checked, flex_start: a.value, flex_end: b.value, flex_hours: Number(hrs.value), remind_before_out_min: Number(rem.value) })) }, t("save"))));
 }
 
 /** Work sites for online check-in (a point and a radius) and the late grace. */

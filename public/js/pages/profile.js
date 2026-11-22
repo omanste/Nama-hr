@@ -181,6 +181,7 @@ export async function render(el, params, { me, can, opts }) {
     h("div", { class: "profile-head" }, photo,
       h("div", { class: "grow" }, h("h1", null, nm(e)), h("div", { class: "sub" }, [e.emp_no, tx(e.job_title), nm(p.department)].filter(Boolean).join(" · ")), h("div", { class: "row", style: { marginTop: "6px" } }, badge(e.status, "st_"))),
       h("div", { class: "row" },
+        own ? h("a", { class: "btn primary", href: "#/attendance" }, "📊 ", t("nav_attendance")) : null,
         can.edit() ? h("a", { class: "btn", href: `#/staff/${e.id}/edit${opts.me ? "?from=me" : ""}` }, t("edit")) : null,
         can.edit() ? h("button", { class: "btn", type: "button", onclick: () => adjustDialog(e) }, t("adjust_balance")) : null,
         can.edit() ? h("button", { class: "btn", type: "button", onclick: () => encashDialog(e, p.files.filter((f) => f.doc_type === "consent")) }, t("encash")) : null,
@@ -609,7 +610,7 @@ function attendanceCard(e) {
   const box = h("section", { class: "card", hidden: true });
   api.get(`/api/attendance/employee/${e.id}`).then((d) => {
     const s = d.summary;
-    if (!d.linked.length && !s.workDays) return;
+    if (!d.own && !d.linked.length && !s.workDays) return; // one's own month always shows (with the link to the sheet and the PDF)
     const f = (k, v) => h("div", null, h("dt", null, t(k)), h("dd", { class: "num" }, v));
     box.append(h("div", { class: "card-head" }, h("h2", null, t("att_this_month")), h("a", { class: "btn small", href: `#/attendance?${d.own ? "" : `emp=${e.id}&`}m=${d.month}` }, t("att_open_sheet"))),
       h("dl", { class: "facts" },

@@ -11,7 +11,7 @@ import { audit } from "./audit.mjs";
 import { notify, hrTeam } from "./notify.mjs";
 import { getEmployee } from "./employees.mjs";
 import { TYPES, PERMISSION_TYPES, isIsoDate, addDays, clockMin, permissionSpan } from "./leave.mjs";
-import { shiftFor, isRestDay } from "./shifts.mjs";
+import { shiftFor, isRestDay, flexRules } from "./shifts.mjs";
 import { readStamp } from "../public/js/punches.js";
 
 const err = (status, code, message, field) => Object.assign(new HttpError(status, code, message), field ? { field } : {});
@@ -37,6 +37,7 @@ export function uncovered(from, to, intervals) {
 
 /** One day of one person. ctx: {shift, rest, holiday, leave, pending, punches[min] (machine), onlineIn, onlineOut (labelled check-ins), excused[[a,b]], missions[[a,b]], correction:{in,out}|null, covered, grace} */
 export function computeDay(c) {
+  if (!c.shift && c.shiftAt) c = { ...c, shift: c.shiftAt(null) };
   const d = { status: "", in: null, out: null, late: 0, early: 0, onSite: 0, missing: null };
   if (!c.covered) return { ...d, status: "no_data" };
   // punches pressed twice within a few minutes count once
@@ -56,6 +57,9 @@ export function computeDay(c) {
   if (inn !== null && out !== null && out < inn) out = null;
   if (c.correction) { if (c.correction.in !== null) inn = c.correction.in; if (c.correction.out !== null) out = c.correction.out; }
   d.in = inn; d.out = out;
+  // flexible hours: the day's end follows the arrival (in 08:45 → out 16:45), so the shift and the permissions are worked out now
+  if (c.shiftAt) { c = { ...c, shift: c.shiftAt(inn) }; if (c.excusedAt) c.excused = c.excusedAt(c.shift); }
+  if (c.shift.flex) { d.expectedOut = c.shift.end; d.flex = true; }
   const any = inn !== null || out !== null;
   if (inn !== null && out !== null) d.onSite = Math.max(0, out - inn);
   // time worked after the official end of the shift (a rest day or holiday: all the time on site). Shown for information;
@@ -74,7 +78,7 @@ export function computeDay(c) {
   }
   const ok = [...c.excused, ...c.missions];
   // arriving within the grace minutes isn't late; after them, lateness counts from the shift start (09:20 → 20 minutes)
-  if (inn !== null) d.late = inn <= c.shift.start + (c.grace || 0) ? 0 : uncovered(c.shift.start, Math.min(inn, c.shift.end), ok);
+  if (inn !== null) d.late = inn <= c.shift.start + (c.shift.flex ? 0 : c.grace || 0) ? 0 : uncovered(c.shift.start, Math.min(inn, c.shift.end), ok);
   if (out !== null) d.early = uncovered(Math.max(out, c.shift.start), c.shift.end, ok);
   // the other punch is an outside-the-sites check-in waiting for the manager: "pending", not "missing"
   if (open && inn !== null && out === null) return { ...d, status: "on_duty" }; // arrived, the day isn't over: lateness shows, no "missing"
@@ -135,19 +139,20 @@ export function employeeDays(db, emp, from, to, today, source = "all", nowMin = 
     const machine = useMachine && !!(dataFrom && dataTo && date >= dataFrom && date <= dataTo);
     const viaPortal = useOnline && !!(firstOnline && (emp.att_mode || "both") !== "machine" && date >= firstOnline);
     const covered = (machine || viaPortal) && date <= today && (!emp.join_date || date >= emp.join_date);
+    const excusedAt = (sh) => approved.filter((r) => PERMISSION_TYPES.includes(r.type)).map((r) => permissionSpan(r.type, { time: r.early_time, endTime: r.end_time, dayStart: sh.start, dayEnd: sh.end }));
     const day = computeDay({
-      shift, covered, grace, rest: isRestDay(date), holiday: holidays.has(date), leave: leaveReq ? leaveReq.type : null,
+      shift, shiftAt: shift.flex ? (inn) => shiftFor(db, emp, date, inn) : null, excusedAt, covered, grace, rest: isRestDay(date), holiday: holidays.has(date), leave: leaveReq ? leaveReq.type : null,
       pending: on.some((r) => r.status === "pending" && r.type !== "comp_day") || waiting.has(date),
       waitingCheckin: waiting.has(date),
       now: date === today ? nowMin : null, // today's time: the day isn't judged before its shift ends
       punches: punches.get(date) || [],
       onlineIn: labelled.has(date) ? labelled.get(date).in : null, onlineOut: labelled.has(date) ? labelled.get(date).out : null,
-      excused: approved.filter((r) => PERMISSION_TYPES.includes(r.type)).map((r) => permissionSpan(r.type, { time: r.early_time, endTime: r.end_time, dayStart: shift.start, dayEnd: shift.end })),
+      excused: excusedAt(shift),
       missions: approved.filter((r) => r.type === "mission").map((r) => [clockMin(r.early_time), clockMin(r.end_time)]),
       correction: corr ? { in: clockMin(corr.early_time), out: clockMin(corr.end_time) } : null,
     });
     day.date = date;
-    day.shift = { no: shift.no, start: shift.start, end: shift.end, ramadan: shift.ramadan };
+    day.shift = { no: shift.no, start: shift.start, end: day.expectedOut ?? shift.end, ramadan: shift.ramadan, ...(shift.flex ? { flex: true, from: shift.flex.from, to: shift.flex.to, hours: shift.flex.hours } : {}) };
     day.info = !start || date < start; // before the policy applies: for information only (§17)
     if (holidays.has(date)) day.holiday = holidays.get(date);
     if (useOnline && byDay.has(date)) day.checkins = byDay.get(date);
@@ -358,6 +363,7 @@ export function registerAttendance(api, ctx) {
     const linked = db.prepare("SELECT machine_no FROM att_devices WHERE employee_id=? AND ignored=0").all(emp.id).map((r) => r.machine_no);
     send(req, res, 200, { employee: { id: emp.id, emp_no: emp.emp_no, name_ar: emp.name_ar, name_en: emp.name_en, shift: emp.shift, join_date: emp.join_date, att_mode: emp.att_mode || "both" },
       grace: Number(getSetting(db, "late_grace_min", 15)) || 0,
+      flex: (() => { const f = flexRules(db); return f ? { from: f.from, to: f.to, hours: f.hours } : null; })(),
       month, source, days, summary: summarize(days), review, linked, dataFrom, dataTo, start: getSetting(db, "attendance_start", null),
       own: !!(req.sess.employee && req.sess.employee.id === emp.id), exempt: attendanceExempt(db).includes(emp.id) });
   });
@@ -375,6 +381,49 @@ export function registerAttendance(api, ctx) {
       notify(ctx, hr, { title_ar: "ملاحظة على كشف الحضور", title_en: "A note on an attendance sheet", body_ar: `${emp.name_ar || emp.name_en} · ${b.month}: ${note}`, body_en: `${emp.name_en || emp.name_ar} · ${b.month}: ${note}`, link: `#/attendance?emp=${emp.id}&m=${b.month}` });
     }
     send(req, res, 200, { ok: true });
+  });
+
+  // ---- the monthly report (PDF / Excel, built in the page): the company (or team) summary, a row per person, and each
+  // person's days. HR / Admin see everyone, a direct manager or department approver their people (§7); one person: whoever
+  // may open that person's sheet — themselves included, never a colleague.
+  api.get("/api/attendance/monthly", (req, res) => {
+    const sess = req.sess, today = ctx.today();
+    const month = req.query.get("month") || today.slice(0, 7);
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw err(400, "invalid", "month must be YYYY-MM", "month");
+    const from = `${month}-01`, to = lastDayOf(month), source = sourceOf(req.query.get("source")), nowMin = clockMin(ctx.clock());
+    let list, scope;
+    if (req.query.get("employee_id")) {
+      const emp = getEmployee(db, req.query.get("employee_id"));
+      if (!emp) throw new HttpError(404, "not_found", "Not found");
+      if (!canSeeAttendance(db, sess, emp)) throw forbidden();
+      const d = emp.department_id ? db.prepare("SELECT name_ar, name_en FROM departments WHERE id=?").get(emp.department_id) : null;
+      list = [{ ...emp, dept_ar: d && d.name_ar, dept_en: d && d.name_en }]; scope = "person";
+    } else {
+      list = teamOf(db, sess);
+      if (!list.length) throw forbidden();
+      scope = MANAGERS.includes(sess.user.role) ? "company" : "team";
+    }
+    const people = [];
+    for (const e of list) {
+      const { days } = employeeDays(db, e, from, to, today, source, nowMin);
+      const summary = summarize(days);
+      if (scope !== "person" && !summary.workDays && !summary.leave && !summary.mission && !summary.restWorked) continue; // nothing this month
+      people.push({ employee: { id: e.id, emp_no: e.emp_no, name_ar: e.name_ar, name_en: e.name_en, dept_ar: e.dept_ar || null, dept_en: e.dept_en || null, shift: e.shift, job: e.job_title || null },
+        summary, days: days.map((x) => ({ date: x.date, status: x.status, leave: x.leave || null, missing: x.missing, in: x.in, out: x.out, expectedOut: x.expectedOut ?? null,
+          onSite: x.onSite || 0, late: x.late || 0, early: x.early || 0, after: x.after || 0, extra: x.extra || 0, holiday: x.holiday || null, info: !!x.info,
+          shift: x.shift, outside: !!(x.checkins && x.checkins.some((c) => c.outside)) })) });
+    }
+    const total = summarize([]);
+    for (const p of people) for (const k of Object.keys(total)) if (typeof p.summary[k] === "number" && k !== "compliance") total[k] += p.summary[k];
+    total.compliance = total.workDays ? Math.round((total.onTime / total.workDays) * 1000) / 10 : null;
+    const holidays = new Set(getSetting(db, "official_holidays", []).map((x) => x.date));
+    let calendarDays = 0;
+    for (let d = from; d <= to; d = addDays(d, 1)) if (!isRestDay(d) && !holidays.has(d)) calendarDays++;
+    const f = flexRules(db);
+    audit(db, sess.user.id, "attendance.monthly", "attendance", null, null, { month, scope, people: people.length });
+    send(req, res, 200, { month, from, to, today, source, scope, own: scope === "person" && !!(sess.employee && people[0] && people[0].employee.id === sess.employee.id), generated_at: nowIso(), working_days: calendarDays, total, people,
+      rules: f ? { flex: true, from: f.from, to: f.to, hours: f.hours } : { flex: false, grace: Number(getSetting(db, "late_grace_min", 15)) || 0 },
+      dataTo: db.prepare("SELECT max(to_date) d FROM att_uploads").get().d });
   });
 
   // ---- the people I can open (for the sheet's person picker)
