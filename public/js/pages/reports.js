@@ -3,6 +3,7 @@ import { api } from "../api.js";
 import { t, nm, getLang } from "../i18n.js";
 import { h, clear, select, field, pageHead, empty, num, dmy, todayIso, toast, errText } from "../ui.js";
 import { columns, totals, permissionsPdf, permissionsXlsx } from "../perm-export.js";
+import { pdfPreview } from "../pdf-preview.js";
 
 const pad = (n) => String(n).padStart(2, "0");
 const lastDay = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -56,7 +57,13 @@ export async function render(el, _p, { me, can, query }) {
   const withDetails = h("input", { type: "checkbox", checked: true, style: { width: "20px", height: "20px", minHeight: "0" } });
   const run = (btn, fn) => async () => { const label = btn.textContent; btn.disabled = true; try { await fn(); } catch (e) { toast(errText(e), "bad"); } finally { btn.disabled = false; btn.textContent = label; } };
   const pdfBtn = h("button", { class: "btn primary", type: "button" }, "📄 ", t("perm_export_pdf"));
-  pdfBtn.onclick = run(pdfBtn, () => permissionsPdf(qs(), { details: withDetails.checked, onStep: (n, of) => { pdfBtn.textContent = t("pdf_making", { n: num(n), of: num(of) }); } }));
+  // the preview: the period and "each permission" can be changed in it, and it redraws
+  pdfBtn.onclick = () => {
+    const pf = h("input", { type: "date", value: from.value }), pt = h("input", { type: "date", value: to.value });
+    const det = select("details", [["1", t("yes")], ["0", t("no")]], withDetails.checked ? "1" : "0");
+    pdfPreview({ title: t("report_permissions"), options: [{ label: t("holiday_from"), control: pf }, { label: t("holiday_to"), control: pt }, { label: t("perm_with_details"), control: det }],
+      make: (onStep) => { const q = qs(); if (pf.value) q.set("from", pf.value); if (pt.value) q.set("to", pt.value); return permissionsPdf(q, { details: det.value === "1", onStep }); } });
+  };
   const xlsBtn = h("button", { class: "btn", type: "button" }, "⬇ ", t("perm_export_xlsx"));
   xlsBtn.onclick = run(xlsBtn, () => permissionsXlsx(qs()));
   quick.addEventListener("change", () => { if (quick.value !== "custom") { [from.value, to.value] = period(quick.value); load(); } });

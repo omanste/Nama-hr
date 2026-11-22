@@ -1,7 +1,8 @@
 import { api } from "../api.js";
 import { t, nm, tx, getLang } from "../i18n.js";
 import { h, clear, select, pageHead, badge, avatar, empty, dmy, num, toast } from "../ui.js";
-import { letterPage, logoData, savePdf } from "../att-pdf.js";
+import { letterPage, logoData, makePdf } from "../att-pdf.js";
+import { pdfPreview } from "../pdf-preview.js";
 import { saveXlsx } from "../xlsx-out.js";
 
 const STATUSES = ["active", "on_leave", "resigned", "terminated", "disabled"];
@@ -124,7 +125,12 @@ export async function render(el, _p, { can, query }) {
     const list = sorted(shown());
     await saveXlsx([{ name: t("sl_title_short"), center: COLS.map(([k], i) => (CENTER.has(k) ? i : -1)).filter((i) => i >= 0), rows: [COLS.map(([, l]) => t(l)), ...list.map((e) => COLS.map(([k]) => cellText(e, k)))] }], `nama-staff-list-${stamp()}.xlsx`);
   });
-  pdfBtn.onclick = () => busy(pdfBtn, async () => staffPdf(sorted(shown()), { R, cellText, nameOf, stamp, onStep: (i, n) => { pdfBtn.textContent = t("pdf_making", { n: i, of: n }); } }).finally(() => { pdfBtn.textContent = t("sl_export_pdf"); }));
+  // the preview: the status filter can be changed in it (the page's other filters apply)
+  pdfBtn.onclick = () => {
+    const st = select("status", [...status.options].map((o) => [o.value, o.textContent]), status.value);
+    pdfPreview({ title: t("sl_title_short"), options: [{ label: t("filter_status"), control: st }],
+      make: (onStep) => { status.value = st.value; draw(); return staffPdf(sorted(shown()), { R, cellText, nameOf, stamp, onStep }); } });
+  };
   const report = await phoneReport();
   const miss = R.missing || {}, missList = [["department", "sl_miss_dept"], ["job_title", "sl_miss_job"], ["join_date", "sl_miss_join"], ["name_ar", "sl_miss_name_ar"], ["name_en", "sl_miss_name_en"]].filter(([k]) => miss[k]);
   el.append(pageHead(t("staff_title"), h("div", { class: "row" }, xlsBtn, pdfBtn, h("a", { class: "btn primary", href: "#/staff/new" }, t("add_employee")))), report,
@@ -157,5 +163,5 @@ async function staffPdf(list, { R, cellText, nameOf, stamp, onStep }) {
           : h("td", { class: CENTER.has(k) ? "c" : "s" }, cellText(e, k))))))),
     ]));
   }
-  return savePdf(pages, `nama-staff-list-${stamp()}.pdf`, onStep);
+  return makePdf(pages, `nama-staff-list-${stamp()}.pdf`, onStep);
 }

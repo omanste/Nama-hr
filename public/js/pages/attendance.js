@@ -5,7 +5,10 @@ import { t, nm, getLang, tx } from "../i18n.js";
 import { h, select, pageHead, empty, num, dmy, todayIso, toast, errText, confirm, clockText, durText, dateTime, viewFile } from "../ui.js";
 import { render as rerender } from "../app.js";
 import { checkinPlace, flagLabel } from "../checkin.js";
-import { monthlyData, downloadPdf } from "../att-pdf.js";
+import { monthlyData, monthlyPdf } from "../att-pdf.js";
+import { pdfPreview } from "../pdf-preview.js";
+import { currentSource, sourceTabs, sourceSelect, sourceNote, rememberSource } from "../att-source.js";
+import { dayRows } from "../day-rows.js";
 
 const pad = (n) => String(n).padStart(2, "0");
 const loc = () => (getLang() === "ar" ? "ar-OM-u-nu-latn" : "en-GB");
@@ -44,12 +47,11 @@ export async function render(el, _p, { me, query, can }) {
   const empId = Number(query.get("emp")) || (me.employee && me.employee.id);
   if (!empId) { el.append(empty(t("no_profile"))); return; }
   const month = /^\d{4}-\d{2}$/.test(query.get("m") || "") ? query.get("m") : todayIso().slice(0, 7);
-  const source = ["machine", "online"].includes(query.get("source")) ? query.get("source") : "all";
-  const [d, people] = await Promise.all([api.get(`/api/attendance/employee/${empId}?month=${month}${source !== "all" ? `&source=${source}` : ""}`), api.get("/api/attendance/people")]);
+  const source = currentSource(query);
+  const [d, people] = await Promise.all([api.get(`/api/attendance/employee/${empId}?month=${month}&source=${source}`), api.get("/api/attendance/people")]);
   const own = d.own;
-  const go = (m, e = empId, src = source) => { location.hash = `#/attendance?${e !== (me.employee && me.employee.id) ? `emp=${e}&` : ""}m=${m}${src !== "all" ? `&source=${src}` : ""}`; };
-  const srcTabs = h("div", { class: "seg att-src", role: "group", "aria-label": t("att_source") }, [["all", "att_src_all"], ["machine", "att_src_machine_tab"], ["online", "att_src_online_tab"]].map(([k, key]) =>
-    h("button", { type: "button", "aria-pressed": String(source === k), onclick: () => go(month, empId, k) }, t(key))));
+  const go = (m, e = empId, src = source) => { location.hash = `#/attendance?${e !== (me.employee && me.employee.id) ? `emp=${e}&` : ""}m=${m}&source=${src}`; };
+  const srcTabs = sourceTabs(source, (k) => go(month, empId, k));
 
   const monthSel = select("month", Array.from({ length: 12 }, (_, i) => [pad(i + 1), new Intl.DateTimeFormat(loc(), { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2026, i, 1)))]), month.slice(5), { "aria-label": t("month") });
   const y = Number(month.slice(0, 4)), years = []; for (let k = y - 2; k <= y + 1; k++) years.push(k);
@@ -67,49 +69,6 @@ export async function render(el, _p, { me, query, can }) {
   if (d.checksOff && d.checksOff.length) notes.push(h("p", { class: "sub" }, t("ver_off_note", { list: d.checksOff.map((k) => t("ver_" + k)).join(getLang() === "ar" ? "، " : ", ") })));
   if (d.dataTo) notes.push(h("p", { class: "sub" }, t("att_data_to", { d: dmy(d.dataTo) }), " · ", t("att_shift_now"), ": ", h("b", null, t("shift_" + (d.employee.shift || 2)))));
 
-  const flex = true; // the expected check-out shows for every shift
-  const rows = d.days.filter((x) => x.status !== "no_data" || x.date <= todayIso()).map((x) => {
-    const reqLinks = x.requests.filter((r) => r.type !== "comp_day").map((r) => h("a", { class: "chip", href: `#/leave/${r.id}` }, t("lt_" + r.type),
-      r.type === "overtime" && r.minutes ? ` ${durText(r.minutes)}` : "",
-      r.status === "pending" ? ` · ${t("rs_pending")}` : r.hr_class === null && ["correction", "overtime", "early", "late", "break"].includes(r.type) ? ` · ${t("att_awaiting_hr")}` : r.type === "overtime" && r.hr_class === "confirmed" ? ` · ${t("att_extra_ok")}` : ""));
-    const canAsk = own && !x.info && x.date <= todayIso() && !x.correctionPending;
-    const ask = canAsk && (x.status === "missing" || x.status === "absent")
-      ? h("a", { class: "btn small", href: `#/attendance/correction?date=${x.date}` }, t("att_ask_correction")) : null;
-    const status = x.status === "leave" ? t("lt_" + x.leave) : x.status === "missing" ? t(x.missing === "in" ? "as_missing_in" : "as_missing_out") : t("as_" + x.status);
-    // In / Out: the time, then where it came from — an online check-in (📍 place or outside + the manager's decision, 📷, 🗺),
-    // a fingerprint or an approved correction. A check-in still waiting for (or refused by) the manager shows too.
-    const cis = x.checkins || [];
-    const corrected = x.requests.some((r) => r.type === "correction" && r.status === "approved");
-    const punchCell = (min, kind) => {
-      const list = cis.filter((c) => c.kind === kind), c = kind === "in" ? list[0] : list[list.length - 1];
-      const shown = min !== null && min !== undefined ? clockText(min) : c && c.approval && c.approval !== "approved" ? c.time : null;
-      if (!shown) return h("td", { class: "num", "data-label": "" });
-      // the check-in behind this time: one that counts (not waiting / refused) at that minute, else this kind's own
-      const counts = (k) => k.approval !== "pending" && k.approval !== "rejected";
-      const online = (min !== null && min !== undefined && cis.find((k) => k.time === shown && counts(k))) || (c && c.time === shown ? c : null);
-      return h("td", { class: "num punch" }, h("b", null, shown),
-        online ? h("div", { class: "punch-src" }, checkinPlace(online, { reason: false }))
-          : h("div", { class: "punch-src muted" }, corrected ? t("att_src_corrected") : t("att_src_machine")));
-    };
-    const more = cis.length > 2 ? h("details", { class: "ci-more" }, h("summary", null, t("ci_all_n", { n: num(cis.length) })),
-      h("div", { class: "ci-day" }, cis.map(checkinChip))) : null;
-    const quiet = ["rest", "holiday", "no_data", "today"].includes(x.status);
-    return h("tr", { class: quiet ? "muted-row" : null },
-      h("td", null, h("b", null, dmy(x.date).slice(0, 5)), " ", h("span", { class: "muted" }, weekday(x.date)), x.holiday ? h("div", { class: "muted" }, tx(x.holiday)) : null),
-      punchCell(x.in, "in"),
-      flex ? h("td", { class: "num" }, x.expectedOut !== null && x.expectedOut !== undefined && !quiet && !["leave", "mission"].includes(x.status) ? clockText(x.expectedOut) : "") : null,
-      punchCell(x.out, "out"),
-      h("td", { class: "num" }, x.onSite ? durText(x.onSite) : quiet ? "" : "—"),
-      h("td", { class: "num" }, x.late ? h("span", { class: "bad-text" }, durText(x.late)) : quiet ? "" : "—"),
-      h("td", { class: "num" }, x.early ? h("span", { class: "bad-text" }, durText(x.early)) : quiet ? "" : "—"),
-      h("td", { class: "num" }, x.after ? h("span", { class: "good-text" }, durText(x.after)) : quiet ? "" : "—"),
-      h("td", null, h("span", { class: `badge ${STATUS_CLASS[x.status] || ""}` }, status),
-        x.away ? h("div", { class: "ci-flag" }, "⚠️ ", t("att_away_unapproved", { d: durText(x.away) })) : null,
-        x.breakTaken ? h("div", { class: "muted" }, "☕ ", t("att_break_taken", { from: x.breakTaken.from, to: x.breakTaken.to || "…", d: durText(x.breakTaken.minutes || 0) })) : null,
-        cis.some((c) => c.flags && c.flags.length) ? h("span", { class: "ci-flag", title: cis.filter((c) => c.flags && c.flags.length).map((c) => `${c.time} ${c.flags.map(flagLabel).join(", ")}`).join(" · ") }, " ⚠️") : null, x.info && ["absent", "missing"].includes(x.status) ? h("span", { class: "muted" }, " ", t("att_info_only")) : null),
-      reqLinks.length || ask || more ? h("td", null, reqLinks, ask, more) : h("td", { "data-label": "" }));
-  });
-
   const reviewBox = h("section", { class: "card" }, h("h2", null, t("att_review_title")),
     d.review ? h("p", null, "✓ ", t("att_reviewed_at", { d: dateTime(d.review.at) }), d.review.note ? h("div", { class: "note", style: { marginTop: "8px" } }, d.review.note) : null) : h("p", { class: "sub" }, t("att_review_hint")),
     own ? h("div", { class: "row" },
@@ -121,10 +80,12 @@ export async function render(el, _p, { me, query, can }) {
 
   el.append(
     pageHead(own ? t("my_attendance") : t("att_of", { name: nm(d.employee) }),
-      h("button", { class: "btn primary", type: "button", onclick: async (ev) => {
-        const b = ev.currentTarget, label = b.textContent; b.disabled = true;
-        try { await downloadPdf(await monthlyData(month, empId), (n, of) => { b.textContent = t("pdf_making", { n: num(n), of: num(of) }); }); }
-        catch (e) { toast(errText(e), "bad"); } finally { b.disabled = false; b.textContent = label; }
+      // the PDF in the preview: the month and the source can be changed there
+      h("button", { class: "btn primary", type: "button", onclick: () => {
+        const m2 = h("input", { type: "month", value: month, dir: "ltr" }), s2 = sourceSelect(source);
+        s2.addEventListener("change", () => rememberSource(s2.value));
+        pdfPreview({ title: t(own ? "pdf_my" : "pdf_person"), options: [{ label: t("month"), control: m2 }, { label: t("src_label"), control: s2 }],
+          make: async (onStep) => monthlyPdf(await monthlyData(m2.value, empId, s2.value), onStep) });
       } }, "📄 ", t(own ? "pdf_my" : "pdf_person")),
       own ? h("a", { class: "btn", href: "#/attendance/correction" }, t("lt_correction")) : null,
       // the external work task is asked for from Permissions and the home page, not here
@@ -135,13 +96,11 @@ export async function render(el, _p, { me, query, can }) {
       h("button", { class: "btn", type: "button", "aria-label": t("next_month"), onclick: () => go(shiftMonth(month, 1)) }, getLang() === "ar" ? "←" : "→"),
       who),
     srcTabs,
-    source !== "all" ? h("p", { class: "sub" }, h("b", null, t(source === "machine" ? "att_src_machine_note" : "att_src_online_note"))) : null,
+    sourceNote(source),
     notes,
     summaryTiles(d.summary),
     h("section", { class: "card", style: { marginTop: "16px" } },
       h("div", { class: "card-head" }, h("h2", null, t("att_days")), h("span", { class: "sub" }, d.flex && d.days.some((x) => x.shift && x.shift.flex) ? t("att_policy_flex", { a: clockText(d.flex.from), b: clockText(d.flex.to), n: num(d.flex.hours) }) : t("att_policy_note", { n: d.grace ?? 15 }))),
-      rows.length ? h("div", { class: "table-wrap" }, h("table", { class: "att-table" },
-        h("thead", null, h("tr", null, [t("date"), t("att_in"), flex ? t("att_expected_out") : null, t("att_out"), t("att_on_site"), t("att_late"), t("att_early"), t("att_after"), t("status"), ""].filter((x) => x !== null).map((x, i, all) => h("th", { class: i > 0 && i < all.length - 2 ? "num" : null }, x)))),
-        h("tbody", null, rows))) : empty()),
+      d.days.length ? dayRows(d.days, { source, own, today: todayIso() }) : empty()),
     reviewBox);
 }

@@ -3,7 +3,8 @@
 import { api } from "../api.js";
 import { t, getLang, nm } from "../i18n.js";
 import { h, clear, select, pageHead, empty, dmy, num, toast, field, errText } from "../ui.js";
-import { letterPage, logoData, savePdf } from "../att-pdf.js";
+import { letterPage, logoData, makePdf } from "../att-pdf.js";
+import { pdfPreview } from "../pdf-preview.js";
 import { saveXlsx } from "../xlsx-out.js";
 
 const muscatDay = (d = new Date()) => new Date(d.getTime() + 4 * 3600e3).toISOString().slice(0, 10);
@@ -100,7 +101,16 @@ export async function render(el, _p, { can }) {
   const busy = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (x) { toast(x.message || String(x), "error"); } finally { btn.disabled = false; } };
   const pdfBtn = h("button", { class: "btn", type: "button" }, t("upd_export_pdf"));
   const xlsBtn = h("button", { class: "btn", type: "button" }, t("upd_export_xlsx"));
-  pdfBtn.onclick = () => busy(pdfBtn, () => updatesPdf(R, from.value, to.value, (i, n) => { pdfBtn.textContent = t("pdf_making", { n: i, of: n }); }).finally(() => { pdfBtn.textContent = t("upd_export_pdf"); }));
+  // the preview: the period and the environment can be changed in it, and it redraws
+  pdfBtn.onclick = () => {
+    const pf = h("input", { type: "date", value: from.value }), pt = h("input", { type: "date", value: to.value });
+    const pe = select("env", [...env.options].map((o) => [o.value, o.textContent]), env.value);
+    pdfPreview({ title: t("upd_title"), options: [{ label: t("start_date"), control: pf }, { label: t("end_date"), control: pt }, { label: t("upd_env"), control: pe }],
+      make: async (onStep) => {
+        const q = qs(); q.set("from", pf.value); q.set("to", pt.value); q.set("env", pe.value); q.delete("hidden");
+        return updatesPdf(await api.get(`/api/hr-updates?${q}`), pf.value, pt.value, onStep);
+      } });
+  };
   xlsBtn.onclick = () => busy(xlsBtn, () => updatesXlsx(R, from.value, to.value));
   for (const c of [from, to, env, area, type, hidden]) c.addEventListener("change", load);
   q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(load, 250); });
@@ -154,7 +164,7 @@ async function updatesPdf(R, a, b, onStep) {
     }
   }
   flush();
-  return savePdf(pages, `${fileBase(a, b)}.pdf`, onStep);
+  return makePdf(pages, `${fileBase(a, b)}.pdf`, onStep);
 }
 
 /** Excel: a Summary sheet (area × type) and a Details sheet, one row per update. */

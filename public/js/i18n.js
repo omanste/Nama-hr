@@ -791,6 +791,22 @@ const D = {
   upd_day_list: ["التحديثات يوماً بيوم", "Day by day"], upd_count: ["العدد", "Count"], upd_title_col: ["التحديث", "Update"], upd_desc_col: ["الوصف", "Description"],
   upd_envs_col: ["البيئات والتواريخ", "Environments and dates"], upd_since: ["أول تحديث مسجّل: {d}", "First recorded update: {d}"],
   upd_last_deploy: ["آخر نشر هنا: {d} · {v}", "Last deploy here: {d} · {v}"],
+  // the PDF preview
+  dd_note: ["ملاحظة", "Note"],
+  pv_download: ["تنزيل", "Download"], pv_print: ["طباعة", "Print"], pv_close: ["إغلاق", "Close"], pv_zoom_in: ["تكبير", "Zoom in"], pv_zoom_out: ["تصغير", "Zoom out"],
+  // punch sources
+  src_label: ["المصدر", "Source"], src_online: ["الإلكتروني فقط", "Online only"], src_fingerprint: ["البصمة فقط", "Fingerprint only"], src_combined: ["مدمج", "Combined"],
+  src_now: ["المصدر: {s}", "Source: {s}"], src_icon_online: ["إلكتروني", "Online"], src_icon_fingerprint: ["البصمة", "Fingerprint"], src_icon_correction: ["تصحيح معتمد", "Approved correction"],
+  src_unclear: ["{n} تسجيل حضور قديم لم يُعرف مصدره — لا يُحسب في أي تقرير حتى يُراجع", "{n} older check-ins couldn't be tagged with a source — they count in no report until checked"],
+  src_note_online: ["تُحسب تسجيلات الحضور الإلكتروني فقط؛ البصمة مستبعدة تماماً", "Only online check-ins count; fingerprint punches are left out completely"],
+  src_note_fingerprint: ["تُحسب بصمات الجهاز فقط؛ الحضور الإلكتروني مستبعد تماماً", "Only fingerprint punches count; online check-ins are left out completely"],
+  src_note_combined: ["تُحسب البصمة والحضور الإلكتروني معاً؛ 📱 إلكتروني · 👆 بصمة", "Fingerprint and online punches together; 📱 online · 👆 fingerprint"],
+  // online check-in log export
+  ol_export_xlsx: ["تصدير Excel", "Export Excel"], ol_export_pdf: ["تصدير PDF", "Export PDF"], ol_pdf_title: ["سجل الحضور الإلكتروني · Online check-in log", "Online check-in log · سجل الحضور الإلكتروني"],
+  ol_flag_filter: ["التنبيهات", "Flags"], ol_flag_all: ["الكل", "All"], ol_flag_flagged: ["المنبَّه عليها فقط", "Flagged only"], ol_flag_unverified: ["غير المتحقق منها فقط", "Unverified only"],
+  ol_c_in: ["وقت الحضور", "Check-in time"], ol_c_out: ["وقت الانصراف", "Check-out time"], ol_c_loc: ["الموقع", "Location"], ol_c_method: ["طريقة التحقق", "Method"],
+  ol_c_flag: ["التنبيه", "Flag"], ol_c_decision: ["قرار المدير", "Manager decision"], ol_inside: ["داخل الموقع", "Inside"], ol_outside: ["خارج المواقع", "Outside"],
+  ol_m_faceid: ["بصمة الوجه", "Face ID"], ol_m_photo: ["صورة", "Photo"], ol_st_ok: ["سليم", "OK"], ol_st_waiting: ["بانتظار القرار", "Waiting"], ol_st_rejected: ["مرفوض", "Rejected"], ol_st_incomplete: ["ناقص", "Incomplete"],
 };
 
 let lang = "ar";

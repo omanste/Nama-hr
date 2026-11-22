@@ -28,7 +28,10 @@ function loadScript(src, ready) {
 const toData = (u) => fetch(u).then((r) => r.blob()).then((b) => new Promise((r) => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); }));
 
 /** The month's data for the report: the whole pack (people this login may see), or one person. */
-export const monthlyData = (month, employeeId = null) => api.get(`/api/attendance/monthly?${new URLSearchParams({ month, ...(employeeId ? { employee_id: employeeId } : {}) })}`);
+export const monthlyData = (month, employeeId = null, source = "online") => api.get(`/api/attendance/monthly?${new URLSearchParams({ month, source, ...(employeeId ? { employee_id: employeeId } : {}) })}`);
+/** The punch source in words: online / fingerprint / combined (the server's machine / all are the same two). */
+export const srcKey = (s) => ({ online: "online", machine: "fingerprint", fingerprint: "fingerprint", all: "combined", combined: "combined" })[s] || "combined";
+export const srcLabel = (s) => t("src_" + srcKey(s));
 
 /** What a day's status says (present / leave type / absent / external task / …). */
 export function statusText(d) {
@@ -82,8 +85,11 @@ tr.tot td{background:#efe6cf!important;font-weight:600;border-top:2px solid #a88
 .days th{padding:3px 3px}
 .days td.st{font-weight:600;text-align:start;padding-inline:6px}
 .days tr.q td{color:#8a9794}
-.days td.st{white-space:normal;line-height:1.2}
-.days td.st .flag{color:#a3670b;font-weight:600;font-size:9px;display:block}
+.days td{height:15.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+.days td.st{font-weight:400}.days .sb{display:inline-block;border:1px solid;border-radius:8px;padding:0 6px;font-size:9px;line-height:1.3;font-weight:600}
+.days td.nt{text-align:start;font-size:9px;color:#5b6b68;padding-inline:6px}
+.days td.dt{text-align:start;padding-inline:6px;font-weight:600}
+.days .red{color:#b3261e;font-weight:600}.days .green{color:#1f7a4d;font-weight:600}
 .who{display:flex;gap:18px;align-items:baseline;margin:9px 0 5px}
 .who b{font-size:16px;font-weight:600;color:#154540}
 .who span{color:#5b6b68}
@@ -106,14 +112,13 @@ export function letterPage({ title, period, range, generated, by, note }, logo, 
     h("div", { class: "foot" }, h("span", null, t("pdf_generated", { d: new Intl.DateTimeFormat(loc(), { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Muscat" }).format(new Date(generated)) }),
       by ? ` · ${t("pdf_by", { name: by })}` : "", " · ", note), h("span", { class: "pno" })));
 }
-const page = (D, logo, body) => letterPage({ title: t("pdf_title"), period: monthName(D.month), range: `${dmy(D.from)} – ${dmy(D.to)}`, generated: D.generated_at, note: t(D.own ? "pdf_confidential_own" : "pdf_confidential") }, logo, body);
+const page = (D, logo, body) => letterPage({ title: `${t("pdf_title")} · ${srcLabel(D.source)}`, period: monthName(D.month), range: `${dmy(D.from)} – ${dmy(D.to)}`, generated: D.generated_at, note: t(D.own ? "pdf_confidential_own" : "pdf_confidential") }, logo, body);
 export const logoData = () => toData("/logo-wordmark.png");
-/** Number the pages ("Page 1 of 3"), draw them and save the PDF. */
-export async function savePdf(pages, name, onStep) {
+/** Number the pages ("Page 1 of 3") and draw them: { blob, images (each page as a picture, for the preview), name }. */
+export async function makePdf(pages, name, onStep) {
   pages.forEach((pg, i) => { pg.querySelector(".pno").textContent = t("pdf_page", { n: num(i + 1), of: num(pages.length) }); });
   const blob = await toPdf(pages, onStep);
-  save(blob, name);
-  return blob;
+  return { blob, images: blob.images, name };
 }
 export { save as saveBlob, loadScript };
 
@@ -158,27 +163,37 @@ function staffPages(D, logo) {
 
 /** Part 3: one person's month, day by day, and their totals. */
 function personPage(D, logo, p) {
-  const e = p.employee, s = p.summary;
+  const e = p.employee, s = p.summary, combined = srcKey(D.source) === "combined";
+  const emo = (x) => ({ online: "📱", fingerprint: "👆", correction: "✍️" })[x] || "";
+  // one line per day: the time, then ⚠️ when that check-in was flagged (and 📱 / 👆 where it came from, when combined)
+  const timeOf = (d, kind) => {
+    const v = kind === "in" ? d.in : d.out; if (v === null || v === undefined) return "";
+    const flagged = (d.flags || []).some((f) => f.time === clockText(v)) || (d.checkins || []).some((c) => c.kind === kind && c.time === clockText(v) && c.flags && c.flags.length);
+    return `${clockText(v)}${combined ? ` ${emo(kind === "in" ? d.inSrc : d.outSrc)}` : ""}${flagged ? " ⚠️" : ""}`;
+  };
+  const noteOf = (d) => [d.holiday ? tx(d.holiday) : "", ...(d.requests || []).filter((r) => r.type !== "comp_day" && r.status === "approved" && !["leave"].includes(r.type)).map((r) => t("lt_" + r.type)),
+    d.away ? `⚠️ ${durText(d.away)}` : "", (d.flags || []).length ? (d.flags || []).map((f) => `⚠️ ${f.time} ${f.flags.map(flagLabel).join("، ")}`).join(" · ") : ""].filter(Boolean).join(" · ");
+  const QUIET = ["rest", "holiday", "no_data", "today", "leave", "mission"];
   const rows = p.days.map((d) => {
-    const quiet = ["rest", "holiday", "no_data", "today"].includes(d.status);
-    const shift = d.shift ? (d.shift.flex ? t("pdf_flex_short") : t("shift_" + d.shift.no)) : "";
+    const quiet = QUIET.includes(d.status), dash = quiet ? "" : "—";
+    const mins = (v, cls) => (v ? h("span", { class: cls }, durText(v)) : dash);
     return h("tr", { class: quiet ? "q" : null },
-      h("td", null, dmy(d.date).slice(0, 5)), h("td", null, weekday(d.date)), h("td", null, quiet ? "" : shift),
-      h("td", null, d.in !== null ? clockText(d.in) : quiet ? "" : "—"),
-      h("td", null, d.expectedOut !== null && !quiet && d.status !== "leave" && d.status !== "mission" ? clockText(d.expectedOut) : ""),
-      h("td", null, d.out !== null ? clockText(d.out) : quiet ? "" : "—"),
-      h("td", null, d.worked ? durText(d.worked) : d.onSite ? durText(d.onSite) : ""), h("td", null, d.late ? num(d.late) : ""), h("td", null, d.early ? num(d.early) : ""),
-      h("td", null, d.after ? durText(d.after) : ""), h("td", null, d.extra ? durText(d.extra) : ""),
-      h("td", { class: "st", style: `color:${STATUS_COLOR[d.status] || "#8a9794"}` }, statusText(d), d.holiday ? ` · ${tx(d.holiday)}` : "", d.outside ? ` · ${t("pdf_outside_short")}` : "",
-        (d.flags || []).map((f) => h("span", { class: "flag" }, ` ⚠️ ${f.time} ${f.flags.map(flagLabel).join("، ")}${f.status === "accepted" ? ` (${t("ci_flag_accepted")})` : f.status === "rejected" ? ` (${t("ci_flag_rejected")})` : ""}`))));
+      h("td", { class: "dt" }, `${dmy(d.date).slice(0, 5)} ${weekday(d.date)}`),
+      h("td", null, timeOf(d, "in") || dash),
+      h("td", null, !quiet && d.expectedOut !== null && d.expectedOut !== undefined ? clockText(d.expectedOut) : ""),
+      h("td", null, timeOf(d, "out") || dash),
+      h("td", null, d.worked ? durText(d.worked) : d.onSite ? durText(d.onSite) : dash),
+      h("td", null, mins(d.late, "red")), h("td", null, mins(d.early, "red")), h("td", null, mins(d.after, "green")),
+      h("td", { class: "st" }, h("span", { class: "sb", style: `color:${STATUS_COLOR[d.status] || "#8a9794"};border-color:${STATUS_COLOR[d.status] || "#c9d2cf"}` }, statusText(d))),
+      h("td", { class: "nt" }, noteOf(d)));
   });
-  const heads = ["date", "pdf_day", "pdf_shift", "att_in", "pdf_expected_out", "att_out", "pdf_hours", "pdf_late_min", "pdf_early_min", "att_after", "pdf_extra_short", "status"];
-  const widths = [6, 6, 7, 6.5, 8, 6.5, 6.5, 6.5, 6.5, 7.5, 7.5, 25];
+  const heads = ["date", "att_in", "pdf_expected_out", "att_out", "pdf_hours", "att_late", "att_early", "att_after", "status", "dd_note"];
+  const widths = [9, 9.5, 8.5, 9.5, 7, 7, 7, 7, 13, 22.5];
   return page(D, logo, [
     h("div", { class: "who" }, h("b", null, nameOf(e)), h("span", null, `${t("emp_no_short")} ${e.emp_no}`), dept(e) ? h("span", null, dept(e)) : null,
       h("span", null, t("shift_" + (e.shift || 2))), h("span", null, rulesText(D))),
     h("table", { class: "days" }, h("colgroup", null, widths.map((w) => h("col", { style: `width:${w}%` }))),
-      h("thead", null, h("tr", null, heads.map((k, i) => h("th", { style: i === 11 ? "text-align:start;padding-inline:6px" : null }, t(k))))),
+      h("thead", null, h("tr", null, heads.map((k, i) => h("th", { style: i >= 8 ? "text-align:start;padding-inline:6px" : null }, t(k))))),
       h("tbody", null, rows)),
     h("div", { class: "mini" }, figures(s).map(([k, v], i) => h("div", null, h("b", null, v), h("span", null, t(COLS[i]))))),
     p.checksOff && p.checksOff.length ? h("p", { class: "note" }, "ℹ️ ", t("ver_off_note", { list: p.checksOff.map((k) => t("ver_" + k)).join(getLang() === "ar" ? "، " : ", ") })) : null,
@@ -200,7 +215,7 @@ export async function toPdf(pages, onStep) {
   document.body.append(probe);
   try { await document.fonts.load("400 12px 'Plex PDF'", "نماء"); await document.fonts.load("600 12px 'Plex PDF'", "نماء"); } catch { /* drawn with the fallback font */ }
   const dir = getLang() === "ar" ? "rtl" : "ltr";
-  let pdf = null;
+  let pdf = null; const images = [];
   try {
     for (let i = 0; i < pages.length; i++) {
       onStep && onStep(i + 1, pages.length);
@@ -214,14 +229,15 @@ export async function toPdf(pages, onStep) {
       const draw = () => { g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(im, 0, 0, c.width, c.height); };
       draw();
       if (i === 0) { await new Promise((r) => setTimeout(r, 350)); draw(); } // the first draw can come before the embedded fonts are ready
+      const jpg = c.toDataURL("image/jpeg", 0.86); images.push(jpg); // the same picture goes in the PDF and in the preview
       if (!pdf) {
         pdf = await window.html2pdf().set({ margin: 0, image: { type: "jpeg", quality: 0.86 }, jsPDF: { unit: "px", format: [W, H], orientation: "landscape", hotfixes: ["px_scaling"] } }).from(c, "canvas").toPdf().get("pdf");
         while (pdf.getNumberOfPages() > 1) pdf.deletePage(pdf.getNumberOfPages()); // never a stray blank page after the first
-      } else { pdf.addPage([W, H], "landscape"); pdf.addImage(c.toDataURL("image/jpeg", 0.86), "JPEG", 0, 0, W, H); }
+      } else { pdf.addPage([W, H], "landscape"); pdf.addImage(jpg, "JPEG", 0, 0, W, H); }
       await new Promise((r) => setTimeout(r, 0)); // let the page breathe between pages
     }
   } finally { probe.remove(); }
-  return pdf.output("blob");
+  return Object.assign(pdf.output("blob"), { images });
 }
 
 /** The pages of the report: the pack (Parts 1–3), or one person's page. */
@@ -234,7 +250,7 @@ export async function buildPages(D) {
 
 export function fileName(D, ext) {
   const who = D.scope === "person" && D.people[0] ? `-${D.people[0].employee.emp_no}` : "";
-  return `attendance-${D.month}${who}.${ext}`;
+  return `nama-attendance-${srcKey(D.source)}-${D.month}${who}.${ext}`;
 }
 function save(blob, name) {
   const a = h("a", { href: URL.createObjectURL(blob), download: name });
@@ -242,11 +258,10 @@ function save(blob, name) {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
 }
 
-/** Build and download the PDF. */
-export async function downloadPdf(D, onStep) {
+/** Build the PDF: { blob, images, name }. */
+export async function monthlyPdf(D, onStep) {
   const blob = await toPdf(await buildPages(D), onStep);
-  save(blob, fileName(D, "pdf"));
-  return blob;
+  return { blob, images: blob.images, name: fileName(D, "pdf") };
 }
 
 /** The same three parts as an Excel workbook: Summary, Staff, Days. */
@@ -254,7 +269,7 @@ export async function downloadXlsx(D) {
   await loadScript("/vendor/xlsx.full.min.js", () => !!window.XLSX);
   const X = window.XLSX, wb = X.utils.book_new();
   const T = D.total, H2 = (m) => (m ? Math.round((m / 60) * 100) / 100 : 0);
-  const summary = [[t("pdf_title")], [t("company")], [monthName(D.month), `${D.from} – ${D.to}`], [rulesText(D)], [],
+  const summary = [[`${t("pdf_title")} · ${srcLabel(D.source)}`], [t("company")], [monthName(D.month), `${D.from} – ${D.to}`], [rulesText(D)], [],
     [t("pdf_working_days"), D.working_days], [t("pdf_staff"), D.people.length], [t("att_work_days"), T.workDays], [t("att_compliance"), T.compliance === null ? "" : T.compliance / 100],
     [t("att_on_time_days"), T.onTime], [`${t("att_late")} (${t("pdf_times")})`, T.late], [`${t("att_late")} (${t("pdf_hours_unit")})`, H2(T.lateMin)],
     [`${t("att_early")} (${t("pdf_times")})`, T.early], [`${t("att_early")} (${t("pdf_hours_unit")})`, H2(T.earlyMin)], [t("att_missing"), T.missing], [t("att_absent"), T.absent],
@@ -269,14 +284,17 @@ export async function downloadXlsx(D) {
   const offText = (p) => (p.checksOff || []).map((k) => t("ver_" + k)).join(", ");
   const staff = [head, ...D.people.map((p) => [p.employee.emp_no, nameOf(p.employee), dept(p.employee), ...line(p.summary), offText(p)]), ["", t("pdf_totals"), "", ...line(T)]];
   const ws2 = X.utils.aoa_to_sheet(staff); ws2["!cols"] = [{ wch: 10 }, { wch: 32 }, { wch: 18 }, ...head.slice(3).map(() => ({ wch: 12 }))];
-  const dh = [t("emp_no_short"), t("employee"), t("date"), t("pdf_day"), t("pdf_shift"), t("att_in"), t("pdf_expected_out"), t("att_out"), `${t("pdf_hours")} (h:mm)`, t("pdf_late_min"), t("pdf_early_min"), `${t("att_after")} (${t("pdf_minutes")})`, `${t("pdf_extra_short")} (${t("pdf_minutes")})`, t("status")];
+  const dh = [t("emp_no_short"), t("employee"), t("date"), t("pdf_day"), t("pdf_shift"), t("att_in"), t("pdf_expected_out"), t("att_out"), `${t("pdf_hours")} (h:mm)`, t("pdf_late_min"), t("pdf_early_min"), `${t("att_after")} (${t("pdf_minutes")})`, `${t("pdf_extra_short")} (${t("pdf_minutes")})`, t("status"), t("dd_note"), ...(srcKey(D.source) === "combined" ? [`${t("att_in")} · ${t("src_label")}`, `${t("att_out")} · ${t("src_label")}`] : [])];
   const days = [dh];
+  const srcWord = (x) => (x ? t("src_icon_" + x) : "");
   for (const p of D.people) for (const d of p.days) {
     if (d.status === "no_data") continue;
-    days.push([p.employee.emp_no, nameOf(p.employee), d.date, weekday(d.date), d.shift ? (d.shift.flex ? t("pdf_flex_short") : t("shift_" + d.shift.no)) : "", d.in !== null ? clockText(d.in) : "", d.expectedOut !== null ? clockText(d.expectedOut) : "",
-      d.out !== null ? clockText(d.out) : "", d.worked ? durText(d.worked) : d.onSite ? durText(d.onSite) : "", d.late || 0, d.early || 0, d.after || 0, d.extra || 0, statusText(d) + (d.holiday ? ` · ${tx(d.holiday)}` : "") + (d.flags || []).map((f) => ` ⚠️ ${f.time} ${f.flags.map(flagLabel).join(", ")}${f.status && f.status !== "open" ? ` (${t("ci_flag_" + f.status)})` : ""}`).join("")]);
+    days.push([p.employee.emp_no, nameOf(p.employee), dmy(d.date), weekday(d.date), d.shift ? (d.shift.flex ? t("pdf_flex_short") : t("shift_" + d.shift.no)) : "", d.in !== null ? clockText(d.in) : "", d.expectedOut !== null ? clockText(d.expectedOut) : "",
+      d.out !== null ? clockText(d.out) : "", d.worked ? durText(d.worked) : d.onSite ? durText(d.onSite) : "", d.late || 0, d.early || 0, d.after || 0, d.extra || 0, statusText(d),
+      [d.holiday ? tx(d.holiday) : "", ...(d.requests || []).filter((r) => r.type !== "comp_day" && r.status === "approved").map((r) => t("lt_" + r.type)), ...(d.flags || []).map((f) => `⚠️ ${f.time} ${f.flags.map(flagLabel).join(", ")}${f.status && f.status !== "open" ? ` (${t("ci_flag_" + f.status)})` : ""}`)].filter(Boolean).join(" · "),
+      ...(srcKey(D.source) === "combined" ? [srcWord(d.inSrc), srcWord(d.outSrc)] : [])]);
   }
-  const ws3 = X.utils.aoa_to_sheet(days); ws3["!cols"] = [{ wch: 10 }, { wch: 30 }, { wch: 11 }, { wch: 8 }, { wch: 10 }, ...dh.slice(5, 13).map(() => ({ wch: 11 })), { wch: 28 }];
+  const ws3 = X.utils.aoa_to_sheet(days); ws3["!cols"] = [{ wch: 10 }, { wch: 30 }, { wch: 11 }, { wch: 8 }, { wch: 10 }, ...dh.slice(5, 13).map(() => ({ wch: 11 })), { wch: 20 }, { wch: 36 }, { wch: 14 }, { wch: 14 }];
   if (D.scope !== "person") { X.utils.book_append_sheet(wb, ws1, t("pdf_sheet_summary").slice(0, 31)); X.utils.book_append_sheet(wb, ws2, t("pdf_sheet_staff").slice(0, 31)); }
   else X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet([[nameOf(D.people[0].employee)], [monthName(D.month)], [], ...figures(D.people[0].summary).map(([k, v]) => [t(k), v])]), t("pdf_sheet_summary").slice(0, 31));
   X.utils.book_append_sheet(wb, ws3, t("pdf_sheet_days").slice(0, 31));

@@ -49,16 +49,18 @@ export function computeDay(c) {
   if (p.length === 1) { // one punch: before the middle of the shift it's the arrival, after it the leaving
     if (p[0] >= (c.shift.start + c.shift.end) / 2) { out = p[0]; inn = null; }
   }
+  // where each of the day's two times came from: the fingerprint device, an online check-in, or an approved correction
+  let inSrc = inn !== null ? "fingerprint" : null, outSrc = out !== null ? "fingerprint" : null;
   // online check-ins say themselves whether they are an arrival or a leaving: never guessed, never merged as a double press
   const oIn = c.onlineIn ?? null, oOut = c.onlineOut ?? null;
   if (oIn !== null) {
-    if (inn === null && out !== null && out <= oIn) { inn = out; out = null; } // a lone machine punch before the online arrival was an arrival
-    inn = inn === null ? oIn : Math.min(inn, oIn);
+    if (inn === null && out !== null && out <= oIn) { inn = out; out = null; inSrc = outSrc; outSrc = null; } // a lone machine punch before the online arrival was an arrival
+    if (inn === null || oIn < inn) { inn = oIn; inSrc = "online"; }
   }
-  if (oOut !== null) out = out === null ? oOut : Math.max(out, oOut);
-  if (inn !== null && out !== null && out < inn) out = null;
-  if (c.correction) { if (c.correction.in !== null) inn = c.correction.in; if (c.correction.out !== null) out = c.correction.out; }
-  d.in = inn; d.out = out;
+  if (oOut !== null && (out === null || oOut > out)) { out = oOut; outSrc = "online"; }
+  if (inn !== null && out !== null && out < inn) { out = null; outSrc = null; }
+  if (c.correction) { if (c.correction.in !== null) { inn = c.correction.in; inSrc = "correction"; } if (c.correction.out !== null) { out = c.correction.out; outSrc = "correction"; } }
+  d.in = inn; d.out = out; d.inSrc = inSrc; d.outSrc = outSrc;
   // flexible hours: the day's end follows the arrival (in 08:45 → out 16:45), so the shift and the permissions are worked out now
   if (c.shiftAt) { c = { ...c, shift: c.shiftAt(inn) }; if (c.excusedAt) c.excused = c.excusedAt(c.shift); }
   d.expectedOut = c.shift.end; // the expected check-out (on the Flexible shift it follows the arrival)
@@ -93,10 +95,12 @@ export function computeDay(c) {
   return { ...d, status: "present" };
 }
 
-/** Where a day's punches may come from: both (the normal sheet), the fingerprint machine only, or the portal only (online
- * check-ins) — so the two can be compared while both are on trial. */
+/** Which punches a report counts: online check-ins only, the fingerprint device only, or both combined. Late, early, missing,
+ * hours and compliance are worked out from the chosen punches only. ("machine" and "all" are the older words.) */
 export const SOURCES = ["all", "machine", "online"];
-export const sourceOf = (q) => (SOURCES.includes(q) ? q : "all");
+export const sourceOf = (q) => ({ online: "online", fingerprint: "machine", machine: "machine", combined: "all", all: "all" })[q] || "all";
+/** The name used in files and titles: online / fingerprint / combined. */
+export const sourceName = (s) => ({ online: "online", machine: "fingerprint", all: "combined" })[s] || "combined";
 /** Days of a person between two dates, with what explains each. */
 export function employeeDays(db, emp, from, to, today, source = "all", nowMin = null) {
   const useMachine = source !== "online", useOnline = source !== "machine";
@@ -105,15 +109,16 @@ export function employeeDays(db, emp, from, to, today, source = "all", nowMin = 
   const dataTo = db.prepare("SELECT max(to_date) d FROM att_uploads").get().d;
   const punches = new Map();
   if (nos.length && useMachine) {
-    for (const r of db.prepare(`SELECT at FROM att_punches WHERE machine_no IN (${nos.map(() => "?").join(",")}) AND at>=? AND at<?`).all(...nos.map((n) => n.machine_no), from, addDays(to, 1))) {
+    for (const r of db.prepare(`SELECT at FROM att_punches WHERE machine_no IN (${nos.map(() => "?").join(",")}) AND source='fingerprint' AND at>=? AND at<?`).all(...nos.map((n) => n.machine_no), from, addDays(to, 1))) {
       const k = r.at.slice(0, 10);
       if (!punches.has(k)) punches.set(k, []);
       punches.get(k).push(toMin(r.at));
     }
   }
   // online check-ins (portal): punches too; they cover each day from the person's first one up to today
-  const online = db.prepare("SELECT * FROM att_checkins WHERE employee_id=? AND at>=? AND at<? ORDER BY at, id").all(emp.id, from, addDays(to, 1));
-  const firstOnline = (db.prepare("SELECT min(substr(at,1,10)) d FROM att_checkins WHERE employee_id=?").get(emp.id) || {}).d || null;
+  // (an untagged older check-in counts nowhere: it is on HR's list to sort out)
+  const online = db.prepare("SELECT * FROM att_checkins WHERE employee_id=? AND source='online' AND at>=? AND at<? ORDER BY at, id").all(emp.id, from, addDays(to, 1));
+  const firstOnline = (db.prepare("SELECT min(substr(at,1,10)) d FROM att_checkins WHERE employee_id=? AND source='online'").get(emp.id) || {}).d || null;
   const sites = new Map(getSetting(db, "att_sites", []).map((s) => [s.id, s]));
   const byDay = new Map(), waiting = new Set(), labelled = new Map(), rejected = new Map(), seq = new Map();
   for (const c of online) {
@@ -434,7 +439,8 @@ export function registerAttendance(api, ctx) {
       const summary = summarize(days);
       if (scope !== "person" && !summary.workDays && !summary.leave && !summary.mission && !summary.restWorked) continue; // nothing this month
       people.push({ employee: { id: e.id, emp_no: e.emp_no, name_ar: e.name_ar, name_en: e.name_en, dept_ar: e.dept_ar || null, dept_en: e.dept_en || null, shift: e.shift, job: e.job_title || null },
-        summary, days: days.map((x) => ({ date: x.date, status: x.status, leave: x.leave || null, missing: x.missing, in: x.in, out: x.out, expectedOut: x.expectedOut ?? null,
+        summary, days: days.map((x) => ({ date: x.date, status: x.status, leave: x.leave || null, missing: x.missing, in: x.in, out: x.out, inSrc: x.inSrc || null, outSrc: x.outSrc || null, expectedOut: x.expectedOut ?? null,
+          requests: (x.requests || []).map((r) => ({ type: r.type, status: r.status })),
           onSite: x.onSite || 0, worked: x.worked || 0, away: x.away || 0, breakTaken: x.breakTaken || null, late: x.late || 0, early: x.early || 0, after: x.after || 0, extra: x.extra || 0, holiday: x.holiday || null, info: !!x.info,
           shift: x.shift, outside: !!(x.checkins && x.checkins.some((c) => c.outside)),
           flags: (x.checkins || []).filter((c) => c.flags && c.flags.length).map((c) => ({ kind: c.kind, time: c.time, flags: c.flags, status: c.flag_status })),
@@ -487,6 +493,16 @@ export function registerAttendance(api, ctx) {
         { "Content-Disposition": `attachment; filename="attendance${source === "all" ? "" : "-" + (source === "machine" ? "fingerprint" : "online")}-${from}-to-${to}.csv"`, "Cache-Control": "no-store" });
     }
     send(req, res, 200, r);
+  });
+
+  // ---- punch sources (HR / Admin): how many punches each source has, and the older check-ins that couldn't be tagged
+  api.get("/api/attendance/punch-sources", (req, res) => {
+    if (!can(req.sess, "employee.edit")) throw forbidden();
+    const fingerprint = db.prepare("SELECT count(*) n FROM att_punches WHERE source='fingerprint'").get().n;
+    const online = db.prepare("SELECT count(*) n FROM att_checkins WHERE source='online'").get().n;
+    const unclear = db.prepare(`SELECT c.id, c.kind, c.at, e.id employee_id, e.emp_no, e.name_ar, e.name_en FROM att_checkins c JOIN employees e ON e.id=c.employee_id
+      WHERE c.source IS NULL OR c.source NOT IN ('online','fingerprint') ORDER BY c.at`).all();
+    send(req, res, 200, { fingerprint, online, unclear });
   });
 
   // ---- what HR still has to settle: permissions to classify (§8), corrections to confirm (§5)

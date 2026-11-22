@@ -433,13 +433,17 @@ export function registerCheckin(api, ctx) {
     const from = q.get("from") || today.slice(0, 8) + "01", to = q.get("to") || today;
     if (!isIsoDate(from) || !isIsoDate(to) || to < from) throw new HttpError(400, "invalid", "Choose a valid period");
     if (addDays(from, 400) < to) throw new HttpError(400, "invalid", "At most about a year at a time");
-    const where = ["substr(c.at,1,10) BETWEEN ? AND ?"], args = [from, to];
+    const where = ["substr(c.at,1,10) BETWEEN ? AND ?", "c.source='online'"], args = [from, to];
     if (!all) {
       where.push(`(e.manager_employee_id=? ${mineDepts.length ? `OR e.department_id IN (${mineDepts.map(() => "?").join(",")})` : ""})`);
       args.push(sess.employee.id, ...mineDepts);
     }
     if (Number(q.get("dept"))) { where.push("e.department_id=?"); args.push(Number(q.get("dept"))); }
     if (Number(q.get("emp"))) { where.push("e.id=?"); args.push(Number(q.get("emp"))); }
+    // only the days with a flagged check-in (any failed check), or with an Unverified one
+    const flag = q.get("flag");
+    if (flag === "flagged" || flag === "unverified") where.push(`EXISTS(SELECT 1 FROM att_checkins f WHERE f.employee_id=c.employee_id AND substr(f.at,1,10)=substr(c.at,1,10)
+      AND f.flags IS NOT NULL AND f.flags NOT IN ('','[]') ${flag === "unverified" ? `AND f.flags LIKE '%"unverified"%'` : ""})`);
     const list = db.prepare(`SELECT c.*, e.emp_no, e.name_ar, e.name_en, d.name_ar dept_ar, d.name_en dept_en FROM att_checkins c
       JOIN employees e ON e.id=c.employee_id LEFT JOIN departments d ON d.id=e.department_id
       WHERE ${where.join(" AND ")} ORDER BY c.at, c.id`).all(...args);
@@ -447,7 +451,8 @@ export function registerCheckin(api, ctx) {
     const one = (c) => c && { id: c.id, time: c.at.slice(11, 16), site: c.site_id ? { name_ar: (siteName(c.site_id) || {}).name_ar || null, name_en: (siteName(c.site_id) || {}).name_en || null } : null,
       outside: !!c.outside, reason: c.reason || null, approval: c.approval || null, decision_note: c.decision_note || null,
       photo_file_id: c.photo_file_id || null, lat: c.lat, lng: c.lng, accuracy: c.accuracy_m, verified: !!c.verified,
-      checks: withChecks(c).checks, flags: withChecks(c).flags, flag_status: c.flag_status || null, flag_note: c.flag_note || null };
+      checks: withChecks(c).checks, flags: withChecks(c).flags, flag_status: c.flag_status || null, flag_note: c.flag_note || null,
+      distance: c.lat !== null && c.lat !== undefined && sites.length ? siteOf(sites, c).distance : null };
     const byKey = new Map();
     for (const c of list) {
       const k = `${c.employee_id}|${c.at.slice(0, 10)}`;
@@ -472,7 +477,7 @@ export function registerCheckin(api, ctx) {
       return sendRaw(req, res, 200, Buffer.from("\ufeff" + lines.join("\r\n"), "utf8"), "text/csv; charset=utf-8",
         { "Content-Disposition": `attachment; filename="online-checkins-${from}-to-${to}.csv"`, "Cache-Control": "no-store" });
     }
-    send(req, res, 200, { from, to, rows });
+    send(req, res, 200, { from, to, rows, generated_at: nowIso(), by: sess.employee ? { name_ar: sess.employee.name_ar, name_en: sess.employee.name_en } : { name_en: sess.user.username, name_ar: sess.user.username } });
   });
 
   api.get("/api/attendance/checkins/pending", (req, res) => {

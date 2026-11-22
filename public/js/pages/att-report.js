@@ -3,34 +3,46 @@
 import { api } from "../api.js";
 import { t, nm } from "../i18n.js";
 import { h, clear, select, field, pageHead, empty, num, dmy, todayIso, toast, errText, durText, when, amountText } from "../ui.js";
-import { monthlyData, downloadPdf, downloadXlsx } from "../att-pdf.js";
+import { monthlyData, monthlyPdf, downloadXlsx } from "../att-pdf.js";
+import { pdfPreview } from "../pdf-preview.js";
+import { currentSource, rememberSource, sourceTabs, sourceSelect, sourceNote } from "../att-source.js";
 
-/** The monthly report window (HR and managers, §7): a month, the whole pack or one person, then PDF or Excel. */
-export async function monthlyDialog(defaultMonth) {
+/** The monthly report window (HR and managers, §7): a month, the whole pack or one person, the punch source, then PDF (a
+ * preview where the same choices can be changed) or Excel. */
+export async function monthlyDialog(defaultMonth, source = currentSource()) {
   const { items } = await api.get("/api/attendance/people");
   const month = h("input", { type: "month", name: "month", value: defaultMonth, dir: "ltr", required: true });
-  const who = select("employee", [["", t("pdf_scope_all")], ...items.map((p) => [p.id, `${nm(p)} · ${p.emp_no}`])], "");
+  const whoOpts = [["", t("pdf_scope_all")], ...items.map((p) => [p.id, `${nm(p)} · ${p.emp_no}`])];
+  const who = select("employee", whoOpts, "");
+  const src = sourceSelect(source);
   const msg = h("p", { class: "sub", "aria-live": "polite" });
-  const btns = [];
-  const run = async (kind) => {
+  const close = () => { dlg.close(); dlg.remove(); };
+  const pdf = () => {
     if (!/^\d{4}-\d{2}$/.test(month.value)) { month.focus(); return; }
-    btns.forEach((b) => (b.disabled = true));
-    try {
-      msg.textContent = t("loading");
-      const D = await monthlyData(month.value, who.value || null);
-      if (!D.people.length) { msg.textContent = t("att_no_data"); return; }
-      if (kind === "pdf") await downloadPdf(D, (n, of) => { msg.textContent = t("pdf_making", { n: num(n), of: num(of) }); });
-      else await downloadXlsx(D);
-      msg.textContent = "✓";
-    } catch (e) { msg.textContent = ""; toast(errText(e), "bad"); }
-    finally { btns.forEach((b) => (b.disabled = false)); }
+    // the preview has the same three choices; changing one redraws it
+    const m2 = h("input", { type: "month", value: month.value, dir: "ltr" }), w2 = select("employee", whoOpts, who.value), s2 = sourceSelect(src.value);
+    s2.addEventListener("change", () => rememberSource(s2.value));
+    close();
+    pdfPreview({ title: t("pdf_title"), options: [{ label: t("month"), control: m2 }, { label: t("pdf_scope"), control: w2 }, { label: t("src_label"), control: s2 }],
+      make: async (onStep) => {
+        const D = await monthlyData(m2.value, w2.value || null, s2.value);
+        if (!D.people.length) throw new Error(t("att_no_data"));
+        return monthlyPdf(D, onStep);
+      } });
   };
-  btns.push(h("button", { class: "btn primary", type: "button", onclick: () => run("pdf") }, "📄 ", t("pdf_download_pdf")),
-    h("button", { class: "btn", type: "button", onclick: () => run("xlsx") }, "⬇ ", t("pdf_download_xlsx")));
+  const xlsx = async (b) => {
+    if (!/^\d{4}-\d{2}$/.test(month.value)) { month.focus(); return; }
+    b.disabled = true;
+    try { msg.textContent = t("loading"); const D = await monthlyData(month.value, who.value || null, src.value); if (!D.people.length) { msg.textContent = t("att_no_data"); return; } await downloadXlsx(D); msg.textContent = "✓"; }
+    catch (e) { msg.textContent = ""; toast(errText(e), "bad"); } finally { b.disabled = false; }
+  };
+  src.addEventListener("change", () => rememberSource(src.value));
   const dlg = h("dialog", { class: "dialog" },
     h("h2", null, t("pdf_title")), h("p", { class: "sub" }, t("att_by_person_note")),
-    h("div", { class: "fields" }, field(t("month"), month), field(t("pdf_scope"), who)),
-    msg, h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => { dlg.close(); dlg.remove(); } }, t("close")), ...btns));
+    h("div", { class: "fields" }, field(t("month"), month), field(t("pdf_scope"), who), field(t("src_label"), src)),
+    msg, h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: close }, t("close")),
+      h("button", { class: "btn primary", type: "button", onclick: pdf }, "📄 ", t("pdf_download_pdf")),
+      h("button", { class: "btn", type: "button", onclick: (e) => xlsx(e.currentTarget) }, "⬇ ", t("pdf_download_xlsx"))));
   dlg.addEventListener("cancel", () => dlg.remove());
   document.body.append(dlg);
   dlg.showModal();
@@ -56,12 +68,13 @@ export async function render(el, _p, { me, can, query }) {
   const quick = select("period", [["last_week", t("last_week")], ["this_week", t("this_week")], ["this_month", t("this_month")], ["last_month", t("last_month")], ["custom", t("custom_period")]], query.get("from") ? "custom" : "last_week");
   const dept = depts.length ? select("department_id", [["", `${t("f_department")}: ${t("all")}`], ...depts.map((d) => [d.id, nm(d)])], "") : null;
   // which punches count: the fingerprint machine, the online check-ins, or both (kept apart while both are on trial)
-  let source = ["machine", "online", "all"].includes(query.get("source")) ? query.get("source") : "all";
-  const srcTabs = h("div", { class: "seg att-src", role: "group", "aria-label": t("att_source") });
-  const drawTabs = () => srcTabs.replaceChildren(...[["all", "att_src_all"], ["machine", "att_src_machine_tab"], ["online", "att_src_online_tab"]].map(([k, key]) =>
-    h("button", { type: "button", "aria-pressed": String(source === k), onclick: () => { source = k; drawTabs(); load(); } }, t(key))));
+  let source = currentSource(query);
+  const srcTabs = h("div");
+  const drawTabs = () => srcTabs.replaceChildren(sourceTabs(source, (k) => { source = k; drawTabs(); load(); }));
   drawTabs();
   const out = h("div"), queue = h("div");
+  // HR / Admin: older check-ins whose source couldn't be told (they count nowhere until sorted out)
+  const unclear = can.edit() ? await api.get("/api/attendance/punch-sources").catch(() => null) : null;
   const csv = h("a", { class: "btn", href: "#" }, "⬇ ", t("download_excel"));
 
   // short two-line headers and compact cells, so every column fits in the card without scrolling (phones: one card per person)
@@ -84,13 +97,16 @@ export async function render(el, _p, { me, can, query }) {
   async function load() {
     const qs = new URLSearchParams({ from: from.value, to: to.value });
     if (dept && dept.value) qs.set("department_id", dept.value);
-    if (source !== "all") qs.set("source", source);
+    qs.set("source", source);
     csv.href = `/api/attendance/report?${qs}&format=csv`;
     let r;
     try { r = await api.get(`/api/attendance/report?${qs}`); } catch (e) { clear(out).append(empty(errText(e))); return; }
     const T = r.total;
     clear(out).append(...[
-      h("p", { class: "sub" }, h("b", null, t({ all: "att_src_all_note", machine: "att_src_machine_note", online: "att_src_online_note" }[source])), " · ", `${dmy(r.from)} – ${dmy(r.to)} · `, t("att_report_note"), r.dataTo && source !== "online" ? ` · ${t("att_data_to", { d: dmy(r.dataTo) })}` : ""),
+      sourceNote(source),
+      unclear && unclear.unclear.length ? h("details", { class: "note warn" }, h("summary", null, "⚠️ ", t("src_unclear", { n: num(unclear.unclear.length) })),
+        h("ul", null, unclear.unclear.slice(0, 50).map((c) => h("li", null, `${c.emp_no} · ${nm(c)} · ${dmy(c.at.slice(0, 10))} ${c.at.slice(11, 16)} (${t(c.kind === "in" ? "att_in" : "att_out")})`)))) : null,
+      h("p", { class: "sub" }, `${dmy(r.from)} – ${dmy(r.to)} · `, t("att_report_note"), r.dataTo && source !== "online" ? ` · ${t("att_data_to", { d: dmy(r.dataTo) })}` : ""),
       r.start && r.from < r.start ? h("div", { class: "note", style: { marginBottom: "12px" } }, t("att_info_before", { d: dmy(r.start) })) : null,
       h("div", { class: "grid tiles" },
         h("div", { class: `card tile ${T.compliance !== null && T.compliance < 80 ? "warn" : ""}` }, h("div", { class: "n" }, pct(T.compliance)), h("div", { class: "l" }, t("att_compliance"))),
@@ -106,7 +122,7 @@ export async function render(el, _p, { me, can, query }) {
       r.people.length ? h("section", { class: "card", style: { marginTop: "16px" } }, h("h2", null, t("att_by_person")), h("p", { class: "sub" }, t("att_by_person_note")),
         grid(t("employee"), r.people.map((p) => h("tr", null, h("td", { class: "name-col" }, personLink(p), h("div", { class: "muted" }, personSub(p))), cells(p)))),
         h("div", { class: "att-cards" }, r.people.map((p) => cardOf(personLink(p), personSub(p), p)))) : null].filter(Boolean));
-    function personLink(p) { return h("a", { href: `#/attendance?emp=${p.employee.id}&m=${r.to.slice(0, 7)}${source !== "all" ? `&source=${source}` : ""}` }, nm(p.employee)); }
+    function personLink(p) { return h("a", { href: `#/attendance?emp=${p.employee.id}&m=${r.to.slice(0, 7)}&source=${source}` }, nm(p.employee)); }
   }
 
   async function loadQueue() {
@@ -127,7 +143,7 @@ export async function render(el, _p, { me, can, query }) {
   const canMonthly = ["hr", "admin"].includes(me.user.role) || me.isApprover || me.hasTeam;
   const lastMonth = (() => { const d = todayIso(); return d.slice(8) <= "05" ? period("last_month")[0].slice(0, 7) : d.slice(0, 7); })();
   el.append(pageHead(t("nav_att_report"),
-    canMonthly ? h("button", { class: "btn primary", type: "button", onclick: () => monthlyDialog(lastMonth).catch((e) => toast(errText(e), "bad")) }, "📄 ", t("pdf_btn")) : null, h("a", { class: "btn", href: "#/attendance/online" }, "📍 ", t("nav_att_online")), ["hr", "admin", "accounts", "ceo", "chairman"].includes(me.user.role) ? h("a", { class: "btn", href: "#/attendance/allowances" }, "💰 ", t("nav_allowances")) : null, ["hr", "admin", "accounts", "ceo", "chairman"].includes(me.user.role) ? h("a", { class: "btn", href: "#/attendance/overtime" }, "⏱ ", t("nav_overtime")) : null, can.edit() ? h("a", { class: "btn", href: "#/attendance/upload" }, "⬆ ", t("nav_att_upload")) : null, csv),
+    canMonthly ? h("button", { class: "btn primary", type: "button", onclick: () => monthlyDialog(lastMonth, source).catch((e) => toast(errText(e), "bad")) }, "📄 ", t("pdf_btn")) : null, h("a", { class: "btn", href: "#/attendance/online" }, "📍 ", t("nav_att_online")), ["hr", "admin", "accounts", "ceo", "chairman"].includes(me.user.role) ? h("a", { class: "btn", href: "#/attendance/allowances" }, "💰 ", t("nav_allowances")) : null, ["hr", "admin", "accounts", "ceo", "chairman"].includes(me.user.role) ? h("a", { class: "btn", href: "#/attendance/overtime" }, "⏱ ", t("nav_overtime")) : null, can.edit() ? h("a", { class: "btn", href: "#/attendance/upload" }, "⬆ ", t("nav_att_upload")) : null, csv),
     srcTabs,
     h("section", { class: "card" }, h("div", { class: "fields" }, field(t("period"), quick), field(t("holiday_from"), from), field(t("holiday_to"), to), dept ? field(t("f_department"), dept) : null)),
     out, queue);

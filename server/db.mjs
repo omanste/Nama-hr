@@ -239,6 +239,13 @@ const MIGRATIONS = [
    CREATE TABLE hr_update_envs(update_id INTEGER NOT NULL REFERENCES hr_updates(id) ON DELETE CASCADE, env TEXT NOT NULL, at TEXT NOT NULL,
      version TEXT, by TEXT, PRIMARY KEY(update_id, env));
    CREATE TABLE hr_deploys(id INTEGER PRIMARY KEY, env TEXT NOT NULL, at TEXT NOT NULL, version TEXT, by TEXT, entries INTEGER NOT NULL DEFAULT 0);`,
+  // 42: every punch says where it came from — "fingerprint" (the device's uploads) or "online" (the portal's check-in);
+  //     an older check-in that carries nothing of the portal (no location, photo, device, checks) is left untagged and
+  //     listed for HR (Attendance report › punch sources), never guessed
+  (db) => {
+    db.exec("ALTER TABLE att_punches ADD COLUMN source TEXT NOT NULL DEFAULT 'fingerprint'; ALTER TABLE att_checkins ADD COLUMN source TEXT DEFAULT 'online';");
+    db.exec(`UPDATE att_checkins SET source=NULL WHERE lat IS NULL AND photo_file_id IS NULL AND device_id IS NULL AND ip IS NULL AND user_agent IS NULL AND checks IS NULL`);
+  },
 ];
 
 /** Staff IDs in one format: NAMA- and three digits (NAMA-07 → NAMA-007), wherever that number isn't on another record

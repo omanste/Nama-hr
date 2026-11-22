@@ -9,7 +9,7 @@ const MIME = { ".html": "text/html; charset=utf-8", ".js": "application/javascri
 export const SEC = {
   "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin", "X-Frame-Options": "SAMEORIGIN",
   "Permissions-Policy": "camera=(self), microphone=(), geolocation=(self)", // camera and location for online check-in, on our own pages only
-  "Content-Security-Policy": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; object-src 'none'; frame-ancestors 'self'; base-uri 'self'",
+  "Content-Security-Policy": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; object-src 'none'; frame-src 'self' https://www.google.com https://maps.google.com; frame-ancestors 'self'; base-uri 'self'",
 };
 
 export class HttpError extends Error {

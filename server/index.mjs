@@ -50,6 +50,9 @@ export async function startServer({ dataDir, port = 3000, env = process.env } = 
       return name;
     });
     if (r) console.log(`phone conversion: ${JSON.stringify({ phones: r.phones, relations: r.relations })}`);
+    // relationships saved as words ("Brother") → their language-neutral key ("brother"), once
+    const n = (await import("./phone.mjs")).relationKeysOnce(db);
+    if (n) console.log(`relationship keys: ${n} records`);
   } catch (e) { console.error(`phone conversion: ${e.message}`); }
   // what changed in the HR portal: the changelog shipped with this build, for this environment (and this deploy)
   try {

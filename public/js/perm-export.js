@@ -4,7 +4,7 @@
 import { api } from "./api.js";
 import { t, getLang, nm } from "./i18n.js";
 import { h, num, dmy } from "./ui.js";
-import { letterPage, logoData, savePdf, saveBlob, loadScript } from "./att-pdf.js";
+import { letterPage, logoData, makePdf, saveBlob, loadScript } from "./att-pdf.js";
 
 const HOURS = (m) => Math.round((m || 0) / 6) / 10; // 210 → 3.5
 export const pairText = (n, m) => (n ? t("times_hours", { n: num(n), h: num(HOURS(m)) }) : "—");
@@ -87,7 +87,7 @@ export async function permissionsPdf(qs, { details = false, onStep } = {}) {
     }
     flush();
   }
-  return savePdf(pages, `${fileBase(R.from, R.to)}.pdf`, onStep);
+  return makePdf(pages, `${fileBase(R.from, R.to)}.pdf`, onStep);
 }
 
 /** The Excel workbook: Summary (empNo, name, counts and hours, totals) and Details (one row per permission). */

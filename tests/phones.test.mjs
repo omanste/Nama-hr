@@ -44,9 +44,14 @@ test("emergency contact: family only — every relationship in the list, 'Other 
   const rels = (await s.c.get("/api/emergency-relations")).data.items;
   assert.deepEqual(rels.map((r) => r.en), ["Father", "Mother", "Husband", "Wife", "Son", "Daughter", "Brother", "Sister", "Uncle", "Aunt", "Other family member"]);
   const put = (b) => s.c.put(`/api/employees/${s.emp.id}/contact`, { emergency_name: "قريب", emergency_phone: "92223333", ...b });
-  for (const r of rels.filter((x) => !x.other)) assert.equal((await put({ emergency_relation: r.en })).data.employee.emergency_relation, r.en, r.en);
-  assert.equal((await put({ emergency_relation: "الأخت" })).data.employee.emergency_relation, "Sister", "Arabic works too");
-  assert.equal((await put({ emergency_relation: "Other family: grandfather" })).data.employee.emergency_relation, "Other family: grandfather");
+  for (const r of rels.filter((x) => !x.other)) assert.equal((await put({ emergency_relation: r.en })).data.employee.emergency_relation, r.key, r.en);
+  assert.deepEqual(rels.map((r) => r.key), ["father", "mother", "husband", "wife", "son", "daughter", "brother", "sister", "uncle", "aunt", "other"], "language-neutral keys");
+  assert.equal((await put({ emergency_relation: "uncle" })).data.employee.emergency_relation, "uncle", "the key itself");
+  assert.equal((await put({ emergency_relation: "العم / الخال" })).data.employee.emergency_relation, "uncle");
+  assert.equal((await put({ emergency_relation: "الأخت" })).data.employee.emergency_relation, "sister", "Arabic works too");
+  assert.equal((await put({ emergency_relation: "Other family: grandfather" })).data.employee.emergency_relation, "other:grandfather", "the older wording is saved as the key");
+  assert.equal((await put({ emergency_relation: "other:جدي" })).data.employee.emergency_relation, "other:جدي", "the typed text is kept");
+  assert.equal((await put({ emergency_relation: "other:" })).status, 400, "Other needs who it is");
   assert.equal((await put({ emergency_relation: "Other family:" })).status, 400, "say which family member");
   assert.equal((await put({ emergency_relation: "Friend" })).status, 400, "no friends or colleagues");
   assert.equal((await put({ emergency_relation: "زميل" })).status, 400);
@@ -74,7 +79,7 @@ test("the one-time conversion of older records: a backup first; converted / alre
   const r = convertOnce(t.app.ctx, () => { backedUp = true; return "backup.zip"; });
   assert.ok(backedUp, "the backup is taken first"); assert.equal(r.backup, "backup.zip");
   const row = (id) => ({ ...t.db.prepare("SELECT mobile, personal_phone, emergency_phone, emergency_relation FROM employees WHERE id=?").get(id) });
-  assert.deepEqual(row(a), { mobile: "+96899123456", personal_phone: "+971501234567", emergency_phone: "+96892223333", emergency_relation: "Brother" });
+  assert.deepEqual(row(a), { mobile: "+96899123456", personal_phone: "+971501234567", emergency_phone: "+96892223333", emergency_relation: "brother" });
   assert.deepEqual(row(b), { mobile: "+96891112222", personal_phone: "12345", emergency_phone: "ask HR", emergency_relation: "صديق" }, "unclear: left as is");
   assert.ok(r.phones.converted >= 3 && r.phones.ok >= 1 && r.phones.review >= 2 && r.relations.converted >= 1 && r.relations.review >= 1);
   assert.equal(convertOnce(t.app.ctx, () => { throw new Error("not again"); }), null, "once only");
@@ -84,4 +89,15 @@ test("the one-time conversion of older records: a backup first; converted / alre
   assert.ok(rep.relations.some((x) => x.emp_no === "OLD2" && x.value === "صديق"));
   assert.equal((await s.c.get("/api/admin/phone-report")).status, 403);
   assert.ok(t.db.prepare("SELECT 1 FROM audit_log WHERE action='employee.phone_format' AND entity_id=?").get(String(a)), "each change logged");
+});
+
+test("saved relationships become language-neutral keys once; the typed 'Other' text is kept; unknown ones stay for review", async () => {
+  const { relationKeysOnce } = await import("../server/phone.mjs");
+  const ins = t.db.prepare("INSERT INTO employees(emp_no,name_ar,emergency_relation,created_at,updated_at) VALUES(?,?,?,?,?)"), now = new Date().toISOString();
+  const ids = [["K1", "Brother"], ["K2", "Other family: cousin"], ["K3", "الأم"], ["K4", "neighbour"]].map(([n, v]) => [ins.run(n, "اسم", v, now, now).lastInsertRowid, v]);
+  (await import("../server/db.mjs")).setSetting(t.db, "relation_keys_done", false);
+  assert.equal(relationKeysOnce(t.db), 3);
+  const v = (id) => t.db.prepare("SELECT emergency_relation v FROM employees WHERE id=?").get(id).v;
+  assert.deepEqual(ids.map(([id]) => v(id)), ["brother", "other:cousin", "mother", "neighbour"]);
+  assert.equal(relationKeysOnce(t.db), null, "once only");
 });

@@ -216,6 +216,6 @@ test("update import: matches by employee ID (or exact name), changes only filled
     // an unclear number is flagged and left out; the rest of the row still goes in
     const pv = (await a.post("/api/import/preview", { rows: [["أحمد العبيداني", "+968 1", "أخوي"]], mapping: { name_ar: 0, mobile: 1, emergency_relation: 2 }, mode: "update" })).data;
     assert.deepEqual(pv.rows[0].warnings.map((w) => w.code), ["unclear_phone"]);
-    assert.equal(pv.rows[0].values.emergency_relation, "Brother");
+    assert.equal(pv.rows[0].values.emergency_relation, "brother");
   } finally { await t2.close(); }
 });

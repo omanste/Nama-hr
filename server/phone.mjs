@@ -1,17 +1,20 @@
 /* Phone numbers (every phone field): saved as the full international number (+96899123456) — the country code and the
- * number come from it. Emergency contact relationship: family only, from Admin's list (Settings › Lists); "Other family
- * member" is saved as "Other family: <what>". */
+ * number come from it. Emergency contact relationship: family only, from Admin's list (Settings › Lists), saved as a
+ * language-neutral key ("father", "brother", …) shown in the reader's language; "Other family member" is saved as
+ * "other:<what>". */
 import { parsePhone, splitPhone } from "../public/js/dialcodes.js";
 import { getSetting } from "./db.mjs";
 
 export const PHONE_FIELDS = ["mobile", "personal_phone", "emergency_phone"];
 export const OTHER_FAMILY = "Other family";
 export const DEFAULT_RELATIONS = [
-  { en: "Father", ar: "الأب" }, { en: "Mother", ar: "الأم" }, { en: "Husband", ar: "الزوج" }, { en: "Wife", ar: "الزوجة" },
-  { en: "Son", ar: "الابن" }, { en: "Daughter", ar: "الابنة" }, { en: "Brother", ar: "الأخ" }, { en: "Sister", ar: "الأخت" },
-  { en: "Uncle", ar: "العم / الخال" }, { en: "Aunt", ar: "العمة / الخالة" }, { en: "Other family member", ar: "فرد آخر من العائلة", other: true },
+  { key: "father", en: "Father", ar: "الأب" }, { key: "mother", en: "Mother", ar: "الأم" }, { key: "husband", en: "Husband", ar: "الزوج" }, { key: "wife", en: "Wife", ar: "الزوجة" },
+  { key: "son", en: "Son", ar: "الابن" }, { key: "daughter", en: "Daughter", ar: "الابنة" }, { key: "brother", en: "Brother", ar: "الأخ" }, { key: "sister", en: "Sister", ar: "الأخت" },
+  { key: "uncle", en: "Uncle", ar: "العم / الخال" }, { key: "aunt", en: "Aunt", ar: "العمة / الخالة" }, { key: "other", en: "Other family member", ar: "فرد آخر من العائلة", other: true },
 ];
-export const relationList = (db) => getSetting(db, "emergency_relations", DEFAULT_RELATIONS);
+/** A list item's key: its own, else made from the English word ("Grand father" → "grand_father"). */
+export const relKey = (r) => r.other ? "other" : r.key || String(r.en || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "rel";
+export const relationList = (db) => getSetting(db, "emergency_relations", DEFAULT_RELATIONS).map((r) => ({ ...r, key: relKey(r) }));
 
 /** A typed or pasted number → the full number, or an error message for the field. Empty stays empty. */
 export function cleanPhone(v) {
@@ -21,14 +24,15 @@ export function cleanPhone(v) {
   if (p.error) return { error: "Enter the country code and the number (digits only)" };
   return { value: p.e164 };
 }
-/** A relationship from the list (English or Arabic), or "Other family: <text>"; anything else → an error. */
+/** A relationship from the list (its key, or the English or Arabic word), or "other:<text>" (also the older "Other family:
+ * <text>"); saved as the key. Anything else → an error. */
 export function cleanRelation(db, v) {
   if (v === null || v === undefined || String(v).trim() === "") return { value: null };
   const s = String(v).trim(), list = relationList(db);
-  const m = /^(?:other family(?: member)?|فرد آخر من العائلة)\s*[:：-]\s*(.+)$/i.exec(s);
-  if (m) return m[1].trim().length >= 2 ? { value: `${OTHER_FAMILY}: ${m[1].trim().slice(0, 60)}` } : { error: "Say which family member" };
-  const hit = list.find((r) => !r.other && [r.en, r.ar, ...(r.ar || "").split(" / ")].some((x) => x && x.toLowerCase() === s.toLowerCase()));
-  if (hit) return { value: hit.en };
+  const m = /^(?:other|other family(?: member)?|فرد آخر من العائلة)\s*[:：-]\s*(.*)$/i.exec(s);
+  if (m) return m[1].trim().length >= 2 ? { value: `other:${m[1].trim().slice(0, 60)}` } : { error: "Say which family member" };
+  const hit = list.find((r) => !r.other && [r.key, r.en, r.ar, ...(r.ar || "").split(" / ")].some((x) => x && x.toLowerCase() === s.toLowerCase()));
+  if (hit) return { value: hit.key };
   if (list.some((r) => r.other && [r.en, r.ar].some((x) => x && x.toLowerCase() === s.toLowerCase()))) return { error: "Say which family member" };
   return { error: "Choose a family relationship from the list" };
 }
@@ -46,7 +50,20 @@ export function guessRelation(db, v) {
   const c = cleanRelation(db, s); if (!c.error) return c;
   const g = GUESS.find(([re]) => re.test(s));
   if (!g) return { review: true };
-  return { value: g[1] === "other" ? `${OTHER_FAMILY}: ${s}` : g[1] };
+  return g[1] === "other" ? { value: `other:${s}` } : cleanRelation(db, g[1]);
+}
+
+/** Once: every relationship already saved as a word ("Brother", "Other family: cousin") → its key ("brother",
+ * "other:cousin"); anything that doesn't match stays as it is (it is on HR's review list). Returns how many changed. */
+export function relationKeysOnce(db) {
+  if (getSetting(db, "relation_keys_done", false)) return null;
+  let n = 0;
+  for (const e of db.prepare("SELECT id, emergency_relation v FROM employees WHERE emergency_relation IS NOT NULL AND emergency_relation<>''").all()) {
+    const c = cleanRelation(db, e.v);
+    if (!c.error && c.value !== e.v) { db.prepare("UPDATE employees SET emergency_relation=? WHERE id=?").run(c.value, e.id); n++; }
+  }
+  setSetting(db, "relation_keys_done", true);
+  return n;
 }
 
 /* ---- the one-time conversion of the numbers and relationships already saved (on start, once) ---- */

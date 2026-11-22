@@ -21,6 +21,23 @@ How to write an entry (one per change, under the day it was made):
 The history before this page existed (26 October – 22 November 2026) was filled in from the project history; its dates
 are the dates of each change on dev.
 
+## 2026-11-23
+- [Attendance · New feature] Attendance by punch source: Online only, Fingerprint only or Combined | الحضور حسب المصدر: الإلكتروني فقط أو البصمة فقط أو مدمج
+  Every punch records where it came from. The attendance report, a person's month, My attendance and the monthly PDF / Excel count only the chosen source; Combined shows 📱 online or 👆 fingerprint next to each time. | كل بصمة تحفظ مصدرها، ويحسب تقرير الحضور وكشف الموظف الشهري و«حضوري» وملف PDF / Excel الشهري المصدر المختار فقط، ويعرض «مدمج» 📱 إلكتروني أو 👆 بصمة بجانب كل وقت.
+  key: punch-source
+- [Reports · New feature] Online check-in log: export to Excel and PDF | سجل الحضور الإلكتروني: تصدير Excel وPDF
+  The log can be filtered to flagged or unverified check-ins and downloaded with location, method, flag, manager decision and status. | يمكن تصفية السجل على التسجيلات المنبَّه عليها أو غير المتحقق منها، وتنزيله مع الموقع وطريقة التحقق والتنبيه وقرار المدير والحالة.
+  key: checkin-log-export
+- [Reports · Improvement] Every HR PDF opens in a preview first | كل ملفات PDF في الموارد البشرية تُعرض أولاً للمعاينة
+  A pop-up shows the pages with zoom and a page counter; the report's options can be changed inside it, then Download or Print. | نافذة تعرض الصفحات مع التكبير وعدّاد الصفحات، ويمكن تغيير خيارات التقرير داخلها، ثم التنزيل أو الطباعة.
+  key: pdf-preview
+- [Attendance · Improvement] One neat line per day in the attendance sheet | سطر واحد مرتب لكل يوم في كشف الحضور
+  Each day is a single aligned row: times with small icons for the place, photo, map and flags; the place shows on tap; phones get a card per day. The same layout is used in the monthly PDF and Excel. | كل يوم في سطر واحد متناسق: الأوقات مع أيقونات صغيرة للموقع والصورة والخريطة والتنبيهات، ويظهر الموقع عند الضغط، وفي الهاتف بطاقة لكل يوم، ونفس الترتيب في PDF وExcel الشهري.
+  key: day-rows
+- [Profiles · Improvement] Emergency contact relationship in one language | صلة قرابة جهة الطوارئ بلغة واحدة
+  The list shows only the screen's language, the choice is saved once for both languages, and “Other family member” must say who it is. | تعرض القائمة لغة الواجهة فقط، ويُحفظ الاختيار مرة واحدة للغتين، ويجب كتابة من هو عند اختيار «فرد آخر من العائلة».
+  key: relation-one-language
+
 ## 2026-11-22
 - [Reports · New feature] HR system updates page | صفحة تحديثات نظام الموارد البشرية
   A new tab lists every change made to the HR portal between two dates, by area and type, with the environments and dates; HR and Admin can download it as PDF or Excel for management. | تبويب جديد يعرض كل تحديث على بوابة الموارد البشرية بين تاريخين حسب المجال والنوع مع البيئات والتواريخ، ويمكن للموارد البشرية والإدارة تنزيله PDF أو Excel للإدارة العليا.

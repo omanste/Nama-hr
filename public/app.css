@@ -614,3 +614,51 @@ dialog.push-ask .row.end{justify-content:center}
 .pill{display:inline-block;border-radius:999px;font-size:12px;padding:1px 8px;background:var(--surface-2);color:var(--muted)}
 .chip.on{background:var(--gold);color:#fff;border-color:var(--gold)}
 .upd-areas .chip{cursor:pointer;background:var(--surface);font:inherit;font-size:13px}
+
+.rel-input select{width:100%;min-width:0;text-overflow:clip}
+.rel-input select[dir=rtl]{text-align:right}.rel-input select[dir=ltr]{text-align:left}
+/* the PDF preview (every HR PDF): a large centred window; full screen on phones */
+dialog.pdfv{width:min(1180px,96vw);height:92vh;max-width:none;max-height:none;padding:0;border:0;border-radius:14px;background:var(--surface);color:var(--fg);display:flex;flex-direction:column;overflow:hidden}
+dialog.pdfv:not([open]){display:none}
+dialog.pdfv::backdrop{background:rgba(10,20,18,.6)}
+.pdfv-head{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--surface)}
+.pdfv-title{font-size:15px}
+.pdfv-tools{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pdfv-zoom,.pdfv-count{min-width:54px;text-align:center;font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px}
+.pdfv-opts{display:flex;flex-wrap:wrap;gap:8px 14px;padding:8px 14px;border-bottom:1px solid var(--line);align-items:end}
+.pdfv-opt{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}.pdfv-opt select,.pdfv-opt input{min-width:150px}
+.pdfv-status{padding:0 14px;color:var(--muted);font-size:13px;min-height:0}.pdfv-status:not(:empty){padding:8px 14px}
+.pdfv-pages{--z:1;flex:1;overflow:auto;background:var(--surface-2);padding:16px;display:flex;flex-direction:column;align-items:center;gap:14px}
+.pdfv-page{width:calc(min(1123px, 100%) * var(--z));max-width:none;height:auto;box-shadow:0 2px 10px rgba(0,0,0,.25);background:#fff;flex:none}
+@media (max-width:699px){
+  dialog.pdfv{width:100vw;height:100dvh;max-height:100dvh;border-radius:0;margin:0;inset:0}
+  .pdfv-head{padding:8px 10px}.pdfv-pages{padding:8px}.pdfv-tools .btn{padding-inline:10px}
+}
+/* a month, one line per day: fixed columns, every row the same height, times with small icons */
+.dd-wrap{overflow:visible}
+.dd{table-layout:fixed;width:100%}
+.dd th,.dd td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;height:44px;padding:4px 6px}
+.dd th{height:auto;white-space:normal;line-height:1.2;font-size:12.5px}
+.dd .c{text-align:center;font-variant-numeric:tabular-nums}
+.dd td.tmc{overflow:visible}
+.dd .tm{font-variant-numeric:tabular-nums}
+.dd td.nt{overflow:hidden}.dd td.nt .chip{font-size:11px;padding:1px 6px;margin:0 2px}
+.dd tr.q td{color:var(--muted)}
+.dd td .badge{font-size:11.5px;padding:2px 8px}
+.ico{display:inline-block;border:0;background:none;padding:0 1px;margin:0;font-size:13px;line-height:1;cursor:pointer;position:relative;vertical-align:middle;min-height:0;min-width:0}
+span.ico{cursor:default}
+.ico .tip{display:none;position:absolute;bottom:130%;inset-inline-start:50%;transform:translateX(-50%);background:var(--fg);color:var(--bg,#fff);font-size:12px;white-space:nowrap;padding:4px 8px;border-radius:6px;z-index:20;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+[dir=rtl] .ico .tip{transform:translateX(50%)}
+.ico:hover .tip,.ico:focus .tip,.ico.tip-on .tip{display:block}
+.src-ico{font-size:12px;margin-inline:2px;vertical-align:middle}
+.chip.bad{color:var(--bad);border-color:var(--bad-soft)}.chip.act{background:var(--gold-soft)}
+.dd-cards{display:none}
+.dd-card{border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin-bottom:8px;background:var(--surface)}
+.dd-card.q{padding:6px 12px;opacity:.85}
+.dd-top{display:flex;gap:8px;align-items:center}.dd-top .badge{margin-inline-start:auto}
+.dd-times{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:4px;font-variant-numeric:tabular-nums}.dd-times small{color:var(--muted)}
+.dd-notes{margin-top:4px}
+@media (max-width:1100px){.dd th,.dd td{font-size:12.5px;padding:4px 3px}.dd .ico{font-size:12px}}
+@media (max-width:699px){.dd-wrap{display:none}.dd-cards{display:block}}
+.map-pop{width:min(560px,94vw)}.map-frame{width:100%;height:340px;border:0;border-radius:8px}
+.src-now{margin:6px 0 10px}

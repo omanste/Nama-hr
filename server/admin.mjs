@@ -11,7 +11,7 @@ import { shiftTimes, LEGACY_SHIFTS, NEW_SHIFTS, shiftDefs } from "./shifts.mjs";
 import { overtimeRates } from "./overtime.mjs";
 import { faceidMode, FACEID_MODES } from "./webauthn.mjs";
 import { verifyDefaults, CHECKS } from "./verify.mjs";
-import { relationList, DEFAULT_RELATIONS, reviewList } from "./phone.mjs";
+import { relationList, DEFAULT_RELATIONS, reviewList, relKey } from "./phone.mjs";
 
 export const DEFAULT_CONTRACT_TYPES = ["Unlimited", "Limited", "Probation", "Part-time"];
 /** Leave that needs the CEO's final approval after the manager's (exceptions to the normal policy). */
@@ -225,7 +225,10 @@ export function registerAdmin(api, ctx) {
         const en = String((r && r.en) || "").trim().slice(0, 40), ar = String((r && r.ar) || "").trim().slice(0, 40);
         if (!en || !ar) throw invalid("emergency_relations", `line ${i + 1}: English and Arabic are both needed`);
         if (/friend|colleague|neighbou?r|صديق|زميل|جار/i.test(`${en} ${ar}`)) throw invalid("emergency_relations", `line ${i + 1}: family relationships only`);
-        return { en, ar, ...(r.other ? { other: true } : {}) };
+        // the key stays with the relationship (saved records use it): given, or the same item's in the current list
+        const cur = relationList(db).find((x) => x.en.toLowerCase() === en.toLowerCase() || x.ar === ar);
+        const key = r.other ? "other" : String((r && r.key) || (cur && cur.key) || relKey({ en })).toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 30) || relKey({ en });
+        return { key, en, ar, ...(r.other ? { other: true } : {}) };
       });
       if (b.emergency_relations.filter((r) => r.other).length !== 1) b.emergency_relations = [...b.emergency_relations.filter((r) => !r.other), DEFAULT_RELATIONS.at(-1)];
     }
