@@ -415,7 +415,7 @@ export function registerRequests(api, ctx) {
       if (action === "approve" || action === "reject") {
         if (!mayDecide(db, sess, r, ctx.today())) throw forbidden();
         if (r.status !== "pending") throw err(409, "not_pending", "This request has already been decided");
-        if (action === "reject" && !comment) throw err(400, "invalid", "Please give a reason for the rejection", "comment");
+        if (action === "reject" && !comment && r.type !== "break") throw err(400, "invalid", "Please give a reason for the rejection", "comment");
         if (action === "approve" && r.type === "overtime") {
           // extra time after hours: the manager may approve a different end than the check-out (e.g. 19:30 instead of 21:10)
           const end = body.end_time ? String(body.end_time) : r.end_time;

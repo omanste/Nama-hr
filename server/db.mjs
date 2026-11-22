@@ -203,6 +203,21 @@ const MIGRATIONS = [
   // 38: HR backups and restores (Admin): who, when, which environment, type, sections, counts, and the file kept
   `CREATE TABLE hr_backups(id INTEGER PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('backup','restore','auto')), type TEXT NOT NULL,
      sections TEXT, counts TEXT, env TEXT, file TEXT, by_user_id INTEGER, at TEXT NOT NULL);`,
+  // 39: the three shifts (5 Flexible, 6 10–5, 7 10–6) replace the older four: each person's shift from a date (a change
+  //     applies from the next day); everyone moves to Flexible from today, their older shift stays for the days before
+  (db) => {
+    db.exec(`CREATE TABLE shift_history(id INTEGER PRIMARY KEY, employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE, shift INTEGER NOT NULL,
+      from_date TEXT NOT NULL, changed_by INTEGER, changed_at TEXT NOT NULL); CREATE INDEX sh_emp ON shift_history(employee_id, from_date);`);
+    const today = new Date(Date.now() + 4 * 3600e3).toISOString().slice(0, 10), now = new Date().toISOString(); // Muscat date
+    const ins = db.prepare("INSERT INTO shift_history(employee_id,shift,from_date,changed_by,changed_at) VALUES(?,?,?,NULL,?)");
+    for (const e of db.prepare("SELECT id, shift FROM employees").all()) {
+      ins.run(e.id, e.shift, "0001-01-01", now);
+      if (e.shift !== 5) { ins.run(e.id, 5, today, now); db.prepare("UPDATE employees SET shift=5 WHERE id=?").run(e.id); }
+    }
+    if (db.prepare("SELECT count(*) n FROM employees").get().n)
+      db.prepare("INSERT INTO audit_log(at,actor_user_id,action,entity,entity_id,before,after) VALUES(?,?,?,?,?,?,?)").run(now, null, "shifts.replace", "settings", null,
+        JSON.stringify({ shifts: [1, 2, 3, 4] }), JSON.stringify({ shifts: [5, 6, 7], everyone: "Flexible (5)", from: today }));
+  },
 ];
 
 /** Staff IDs in one format: NAMA- and three digits (NAMA-07 → NAMA-007), wherever that number isn't on another record

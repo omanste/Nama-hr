@@ -183,39 +183,32 @@ test("permission times follow the person's shift", async () => {
   const r = await other.c.post("/api/requests", { type: "early", date: "2026-11-02", time: "16:30", reason: "موعد" });
   assert.equal(r.status, 201); assert.equal(r.data.request.minutes, 60);
   assert.equal((await other.c.post("/api/requests", { type: "late", date: "2026-11-03", time: "09:00", reason: "موعد" })).data.request.minutes, 30);
-  assert.equal((await hr.c.put(`/api/employees/${other.emp.id}`, { shift: 5 })).status, 400);
+  assert.equal((await hr.c.put(`/api/employees/${other.emp.id}`, { shift: 9 })).status, 400);
 });
 
-test("staff choose their own shift until HR locks it (one person) or Admin switches it off (everyone)", async () => {
-  const p = (await s.c.get(`/api/employees/${s.emp.id}`)).data;
-  assert.equal(p.shiftSelf, true);
-  assert.equal((await s.c.put(`/api/employees/${s.emp.id}/shift`, { shift: 1 })).data.employee.shift, 1);
-  assert.equal((await s.c.put(`/api/employees/${s.emp.id}/shift`, { shift: 3 })).status, 400);
-  assert.equal((await s.c.put(`/api/employees/${other.emp.id}/shift`, { shift: 1 })).status, 403, "only their own");
-  assert.equal((await hr.c.get(`/api/employees/${s.emp.id}`)).data.shiftSelf, false, "HR edits it in the full form");
-  assert.equal((await hr.c.put(`/api/employees/${s.emp.id}`, { shift_locked: 1 })).status, 200);
-  assert.equal((await s.c.put(`/api/employees/${s.emp.id}/shift`, { shift: 2 })).status, 403);
+test("staff don't choose their own shift: HR / Admin assign it (Flexible, 10–5 or 10–6)", async () => {
   assert.equal((await s.c.get(`/api/employees/${s.emp.id}`)).data.shiftSelf, false);
-  await hr.c.put(`/api/employees/${s.emp.id}`, { shift_locked: 0 });
-  assert.equal((await admin.put("/api/settings", { shift_self_select: false })).status, 200);
-  assert.equal((await s.c.put(`/api/employees/${s.emp.id}/shift`, { shift: 2 })).status, 403);
-  await admin.put("/api/settings", { shift_self_select: true });
-  assert.equal((await s.c.put(`/api/employees/${s.emp.id}/shift`, { shift: 2 })).status, 200);
+  assert.equal((await s.c.put(`/api/employees/${s.emp.id}/shift`, { shift: 1 })).status, 403);
+  assert.equal((await s.c.put(`/api/employees/${other.emp.id}/shift`, { shift: 1 })).status, 403);
 });
 
-test("shift 3 (10:00–17:00) is a special case only HR/Admin assign; the day is measured from 10:00", async () => {
-  assert.equal((await s.c.put(`/api/employees/${s.emp.id}/shift`, { shift: 3 })).status, 400, "staff can't pick it");
+test("a shift change by HR applies from the next day: past days keep the shift they were worked under", async () => {
+  assert.equal((await s.c.put(`/api/employees/${s.emp.id}/shift`, { shift: 3 })).status, 403, "staff can't pick it");
+  const before = (await s.c.get(`/api/attendance/employee/${s.emp.id}?month=2026-10`)).data.days.find((x) => x.date === "2026-10-26");
   assert.equal((await hr.c.put(`/api/employees/${s.emp.id}`, { shift: 3 })).data.employee.shift, 3);
-  assert.equal((await s.c.get(`/api/employees/${s.emp.id}`)).data.shiftSelf, false, "and can't switch away from it");
-  assert.equal((await s.c.put(`/api/employees/${s.emp.id}/shift`, { shift: 2 })).status, 403);
-  // 26 Oct: in 09:30, out 17:30 → on time and no early leaving on 10:00–17:00
-  const d = (await s.c.get(`/api/attendance/employee/${s.emp.id}?month=2026-10`)).data.days.find((x) => x.date === "2026-10-26");
-  assert.deepEqual([d.late, d.early, d.shift.start, d.shift.end], [0, 0, 600, 1020]);
-  const r = await s.c.post("/api/requests", { type: "early", date: "2026-11-09", time: "16:00", reason: "موعد" });
-  assert.equal(r.data.request.minutes, 60);
-  assert.equal((await admin.put("/api/settings", { shift_3_start: "10:30" })).status, 200);
-  assert.equal((await admin.get("/api/settings")).data.shift_3_start, "10:30");
+  const after = (await s.c.get(`/api/attendance/employee/${s.emp.id}?month=2026-10`)).data.days.find((x) => x.date === "2026-10-26");
+  assert.deepEqual([after.shift.no, after.late, after.early], [before.shift.no, before.late, before.early], "26 Oct keeps its shift");
+  const { shiftOn } = await import("../server/shifts.mjs");
+  const emp = t.db.prepare("SELECT * FROM employees WHERE id=?").get(s.emp.id);
+  assert.equal(shiftOn(t.db, emp, t.app.ctx.today()), before.shift.no, "today too");
+  const tomorrow = new Date(Date.parse(t.app.ctx.today() + "T00:00:00Z") + 864e5).toISOString().slice(0, 10);
+  assert.equal(shiftOn(t.db, emp, tomorrow), 3, "from tomorrow");
+  assert.ok(t.db.prepare("SELECT 1 FROM audit_log WHERE action='employee.shift' AND entity_id=?").get(String(s.emp.id)), "logged");
+  assert.equal((await admin.put("/api/settings", { shift_3_start: "10:30" })).status, 200, "the older shifts' times stay readable for past days");
+  await admin.put("/api/settings", { shift_3_start: "10:00" });
+  t.db.prepare("DELETE FROM shift_history WHERE employee_id=?").run(s.emp.id);
   await hr.c.put(`/api/employees/${s.emp.id}`, { shift: 2 });
+  t.db.prepare("DELETE FROM shift_history WHERE employee_id=?").run(s.emp.id);
 });
 
 test("a task over several days (a distant site): every day is work; the allowance is worked out at approval; HR corrects it; Accounts' month report", async () => {
@@ -271,7 +264,7 @@ test("HR sets a balance to an exact number: the difference is recorded as an adj
 test("shift 4 (10:00–18:00): HR/Admin assign it, staff can't pick it; lateness and leaving early follow its times", async () => {
   const p = await makePerson(t.base, admin, { emp_no: "SH4", name_ar: "وردية رابعة", join_date: "2022-01-01", shift: 4 }, "staff");
   assert.equal((await hr.c.get(`/api/employees/${p.emp.id}`)).data.employee.shift, 4);
-  assert.equal((await hr.c.put(`/api/employees/${p.emp.id}`, { shift: 5 })).status, 400);
+  assert.equal((await hr.c.put(`/api/employees/${p.emp.id}`, { shift: 9 })).status, 400);
   assert.equal((await p.c.put(`/api/employees/${p.emp.id}/shift`, { shift: 1 })).status, 403, "someone on shift 4 can't move themselves off it");
   const st = (await admin.get("/api/settings")).data;
   assert.equal(st.shift_4_start, "10:00"); assert.equal(st.shift_4_end, "18:00");

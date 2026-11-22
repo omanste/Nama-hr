@@ -2,7 +2,10 @@
  * and how HR classified them (attendance policy §8: statutory paid, special paid, unpaid, or from annual leave). */
 import { send, sendRaw, HttpError } from "./http.mjs";
 import { can, approvedDepartments } from "./perm.mjs";
-import { PERMISSION_TYPES, PERM_CLASSES, isIsoDate } from "./leave.mjs";
+import { PERMISSION_TYPES, PERM_CLASSES, isIsoDate, permissionSpan } from "./leave.mjs";
+import { teamOf } from "./attendance.mjs";
+import { shiftFor } from "./shifts.mjs";
+import { nowIso } from "./db.mjs";
 
 const IN = `(${PERMISSION_TYPES.map((t) => `'${t}'`).join(",")})`;
 
@@ -10,13 +13,14 @@ const IN = `(${PERMISSION_TYPES.map((t) => `'${t}'`).join(",")})`;
 export function permissionStats(db, empId, from, to) {
   const out = Object.fromEntries([...PERMISSION_TYPES, "total"].map((k) => [k, { count: 0, minutes: 0 }]));
   out.classes = Object.fromEntries([...PERM_CLASSES, "unclassified"].map((k) => [k, 0])); // minutes by HR classification
+  out.classCounts = Object.fromEntries([...PERM_CLASSES, "unclassified"].map((k) => [k, 0])); // how many, by HR classification
   for (const r of db.prepare(`SELECT type, count(*) n, sum(minutes) m FROM leave_requests WHERE employee_id=? AND status='approved' AND type IN ${IN}
       AND start_date>=? AND start_date<=? GROUP BY type`).all(empId, from, to)) {
     out[r.type] = { count: r.n, minutes: r.m };
     out.total.count += r.n; out.total.minutes += r.m;
   }
-  for (const r of db.prepare(`SELECT coalesce(hr_class,'unclassified') c, sum(minutes) m FROM leave_requests WHERE employee_id=? AND status='approved' AND type IN ${IN}
-      AND start_date>=? AND start_date<=? GROUP BY c`).all(empId, from, to)) out.classes[r.c] = r.m;
+  for (const r of db.prepare(`SELECT coalesce(hr_class,'unclassified') c, count(*) n, sum(minutes) m FROM leave_requests WHERE employee_id=? AND status='approved' AND type IN ${IN}
+      AND start_date>=? AND start_date<=? GROUP BY c`).all(empId, from, to)) { out.classes[r.c] = r.m; out.classCounts[r.c] = r.n; }
   out.deducted = -db.prepare(`SELECT coalesce(sum(l.minutes),0) n FROM leave_ledger l JOIN leave_requests r ON r.id=l.request_id
       WHERE l.employee_id=? AND r.type IN ${IN} AND r.start_date>=? AND r.start_date<=?`).get(empId, from, to).n;
   return out;
@@ -32,18 +36,20 @@ export function registerPermissionReports(api, ctx) {
   const { db } = ctx;
   api.get("/api/reports/permissions", (req, res) => {
     const sess = req.sess;
-    const all = can(sess, "employee.viewAll");
-    const mine = approvedDepartments(db, sess.employee && sess.employee.id);
-    if (!all && !mine.length) throw new HttpError(403, "forbidden", "You do not have permission for this");
+    // HR and Admin: everyone; a direct manager or department approver: their own people (as the attendance report, §7)
+    const all = ["hr", "admin"].includes(sess.user.role);
+    const team = all ? null : new Set(teamOf(db, sess).map((e) => e.id));
+    if (!all && !team.size) throw new HttpError(403, "forbidden", "You do not have permission for this");
     const today = ctx.today();
     const from = req.query.get("from") || `${today.slice(0, 7)}-01`, to = req.query.get("to") || today;
     if (!isIsoDate(from) || !isIsoDate(to) || to < from) throw new HttpError(400, "invalid", "Choose a valid period");
     const where = ["e.status IN ('active','on_leave')"], args = [];
     const dept = Number(req.query.get("department_id") || 0);
     if (dept) { where.push("e.department_id=?"); args.push(dept); }
-    if (!all) { where.push(`e.department_id IN (${mine.map(() => "?").join(",")})`); args.push(...mine); } // managers see their own departments
-    const emps = db.prepare(`SELECT e.id, e.emp_no, e.name_ar, e.name_en, e.department_id, d.name_ar dept_ar, d.name_en dept_en
-      FROM employees e LEFT JOIN departments d ON d.id=e.department_id WHERE ${where.join(" AND ")} ORDER BY e.name_ar`).all(...args);
+    const emps = db.prepare(`SELECT e.*, d.name_ar dept_ar, d.name_en dept_en
+      FROM employees e LEFT JOIN departments d ON d.id=e.department_id WHERE ${where.join(" AND ")} ORDER BY e.name_ar`).all(...args)
+      .filter((e) => all || team.has(e.id))
+      .map((e) => ({ id: e.id, emp_no: e.emp_no, name_ar: e.name_ar, name_en: e.name_en, department_id: e.department_id, dept_ar: e.dept_ar, dept_en: e.dept_en, _row: e }));
     const rows = emps.map((e) => ({ employee: e, ...permissionStats(db, e.id, from, to) }));
     const onlyUsed = req.query.get("only_used") === "1";
     const items = onlyUsed ? rows.filter((r) => r.total.count > 0) : rows;
@@ -57,6 +63,26 @@ export function registerPermissionReports(api, ctx) {
       return sendRaw(req, res, 200, Buffer.from("﻿" + lines.join("\r\n"), "utf8"), "text/csv; charset=utf-8",
         { "Content-Disposition": `attachment; filename="permissions-${from}-to-${to}.csv"`, "Cache-Control": "no-store" });
     }
-    send(req, res, 200, { from, to, items, types: PERMISSION_TYPES, classes: PERM_CLASSES });
+    // each permission in the period (for the PDF's second part and the Excel "Details" sheet)
+    let details;
+    if (req.query.get("details") === "1") {
+      const ids = new Map(items.map((r) => [r.employee.id, r.employee]));
+      const rowOf = new Map(emps.map((e) => [e.id, e._row]));
+      const name = (uid) => { if (!uid) return null; const u = db.prepare("SELECT u.username, e.name_ar, e.name_en FROM users u LEFT JOIN employees e ON e.id=u.employee_id WHERE u.id=?").get(uid); return u ? { name_ar: u.name_ar || u.username, name_en: u.name_en || u.username } : null; };
+      const hhmm = (m) => (m === null || m === undefined ? null : `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`);
+      details = db.prepare(`SELECT * FROM leave_requests WHERE type IN ${IN} AND status IN ('pending','approved','rejected') AND start_date>=? AND start_date<=? ORDER BY start_date, early_time, id`).all(from, to)
+        .filter((r) => ids.has(r.employee_id)).map((r) => {
+          const sh = shiftFor(db, rowOf.get(r.employee_id), r.start_date, null, { latest: true });
+          const [a, b] = permissionSpan(r.type, { time: r.early_time, endTime: r.end_time, dayStart: sh.start, dayEnd: sh.end });
+          let d = {}; try { d = JSON.parse(r.details || "{}") || {}; } catch { d = {}; }
+          return { id: r.id, employee: ids.get(r.employee_id), date: r.start_date, type: r.type, from: hhmm(a), to: hhmm(b), minutes: r.minutes, hr_class: r.hr_class || null,
+            status: r.status, decided_by: name(r.decided_by), comment: r.decision_comment || null, reason: r.reason || null,
+            taken: d.actual_start ? { from: d.actual_start, to: d.actual_end || null, minutes: d.actual_minutes ?? null } : null };
+        });
+    }
+    for (const r of items) delete r.employee._row;
+    const me = sess.employee || {};
+    send(req, res, 200, { from, to, items, types: PERMISSION_TYPES, classes: PERM_CLASSES, details, generated_at: nowIso(),
+      by: { name_ar: me.name_ar || sess.user.username, name_en: me.name_en || sess.user.username } });
   });
 }

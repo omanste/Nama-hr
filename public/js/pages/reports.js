@@ -1,7 +1,8 @@
 // Permissions report: per person, how many times and how many hours of early leave, late arrival and personal breaks (approved).
 import { api } from "../api.js";
-import { t, nm } from "../i18n.js";
+import { t, nm, getLang } from "../i18n.js";
 import { h, clear, select, field, pageHead, empty, num, dmy, todayIso, toast, errText } from "../ui.js";
+import { columns, totals, permissionsPdf, permissionsXlsx } from "../perm-export.js";
 
 const pad = (n) => String(n).padStart(2, "0");
 const lastDay = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -13,7 +14,7 @@ function period(key) {
 }
 
 export async function render(el, _p, { me, can, query }) {
-  if (!can.viewAll() && !me.isApprover) throw { status: 403 };
+  if (!can.viewAll() && !me.isApprover && !me.hasTeam) throw { status: 403 };
   const depts = can.viewAll() ? (await api.get("/api/departments")).items : [];
   const [f0, t0] = period("this_month");
   const from = h("input", { type: "date", value: query.get("from") || f0 });
@@ -22,40 +23,52 @@ export async function render(el, _p, { me, can, query }) {
   const dept = can.viewAll() ? select("department_id", [["", `${t("f_department")}: ${t("all")}`], ...depts.map((d) => [d.id, nm(d)])], "") : null;
   const onlyUsed = h("input", { type: "checkbox", checked: true, style: { width: "22px", height: "22px", minHeight: "0" } });
   const out = h("div");
-  const csv = h("a", { class: "btn", href: "#" }, "⬇ ", t("download_excel"));
   const hrs = (m) => num(Math.round(m / 6) / 10);
 
   async function load() {
     const qs = new URLSearchParams({ from: from.value, to: to.value });
     if (dept && dept.value) qs.set("department_id", dept.value);
     if (onlyUsed.checked) qs.set("only_used", "1");
-    csv.href = `/api/reports/permissions?${qs}&format=csv`;
     let r;
-    try { r = await api.get(`/api/reports/permissions?${qs}`); } catch (e) { clear(out).append(empty(errText(e))); return; }
+    try { r = await api.get(`/api/reports/permissions?${qs}`); } catch (e) { clear(out).append(empty(e && e.status === 403 ? t("perm_no_access") : errText(e))); return; }
     const sum = (k, f) => r.items.reduce((a, x) => a + x[k][f], 0);
-    const totals = h("div", { class: "grid tiles" },
+    const tiles = h("div", { class: "grid tiles" },
       ...r.types.map((k) => h("div", { class: "card tile" }, h("div", { class: "n" }, num(sum(k, "count"))), h("div", { class: "l" }, t("lt_" + k), " · ", t("hours", { n: hrs(sum(k, "minutes")) })))),
       h("div", { class: "card tile warn" }, h("div", { class: "n" }, num(sum("total", "count"))), h("div", { class: "l" }, t("total"), " · ", t("hours", { n: hrs(sum("total", "minutes")) }))));
+    // every column inside the card (no sideways scrolling): full names on one line with the staff ID under them;
+    // "2 times · 3.5 h" as two short lines; a totals row; phones: one card per person
+    const cols = columns(r.types, r.classes), T = totals(r.items, r.types, r.classes);
+    const cell = (txt) => { const [a, b] = String(txt).split(" · "); return b ? h("span", { class: "pair" }, h("b", null, a), h("small", null, b)) : txt; };
+    const grid = h("div", { class: "table-wrap keep-table att-grid perm-grid" }, h("table", null,
+      h("thead", null, h("tr", null, h("th", { class: "name-col" }, t("employee")), cols.map(([k]) => h("th", { class: "num" }, t(k).replace(/ /, "\n"))))),
+      h("tbody", null, r.items.map((x) => h("tr", null, h("td", { class: "name-col" }, h("a", { href: `#/staff/${x.employee.id}` }, nm(x.employee)), h("div", { class: "muted" }, x.employee.emp_no)),
+        cols.map(([, f]) => h("td", { class: "num" }, cell(f(x)))))),
+        h("tr", { class: "tot" }, h("td", { class: "name-col" }, h("b", null, t("pdf_totals"))), cols.map(([, f]) => h("td", { class: "num" }, cell(f(T))))))));
+    const cards = h("div", { class: "att-cards" }, [...r.items.map((x) => [h("a", { href: `#/staff/${x.employee.id}` }, nm(x.employee)), x.employee.emp_no, x]), [h("b", null, t("pdf_totals")), "", T]].map(([title, sub, x]) =>
+      h("div", { class: "card att-pcard" }, h("div", { class: "pc-head" }, title, sub ? h("div", { class: "muted" }, sub) : null),
+        h("div", { class: "pc-grid" }, cols.map(([k, f]) => h("div", null, h("span", null, t(k)), h("b", null, cell(f(x)))))))));
     clear(out).append(
       h("p", { class: "sub" }, `${dmy(r.from)} – ${dmy(r.to)} · ${t("approved_only")} · ${t("perm_rule_policy")}`),
-      totals,
-      r.items.length ? h("div", { class: "table-wrap", style: { marginTop: "12px" } }, h("table", null,
-        h("thead", null, h("tr", null, h("th", null, t("employee")), ...r.types.map((k) => h("th", { class: "num" }, t("lt_" + k))), h("th", { class: "num" }, t("total")), ...r.classes.map((c) => h("th", { class: "num" }, t("pc_" + c))), h("th", { class: "num" }, t("att_awaiting_hr")))),
-        h("tbody", null, r.items.map((x) => h("tr", null,
-          h("td", null, h("a", { href: `#/staff/${x.employee.id}` }, nm(x.employee)), h("div", { class: "muted" }, x.employee.emp_no)),
-          ...r.types.map((k) => h("td", { class: "num" }, x[k].count ? t("times_hours", { n: num(x[k].count), h: hrs(x[k].minutes) }) : "—")),
-          h("td", { class: "num" }, h("b", null, x.total.count ? t("times_hours", { n: num(x.total.count), h: hrs(x.total.minutes) }) : "—")),
-          ...[...r.classes, "unclassified"].map((c) => h("td", { class: "num" }, x.classes[c] ? t("hours", { n: hrs(x.classes[c]) }) : "—"))))))) : empty(t("perm_none")));
+      tiles,
+      r.items.length ? h("div", { style: { marginTop: "12px" } }, grid, cards) : empty(t("perm_none")));
   }
+  const qs = () => { const q = new URLSearchParams({ from: from.value, to: to.value }); if (dept && dept.value) q.set("department_id", dept.value); if (onlyUsed.checked) q.set("only_used", "1"); return q; };
+  const withDetails = h("input", { type: "checkbox", checked: true, style: { width: "20px", height: "20px", minHeight: "0" } });
+  const run = (btn, fn) => async () => { const label = btn.textContent; btn.disabled = true; try { await fn(); } catch (e) { toast(errText(e), "bad"); } finally { btn.disabled = false; btn.textContent = label; } };
+  const pdfBtn = h("button", { class: "btn primary", type: "button" }, "📄 ", t("perm_export_pdf"));
+  pdfBtn.onclick = run(pdfBtn, () => permissionsPdf(qs(), { details: withDetails.checked, onStep: (n, of) => { pdfBtn.textContent = t("pdf_making", { n: num(n), of: num(of) }); } }));
+  const xlsBtn = h("button", { class: "btn", type: "button" }, "⬇ ", t("perm_export_xlsx"));
+  xlsBtn.onclick = run(xlsBtn, () => permissionsXlsx(qs()));
   quick.addEventListener("change", () => { if (quick.value !== "custom") { [from.value, to.value] = period(quick.value); load(); } });
   for (const i of [from, to]) i.addEventListener("change", () => { quick.value = "custom"; if (from.value && to.value && from.value <= to.value) load(); else toast(t("err_end_before_start"), "bad"); });
   if (dept) dept.addEventListener("change", load);
   onlyUsed.addEventListener("change", load);
 
-  el.append(pageHead(t("report_permissions"), csv),
+  el.append(pageHead(`${t("report_permissions")} · ${getLang() === "ar" ? "Permissions report" : "تقرير الاستئذانات"}`, pdfBtn, xlsBtn),
     h("section", { class: "card" }, h("div", { class: "fields" },
       field(t("period"), quick), field(t("holiday_from"), from), field(t("holiday_to"), to), dept ? field(t("f_department"), dept) : null,
-      h("label", { class: "row", style: { alignSelf: "end", minHeight: "44px" } }, onlyUsed, t("only_used")))),
+      h("label", { class: "row", style: { alignSelf: "end", minHeight: "44px" } }, onlyUsed, t("only_used")),
+      h("label", { class: "row", style: { alignSelf: "end", minHeight: "44px" } }, withDetails, t("perm_with_details")))),
     out);
   const voiceOut = h("div");
   if (["hr", "ceo", "chairman", "admin"].includes(me.user.role)) el.append(h("section", { class: "card", style: { marginTop: "16px" } }, h("h2", null, t("report_voice")), voiceOut));

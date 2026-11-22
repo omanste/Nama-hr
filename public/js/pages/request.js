@@ -23,7 +23,7 @@ export async function decide(id, action, req = null) {
     const v = await endTimeDialog(req, t("approve")); if (!v) return false;
     comment = v.comment; extra = { end_time: v.end_time };
   }
-  else if (action === "reject") { comment = await confirm(t("reject"), { input: t("reject_reason"), required: true, okText: t("reject"), danger: true }); if (comment === null) return false; }
+  else if (action === "reject") { comment = await confirm(t("reject"), { input: t(req && req.type === "break" ? "comment_optional" : "reject_reason"), required: !(req && req.type === "break"), okText: t("reject"), danger: true }); if (comment === null) return false; }
   else if (action === "approve") { comment = await confirm(t("approve_q"), { input: t("comment_optional"), okText: t("approve") }); if (comment === null) return false; }
   else { comment = await confirm(t("cancel_q"), { input: t("cancel_reason"), okText: t("cancel_request"), danger: true }); if (comment === null) return false; }
   try {

@@ -37,7 +37,7 @@ export async function checkinCard() {
     st.expected_out && next === "out" ? h("div", { class: "ci-outtime" }, "🏁 ", h("b", null, t("ci_out_time_today", { t: st.expected_out })), " · ", h("span", { class: "ci-countdown" }, leftText())) : null,
     !st.sites ? h("p", { class: "sub" }, t("ci_no_sites")) : null,
     st.after_hours ? h("p", { class: "note" }, st.staying ? [t("ci_staying"), st.staying.reason ? ` — “${st.staying.reason}”` : ""] : t("ci_after_hours", { t: st.shift_end })) : null,
-    mainBtn, stayBtn,
+    mainBtn, stayBtn, breakBox(st, next),
     h("a", { class: "btn small ci-mine", href: "#/attendance" }, "📊 ", t("nav_attendance")));
   // opened from a reminder's buttons ("check out now" / "I'm still working")
   const want = new URLSearchParams(location.hash.split("?")[1] || "").get("ci");
@@ -47,6 +47,20 @@ export async function checkinCard() {
     setTimeout(() => (want === "out" ? start("out", st, mainBtn) : stay()), 300);
   }
   return card;
+}
+/** Personal break (approved by the manager first): ask for one; once approved start it; "Back to work" records how long. */
+function breakBox(st, next) {
+  const b = st.personal_break;
+  const go = (step) => async (ev) => {
+    ev.currentTarget.disabled = true;
+    try { await api.post(`/api/attendance/break/${step}`, {}); toast(t(step === "start" ? "brk_started" : "brk_back")); rerender(); }
+    catch (e) { toast(errText(e), "bad"); ev.currentTarget.disabled = false; }
+  };
+  if (!b) return next === "out" ? h("a", { class: "btn small ci-break", href: "#/permissions/new?type=break" }, "☕ ", t("brk_ask")) : null;
+  if (b.status === "pending") return h("p", { class: "note ci-break" }, "☕ ", t("brk_waiting", { from: b.from, to: b.to }));
+  if (b.ended) return h("p", { class: "sub ci-break" }, "☕ ", t("brk_done", { from: b.started, to: b.ended, m: b.minutes }));
+  if (b.started) return h("div", { class: "ci-break" }, h("p", { class: "note" }, "☕ ", t("brk_on", { from: b.started })), h("button", { class: "btn primary ci-btn", type: "button", onclick: go("end") }, "↩ ", t("brk_back_btn")));
+  return next === "out" ? h("button", { class: "btn ci-btn ci-break", type: "button", onclick: go("start") }, "☕ ", t("brk_start", { from: b.from, to: b.to })) : null;
 }
 const dmyShort = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
@@ -382,6 +396,7 @@ export function checkinPlace(c, { reason = true } = {}) {
 
 /** A flag's reason in words: "outside work site (1.2 km away)". */
 export function flagLabel(f) {
+  if (f.code === "away") return t("ci_fl_away", { min: f.min, from: f.from });
   return f.code === "outside" && f.km !== null && f.km !== undefined ? t("ci_fl_outside_km", { km: f.km }) : t("ci_fl_" + f.code);
 }
 

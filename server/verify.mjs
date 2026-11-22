@@ -36,6 +36,7 @@ export function flagText(f) {
     case "faceid_failed": return { ar: "لم يُتحقق بالوجه أو البصمة", en: "Face ID / fingerprint not confirmed" };
     case "faceid_failed_photo": return { ar: "فشل التحقق بالوجه — التُقطت صورة", en: "Face ID failed — photo taken" };
     case "unverified": return { ar: "غير موثق", en: "unverified" };
+    case "away": return { ar: `غياب ${f.min} دقيقة دون استئذان معتمد (منذ ${f.from})`, en: `away ${f.min} min without an approved permission (since ${f.from})` };
     default: return { ar: f.code, en: f.code };
   }
 }

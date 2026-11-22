@@ -70,7 +70,7 @@ export async function render(el, _p, { me, can, query }) {
     ["att_h_missing", (s) => num(s.missing)], ["att_h_absent", (s) => num(s.absent)], ["att_h_pending", (s) => num(s.pending)],
     ["att_h_leave", (s) => num(s.leave)], ["att_h_mission", (s) => num(s.mission)], ["att_h_outside", (s) => num(s.outside || 0)],
     ["att_h_after", (s) => (s.afterMin ? pair(s.afterDays, s.afterMin) : "—")], ["att_h_extra", (s) => (s.extraMin ? durText(s.extraMin) : "—")],
-    ["att_h_flagged", (s) => (s.flagged ? h("span", { class: "pair bad-text" }, h("b", null, "⚠️ ", num(s.flagged)), s.unverified ? h("small", null, `${t("att_unverified")} ${num(s.unverified)}`) : null) : "0")], ["att_h_hours", (s) => (s.onSite ? durText(s.onSite) : "—")]];
+    ["att_h_flagged", (s) => (s.flagged ? h("span", { class: "pair bad-text" }, h("b", null, "⚠️ ", num(s.flagged)), s.unverified ? h("small", null, `${t("att_unverified")} ${num(s.unverified)}`) : null) : "0")], ["att_h_hours", (s) => (s.worked || s.onSite ? durText(s.worked ?? s.onSite) : "—")]];
   // "3" over "1:25": how many times, then how long
   function pair(n, min) { return n ? h("span", { class: "pair" }, h("b", null, num(n)), h("small", null, durText(min))) : "—"; }
   const thead = (first) => h("thead", null, h("tr", null, h("th", { class: "name-col" }, first), COLS.map(([k]) => h("th", { class: "num" }, t(k)))));

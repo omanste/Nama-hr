@@ -557,3 +557,10 @@ dialog.push-ask .row.end{justify-content:center}
 /* HR backup page */
 .hb-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-top:10px}
 .hb-grid .btn{width:100%}
+.shift-defs{display:grid;gap:10px}
+.shift-def{margin:0;padding:12px 14px;background:var(--surface-2)}
+.shift-def h3{margin:0 0 2px}
+.checkin-card .ci-break{margin-top:10px}
+/* permissions report: the same compact grid; a totals row */
+.att-grid tr.tot td{border-top:2px solid var(--gold);background:color-mix(in srgb,var(--gold-soft) 70%,transparent);font-weight:600}
+.perm-grid th.name-col{min-width:200px}

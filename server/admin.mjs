@@ -7,7 +7,7 @@ import { createUser, ROLES, getEmployee } from "./employees.mjs";
 import { tempPassword, setPassword } from "./auth.mjs";
 import { isIsoDate } from "./leave.mjs";
 import { rerouteFallbacks } from "./requests.mjs";
-import { shiftTimes, SHIFTS, flexOn, FLEX_DEFAULTS } from "./shifts.mjs";
+import { shiftTimes, LEGACY_SHIFTS, NEW_SHIFTS, shiftDefs } from "./shifts.mjs";
 import { overtimeRates } from "./overtime.mjs";
 import { faceidMode, FACEID_MODES } from "./webauthn.mjs";
 import { verifyDefaults, CHECKS } from "./verify.mjs";
@@ -63,9 +63,8 @@ export function readSettings(db) {
     // reminders: minutes after the shift starts with no check-in, and after it ends with no check-out (Admin sets them)
     remind_checkin_min: getSetting(db, "remind_checkin_min", 10),
     remind_checkout_min: getSetting(db, "remind_checkout_min", 10),
-    // flexible hours for everyone (Admin): on-time arrival window, required hours, the reminder before one's check-out time
-    flex_on: flexOn(db), flex_start: getSetting(db, "flex_start", FLEX_DEFAULTS.flex_start), flex_end: getSetting(db, "flex_end", FLEX_DEFAULTS.flex_end),
-    flex_hours: getSetting(db, "flex_hours", FLEX_DEFAULTS.flex_hours), remind_before_out_min: getSetting(db, "remind_before_out_min", 10),
+    // the three shifts (Flexible, 10–5, 10–6): start, end, flexible window, work hours, break (Admin)
+    shifts: shiftDefs(db), remind_before_out_min: getSetting(db, "remind_before_out_min", 10),
     // Face ID / fingerprint at check-in: required (default), optional, or off — HR can exempt a person on their profile
     faceid_mode: faceidMode(db),
     // check-in verification for everyone (each person can be set apart on their profile): photo, Face ID, location
@@ -177,12 +176,12 @@ export function registerAdmin(api, ctx) {
   api.put("/api/settings", async (req, res) => {
     need(req.sess, "settings.edit");
     const b = await readJson(req);
-    const allowed = ["managers_approver_employee_id", "managers_approver_title", "chairman_employee_id", "ceo_final_types", "att_sites", "late_grace_min", "remind_checkin_min", "remind_checkout_min", "remind_before_out_min", "flex_on", "flex_start", "flex_end", "flex_hours", "faceid_mode", "verify", "verify_photo", "verify_faceid", "verify_location", "contract_types", "shift_1_start", "shift_1_end", "shift_2_start", "shift_2_end", "shift_3_start", "shift_3_end", "shift_4_start", "shift_4_end", "ramadan_start", "ramadan_end", "ramadan_hours", "attendance_start", "shift_self_select", "official_holidays"];
+    const allowed = ["managers_approver_employee_id", "managers_approver_title", "chairman_employee_id", "ceo_final_types", "att_sites", "late_grace_min", "remind_checkin_min", "remind_checkout_min", "remind_before_out_min", "shifts", "faceid_mode", "verify", "verify_photo", "verify_faceid", "verify_location", "contract_types", "shift_1_start", "shift_1_end", "shift_2_start", "shift_2_end", "shift_3_start", "shift_3_end", "shift_4_start", "shift_4_end", "ramadan_start", "ramadan_end", "ramadan_hours", "attendance_start", "shift_self_select", "official_holidays"];
     if ("official_holidays" in b) {
       if (!Array.isArray(b.official_holidays) || !b.official_holidays.every((x) => x && isIsoDate(x.date))) throw invalid("official_holidays", "each holiday needs a valid date");
       b.official_holidays = b.official_holidays.map((x) => ({ date: x.date, name: String(x.name || "").trim().slice(0, 80) })).sort((x, y) => (x.date < y.date ? -1 : 1));
     }
-    for (const n of SHIFTS) {
+    for (const n of LEGACY_SHIFTS) {
       const a = `shift_${n}_start`, z = `shift_${n}_end`;
       if (a in b && !/^(0[6-9]|1[0-2]):(00|30)$/.test(String(b[a]))) throw invalid(a, "start time must be 06:00–12:30 (on the hour or half hour)");
       if (z in b && !/^(1[0-9]|2[0-3]):(00|30)$/.test(String(b[z]))) throw invalid(z, "time must be HH:MM (on the hour or half hour)");
@@ -211,11 +210,26 @@ export function registerAdmin(api, ctx) {
       delete b.verify;
     } else if ("faceid_mode" in b) b.verify_faceid = b.faceid_mode === "required";
     for (const c of CHECKS) if (`verify_${c}` in b && typeof b[`verify_${c}`] !== "boolean") throw invalid(`verify_${c}`, "must be true or false");
-    if ("flex_on" in b && typeof b.flex_on !== "boolean") throw invalid("flex_on", "must be true or false");
-    for (const k of ["flex_start", "flex_end"]) if (k in b && !/^(0[5-9]|1[0-2]):[0-5]\d$/.test(String(b[k]))) throw invalid(k, "time must be 05:00–12:59 (HH:MM)");
-    { const fs_ = "flex_start" in b ? b.flex_start : getSetting(db, "flex_start", FLEX_DEFAULTS.flex_start), fe = "flex_end" in b ? b.flex_end : getSetting(db, "flex_end", FLEX_DEFAULTS.flex_end);
-      if (fe < fs_) throw invalid("flex_end", "the latest on-time arrival can't be before the earliest"); }
-    if ("flex_hours" in b && !(typeof b.flex_hours === "number" && b.flex_hours >= 4 && b.flex_hours <= 12 && (b.flex_hours * 4) % 1 === 0)) throw invalid("flex_hours", "required hours must be 4–12 (in quarter hours)");
+    if ("shifts" in b) {
+      const T = /^([01]\d|2[0-3]):[0-5]\d$/, cur = shiftDefs(db);
+      if (!b.shifts || typeof b.shifts !== "object") throw invalid("shifts", "shifts: an object");
+      const out = {};
+      for (const [k, v] of Object.entries(b.shifts)) {
+        const n = Number(k);
+        if (!NEW_SHIFTS.includes(n) || !v || typeof v !== "object") throw invalid("shifts", `unknown shift ${k}`);
+        const d = { ...cur[n], ...v, kind: cur[n].kind };
+        for (const f of ["start", "end"]) if (!T.test(String(d[f]))) throw invalid(`shifts.${n}.${f}`, "time must be HH:MM");
+        if (d.end <= d.start) throw invalid(`shifts.${n}.end`, "the shift must end after it starts");
+        if (d.kind === "flex") {
+          for (const f of ["flex_from", "flex_to"]) if (!T.test(String(d[f]))) throw invalid(`shifts.${n}.${f}`, "time must be HH:MM");
+          if (d.flex_to < d.flex_from) throw invalid(`shifts.${n}.flex_to`, "the latest on-time arrival can't be before the earliest");
+        } else { d.flex_from = null; d.flex_to = null; }
+        if (!(typeof d.work_hours === "number" && d.work_hours >= 1 && d.work_hours <= 12 && (d.work_hours * 4) % 1 === 0)) throw invalid(`shifts.${n}.work_hours`, "work hours must be 1–12 (in quarter hours)");
+        if (!(Number.isInteger(d.break_min) && d.break_min >= 0 && d.break_min <= 180)) throw invalid(`shifts.${n}.break_min`, "break must be 0–180 minutes");
+        out[n] = { start: d.start, end: d.end, flex_from: d.flex_from, flex_to: d.flex_to, work_hours: d.work_hours, break_min: d.break_min };
+      }
+      b.shifts = { ...Object.fromEntries(NEW_SHIFTS.map((n) => [n, { start: cur[n].start, end: cur[n].end, flex_from: cur[n].flex_from, flex_to: cur[n].flex_to, work_hours: cur[n].work_hours, break_min: cur[n].break_min }])), ...out };
+    }
     for (const k of ["remind_checkin_min", "remind_checkout_min", "remind_before_out_min"]) if (k in b && !(Number.isInteger(b[k]) && b[k] >= 1 && b[k] <= 120)) throw invalid(k, "Enter 1–120 minutes");
     if ("att_sites" in b) {
       if (!Array.isArray(b.att_sites) || b.att_sites.length > 50) throw invalid("att_sites", "sites must be a list");

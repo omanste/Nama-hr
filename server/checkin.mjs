@@ -118,7 +118,7 @@ export function runReminders(ctx, today, now) {
         sent++;
       }
       // flexible hours: a few minutes before the person's own check-out time (in 08:45 → reminded at 16:35 for 16:45)
-      if (shift.flex && last && last.kind === "in" && now >= shift.end - beforeEnd && now < shift.end && once(db, e.id, today, "soon")) {
+      if (last && last.kind === "in" && now >= shift.end - beforeEnd && now < shift.end && once(db, e.id, today, "soon")) {
         notify(ctx, [e.user_id], { title_ar: `وقت انصرافك اليوم ${pad2(shift.end)}`, title_en: `Your check-out time today: ${pad2(shift.end)}`,
           body_ar: `بعد ${shift.end - now} دقيقة — لا تنسَ تسجيل الانصراف`, body_en: `In ${shift.end - now} minutes — remember to check out`, link: "#/", inAppOnly: true, tag: "ci-soon" });
         sent++;
@@ -225,14 +225,57 @@ export function registerCheckin(api, ctx) {
     const emp = sess.employee, day = ctx.today(), now = clockMin(ctx.clock()), shift = dayShift(db, emp, day);
     const next = items.length && items[items.length - 1].kind === "in" ? "out" : "in";
     const open = openExtra(db, emp.id, day);
-    send(req, res, 200, { enabled: true, verify: verifyFor(db, emp), consent: !!sess.user.checkin_consent_at, items: items.map((c) => ({ ...c, site: sites.find((s) => s.id === c.site_id) || null })),
+    const brk = todaysBreak(emp.id, day);
+    send(req, res, 200, { enabled: true, verify: verifyFor(db, emp), personal_break: brk, consent: !!sess.user.checkin_consent_at, items: items.map((c) => ({ ...c, site: sites.find((s) => s.id === c.site_id) || null })),
       next, sites: sites.length, shift_end: pad2(shift.end),
       // flexible hours: the on-time window, and once arrived, today's own check-out time (the home badge counts down to it)
       flex: shift.flex ? { from: pad2(shift.flex.from), to: pad2(shift.flex.to), hours: shift.flex.hours } : null,
-      expected_out: shift.flex && shift.flex.effIn !== null && workingDay(db, emp, day) ? pad2(shift.end) : null, now: pad2(now),
+      expected_out: (!shift.flex || shift.flex.effIn !== null) && next === "out" && workingDay(db, emp, day) ? pad2(shift.end) : null, now: pad2(now),
       // 30 minutes after the shift and still checked in: "check out now" or "I'm still working" (with a reason)
       after_hours: next === "out" && workingDay(db, emp, day) && now > shift.end + AFTER_HOURS_MIN, staying: open ? { reason: open.reason } : null,
       missed: missedCheckout(db, emp, day) });
+  });
+
+  // ---- personal break (approved by the manager first): start it, then "Back to work" records how long it really took.
+  // It never changes the expected check-out time.
+  const details = (r) => { try { return JSON.parse(r.details || "{}") || {}; } catch { return {}; } };
+  function todaysBreak(empId, day) {
+    const r = db.prepare("SELECT * FROM leave_requests WHERE employee_id=? AND type='break' AND start_date=? AND status IN ('pending','approved') ORDER BY id DESC LIMIT 1").get(empId, day);
+    if (!r) return null;
+    const d = details(r);
+    return { id: r.id, status: r.status, from: r.early_time, to: r.end_time, started: d.actual_start || null, ended: d.actual_end || null, minutes: d.actual_minutes ?? null };
+  }
+  for (const step of ["start", "end"]) api.post(`/api/attendance/break/${step}`, async (req, res) => {
+    const emp = req.sess.employee;
+    if (!emp) throw new HttpError(404, "not_found", "No staff profile");
+    const day = ctx.today(), now = clockMin(ctx.clock());
+    const r = db.prepare("SELECT * FROM leave_requests WHERE employee_id=? AND type='break' AND start_date=? ORDER BY id DESC LIMIT 1").get(emp.id, day);
+    if (!r || r.status !== "approved") throw new HttpError(409, "not_approved", "Your manager hasn't approved a personal break for today");
+    const d = details(r);
+    if (step === "start") {
+      if (d.actual_start) throw new HttpError(409, "started", "This break has already started");
+      const last = db.prepare("SELECT kind FROM att_checkins WHERE employee_id=? AND substr(at,1,10)=? ORDER BY at DESC, id DESC LIMIT 1").get(emp.id, day);
+      if (last && last.kind !== "in") throw new HttpError(409, "not_checked_in", "Check in first");
+      d.actual_start = pad2(now);
+    } else {
+      if (!d.actual_start) throw new HttpError(409, "not_started", "The break hasn't started");
+      if (d.actual_end) throw new HttpError(409, "ended", "You're already back");
+      d.actual_end = pad2(now); d.actual_minutes = Math.max(0, now - clockMin(d.actual_start));
+    }
+    db.prepare("UPDATE leave_requests SET details=? WHERE id=?").run(JSON.stringify(d), r.id);
+    if (step === "end") db.prepare("UPDATE leave_requests SET minutes=? WHERE id=?").run(d.actual_minutes, r.id); // the time it really took
+    audit(db, req.sess.user.id, `break.${step}`, "employee", emp.id, null, { request: r.id, at: pad2(now), minutes: d.actual_minutes ?? null });
+    send(req, res, 200, { personal_break: todaysBreak(emp.id, day) });
+  });
+
+  // the person's working day on a date (their shift then, today's arrival on the Flexible shift): for the permission form
+  api.get("/api/attendance/my-day", (req, res) => {
+    const emp = req.sess.employee;
+    if (!emp) throw new HttpError(404, "not_found", "No staff profile");
+    const date = req.query.get("date") || ctx.today();
+    if (!isIsoDate(date)) throw bad("date", "A valid date is required");
+    const sh = dayShift(db, emp, date, { latest: true });
+    send(req, res, 200, { date, shift: sh.no, start: pad2(sh.start), end: pad2(sh.end), break_min: sh.brk || 0, flex: sh.flex ? { from: pad2(sh.flex.from), to: pad2(sh.flex.to) } : null, ramadan: !!sh.ramadan });
   });
 
   // Settings › Work sites: a Google Maps link (or "lat, lng") → the coordinates (Admin)
@@ -277,6 +320,19 @@ export function registerCheckin(api, ctx) {
     const reason = String(q.get("reason") || "").trim().slice(0, 300);
     if (hasLoc && !where.inside && !reason) throw Object.assign(bad("reason", "You're outside every work site — say why"), { extra: { outside: true, nearest: where.nearest, distance: where.distance } });
     if (hasLoc && !where.inside) flags.push({ code: "outside", km: where.distance === null ? null : Math.round(where.distance / 100) / 10 });
+    // back in after checking out earlier today: time away not covered by an approved permission or break is flagged
+    if (kind === "in") {
+      const prev = db.prepare("SELECT kind, at FROM att_checkins WHERE employee_id=? AND substr(at,1,10)=? AND coalesce(approval,'approved')<>'rejected' AND coalesce(flag_status,'')<>'rejected' ORDER BY at DESC, id DESC LIMIT 1").get(emp.id, ctx.today());
+      if (prev && prev.kind === "out") {
+        const gone = clockMin(prev.at.slice(11, 16)), back = clockMin(ctx.clock());
+        const covers = db.prepare("SELECT * FROM leave_requests WHERE employee_id=? AND status='approved' AND start_date<=? AND end_date>=? AND type IN ('early','late','break','mission')").all(emp.id, ctx.today(), ctx.today())
+          .map((r) => (r.type === "break" && details(r).actual_start ? [clockMin(details(r).actual_start), clockMin(details(r).actual_end || r.end_time)] : [clockMin(r.early_time), r.type === "early" ? 24 * 60 : clockMin(r.end_time || r.early_time)]))
+          .filter(([a, b]) => a !== null && b !== null);
+        let away = back - gone;
+        for (const [a, b] of covers) away -= Math.max(0, Math.min(b, back) - Math.max(a, gone));
+        if (away > 5) flags.push({ code: "away", min: away, from: prev.at.slice(11, 16) });
+      }
+    }
     const faceCred = V.faceid ? peekVerified(sess) : null; // the server's own record of a Face ID check just now (used up once saved)
     const gotPhoto = !!(photoBody && photoBody.length), goodPhoto = gotPhoto && q.get("photo_bad") !== "1";
     // Face ID done: no photo needed. Failed (or off) → the photo is the check; none usable → unverified
@@ -327,7 +383,7 @@ export function registerCheckin(api, ctx) {
     }
     const after = dayShift(db, emp, today); // with today's arrival saved: the person's own check-out time
     send(req, res, 201, { checkin: { id: row.id, kind: row.kind, at: row.at, outside: !!row.outside, approval: row.approval, site: where.inside, checks, flags }, extra: extra && { id: extra.id, minutes: extra.minutes },
-      expected_out: after.flex && workingDay(db, emp, today) ? pad2(after.end) : null, early: kind === "out" && after.flex && workingDay(db, emp, today) && now < after.end ? after.end - now : 0 });
+      expected_out: workingDay(db, emp, today) ? pad2(after.end) : null, early: kind === "out" && workingDay(db, emp, today) && now < after.end ? after.end - now : 0 });
   });
 
   // before taking the photo: is this place inside a work site, and is it a check-out after hours? (no photo is sent)
@@ -345,7 +401,7 @@ export function registerCheckin(api, ctx) {
     send(req, res, 200, { inside: !!where.inside, site: where.inside === true ? null : where.inside, nearest: where.nearest, distance: where.distance,
       after_hours: after && !(open && open.reason), shift_end: pad2(shift.end),
       // flexible hours: checking out before one's own check-out time counts as leaving early (the page asks first)
-      early: kind === "out" && shift.flex && shift.flex.effIn !== null && workingDay(db, emp, today) && now < shift.end ? shift.end - now : 0 });
+      early: kind === "out" && (!shift.flex || shift.flex.effIn !== null) && workingDay(db, emp, today) && now < shift.end ? shift.end - now : 0 });
   });
 
   // "I'm still working" (asked 30 minutes after the shift): a reason; the extra time goes to the manager once they check out

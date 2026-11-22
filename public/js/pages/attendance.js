@@ -32,7 +32,7 @@ export function summaryTiles(s) {
     tile(s.afterMin ? durText(s.afterMin) : "—", `${t("att_after")} · ${t("att_n_days", { n: num(s.afterDays || 0) })}`),
     s.extraMin ? tile(durText(s.extraMin), t("att_extra")) : null,
     tile(num(s.flagged || 0), `⚠️ ${t("att_flagged")}${s.unverified ? ` · ${t("att_unverified")} ${num(s.unverified)}` : ""}`, s.flagged ? "warn" : ""),
-    tile(s.onSite ? durText(s.onSite) : "—", t("att_total_hours")),
+    tile(s.worked || s.onSite ? durText(s.worked ?? s.onSite) : "—", t("att_total_hours")),
     tile(s.onSiteDays ? durText(Math.round(s.onSite / s.onSiteDays)) : "—", t("att_avg_on_site")));
 }
 
@@ -67,7 +67,7 @@ export async function render(el, _p, { me, query, can }) {
   if (d.checksOff && d.checksOff.length) notes.push(h("p", { class: "sub" }, t("ver_off_note", { list: d.checksOff.map((k) => t("ver_" + k)).join(getLang() === "ar" ? "، " : ", ") })));
   if (d.dataTo) notes.push(h("p", { class: "sub" }, t("att_data_to", { d: dmy(d.dataTo) }), " · ", t("att_shift_now"), ": ", h("b", null, t("shift_" + (d.employee.shift || 2)))));
 
-  const flex = d.days.some((x) => x.shift && x.shift.flex);
+  const flex = true; // the expected check-out shows for every shift
   const rows = d.days.filter((x) => x.status !== "no_data" || x.date <= todayIso()).map((x) => {
     const reqLinks = x.requests.filter((r) => r.type !== "comp_day").map((r) => h("a", { class: "chip", href: `#/leave/${r.id}` }, t("lt_" + r.type),
       r.type === "overtime" && r.minutes ? ` ${durText(r.minutes)}` : "",
@@ -104,6 +104,8 @@ export async function render(el, _p, { me, query, can }) {
       h("td", { class: "num" }, x.early ? h("span", { class: "bad-text" }, durText(x.early)) : quiet ? "" : "—"),
       h("td", { class: "num" }, x.after ? h("span", { class: "good-text" }, durText(x.after)) : quiet ? "" : "—"),
       h("td", null, h("span", { class: `badge ${STATUS_CLASS[x.status] || ""}` }, status),
+        x.away ? h("div", { class: "ci-flag" }, "⚠️ ", t("att_away_unapproved", { d: durText(x.away) })) : null,
+        x.breakTaken ? h("div", { class: "muted" }, "☕ ", t("att_break_taken", { from: x.breakTaken.from, to: x.breakTaken.to || "…", d: durText(x.breakTaken.minutes || 0) })) : null,
         cis.some((c) => c.flags && c.flags.length) ? h("span", { class: "ci-flag", title: cis.filter((c) => c.flags && c.flags.length).map((c) => `${c.time} ${c.flags.map(flagLabel).join(", ")}`).join(" · ") }, " ⚠️") : null, x.info && ["absent", "missing"].includes(x.status) ? h("span", { class: "muted" }, " ", t("att_info_only")) : null),
       reqLinks.length || ask || more ? h("td", null, reqLinks, ask, more) : h("td", { "data-label": "" }));
   });
@@ -137,7 +139,7 @@ export async function render(el, _p, { me, query, can }) {
     notes,
     summaryTiles(d.summary),
     h("section", { class: "card", style: { marginTop: "16px" } },
-      h("div", { class: "card-head" }, h("h2", null, t("att_days")), h("span", { class: "sub" }, flex ? t("att_policy_flex", { a: clockText(d.flex.from), b: clockText(d.flex.to), n: num(d.flex.hours) }) : t("att_policy_note", { n: d.grace ?? 15 }))),
+      h("div", { class: "card-head" }, h("h2", null, t("att_days")), h("span", { class: "sub" }, d.flex && d.days.some((x) => x.shift && x.shift.flex) ? t("att_policy_flex", { a: clockText(d.flex.from), b: clockText(d.flex.to), n: num(d.flex.hours) }) : t("att_policy_note", { n: d.grace ?? 15 }))),
       rows.length ? h("div", { class: "table-wrap" }, h("table", { class: "att-table" },
         h("thead", null, h("tr", null, [t("date"), t("att_in"), flex ? t("att_expected_out") : null, t("att_out"), t("att_on_site"), t("att_late"), t("att_early"), t("att_after"), t("status"), ""].filter((x) => x !== null).map((x, i, all) => h("th", { class: i > 0 && i < all.length - 2 ? "num" : null }, x)))),
         h("tbody", null, rows))) : empty()),

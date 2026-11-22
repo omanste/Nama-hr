@@ -72,7 +72,7 @@ function navItems() {
   items.push(["#/calendar", "nav_calendar", "leave"]); // everyone: holidays, occasions, birthdays and their own leave
   if (me.isApprover && !can.viewAll()) items.push(["#/team", "team_requests", "list"]);
   if (can.viewAll()) items.push(["#/requests", "nav_requests", "list"]);
-  if (can.viewAll() || me.isApprover) items.push(["#/reports", "nav_reports", "chart"]);
+  if (can.viewAll() || me.isApprover || me.hasTeam) items.push(["#/reports", "nav_reports", "chart"]); // the Permissions report (and Staff Voice figures)
   if (["hr", "admin", "ceo", "chairman", "consultant", "accounts"].includes(me.user.role) || me.isApprover) items.push(["#/attendance/report", "nav_att_report", "chart", me.pendingHr]);
   if (["hr", "admin", "ceo", "chairman", "consultant", "accounts"].includes(me.user.role) || me.isApprover || me.hasTeam) items.push(["#/attendance/online", "nav_att_online", "finger"]);
   if (["hr", "admin", "accounts", "ceo", "chairman"].includes(me.user.role)) items.push(["#/attendance/allowances", "nav_allowances", "list"], ["#/attendance/overtime", "nav_overtime", "clock"]);

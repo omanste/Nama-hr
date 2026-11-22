@@ -5,13 +5,16 @@ import { h, field, select, toast, errText, showFieldError, backLink, num, dmy, t
 
 const hm = (s) => { const [a, b] = String(s).split(":").map(Number); return a * 60 + b; };
 const clock = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-const steps = (from, to) => { const out = []; for (let m = from; m <= to; m += 30) out.push(clock(m)); return out; };
+const steps = (from, to) => { const out = []; for (let m = Math.ceil(from / 30) * 30; m <= to; m += 30) out.push(clock(m)); return out; }; // whole and half hours only (the policy's steps)
 const hours = (m) => t("hours", { n: num(m / 60) });
 
 export async function render(el, _p, { me, query }) {
   if (!me.employee) { el.append(empty(t("no_profile"))); return; }
   const [prof, settings] = await Promise.all([api.get(`/api/employees/${me.employee.id}`), api.get("/api/settings")]);
-  const shiftNo = [1, 2, 3, 4].includes(prof.employee.shift) ? prof.employee.shift : 2;
+  // the person's working day on the chosen date, as the server works it out (their shift then; on the Flexible shift the
+  // latest end until they arrive)
+  let D = { shift: prof.employee.shift, start: "09:00", end: "18:00" };
+  const loadDay = async (d) => { try { D = await api.get(`/api/attendance/my-day?date=${d}`); } catch { /* keep the last */ } };
   let type = PERMISSIONS.includes(query.get("type")) ? query.get("type") : "early";
   const today = todayIso();
   const holidays = new Set((settings.official_holidays || []).map((x) => x.date));
@@ -25,9 +28,8 @@ export async function render(el, _p, { me, query }) {
   const fieldsBox = h("div", { class: "fields" });
 
   // the person's own shift (policy §3); in Ramadan the day is shorter
-  const ramadan = (d) => settings.ramadan_start && settings.ramadan_end && d >= settings.ramadan_start && d <= settings.ramadan_end;
-  const dayStart = () => hm(settings[`shift_${shiftNo}_start`]);
-  const dayEnd = (d) => (ramadan(d) ? dayStart() + (settings.ramadan_hours || 6) * 60 : hm(settings[`shift_${shiftNo}_end`]));
+  const dayStart = () => hm(D.start);
+  const dayEnd = () => hm(D.end);
   const restDay = (d) => [5, 6].includes(new Date(d + "T00:00:00Z").getUTCDay());
   const fill = (sel, list, pick) => { const prev = sel.value; sel.replaceChildren(...list.map((x) => h("option", { value: x }, x))); sel.value = list.includes(prev) ? prev : pick(list); };
   function fillTimes() {
@@ -50,7 +52,7 @@ export async function render(el, _p, { me, query }) {
     calc.replaceChildren(...[
       h("dl", { class: "facts" },
         h("div", null, h("dt", null, t("this_request")), h("dd", { class: "num" }, hours(m))),
-        h("div", null, h("dt", null, t("f_shift")), h("dd", { class: "num" }, `${t("shift_" + shiftNo)} · ${clock(dayStart())}–${clock(dayEnd(date.value))}`))),
+        h("div", null, h("dt", null, t("f_shift")), h("dd", { class: "num" }, `${t("shift_" + D.shift)} · ${clock(dayStart())}–${clock(dayEnd(date.value))}`))),
       h("p", { class: "sub", style: { margin: "10px 0 0" } }, t("perm_rule_policy")),
       holiday ? h("div", { class: "note bad", style: { marginTop: "10px" } }, t("perm_holiday")) : null,
       rest ? h("div", { class: "note bad", style: { marginTop: "10px" } }, t("perm_rest_day")) : null].filter(Boolean));
@@ -68,7 +70,7 @@ export async function render(el, _p, { me, query }) {
       field(t("reason"), reason, { full: true, req: true })].filter(Boolean));
     update();
   }
-  date.addEventListener("change", () => { fillTimes(); update(); });
+  date.addEventListener("change", async () => { await loadDay(date.value); fillTimes(); update(); });
   t1.addEventListener("change", () => { if (type === "break") fillTimes(); update(); });
   t2.addEventListener("change", update);
 
@@ -92,6 +94,7 @@ export async function render(el, _p, { me, query }) {
     calc,
     h("div", { class: "form-actions" }, h("a", { class: "btn", href: "#/permissions" }, t("cancel")), submit));
   el.append(backLink("#/permissions"), h("h1", null, t("apply_permission")), form);
+  await loadDay(date.value);
   draw();
   // the hint under the type buttons follows the choice
   typeBox.addEventListener("click", () => { form.querySelector("section .sub").textContent = t("perm_hint_" + type); });

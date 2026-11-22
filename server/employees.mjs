@@ -11,7 +11,7 @@ import { tempPassword, hashPassword } from "./auth.mjs";
 import { toCountryCode } from "../public/js/countries.js";
 import { permissionSummary } from "./permissions.mjs";
 import { rerouteFallbacks, rerouteFor } from "./requests.mjs";
-import { SHIFTS, SELF_SHIFTS } from "./shifts.mjs";
+import { SHIFTS, SELF_SHIFTS, defaultShiftNo, shiftOn } from "./shifts.mjs";
 import { recordSelfChange, pendingChangesOf } from "./profile-changes.mjs";
 import { removeUpload } from "./files.mjs";
 
@@ -83,7 +83,7 @@ export function cleanEmployee(db, body, cur = null, { today = null } = {}) {
     if (k === "status" && !STATUSES.includes(v ?? "active")) throw bad(k, "unknown status");
     if (k === "status" && v === null) v = "active";
     if (k === "gender" && v !== null && !GENDERS.includes(v)) throw bad(k, "gender must be male or female");
-    if (k === "shift") { if (v === null) continue; v = Number(v); if (!SHIFTS.includes(v)) throw bad(k, "shift must be 1, 2, 3 or 4"); }
+    if (k === "shift") { if (v === null) continue; v = Number(v); if (!SHIFTS.includes(v)) throw bad(k, "shift must be Flexible (5), 10–5 (6) or 10–6 (7)"); }
     if (k === "shift_locked" || k === "faceid_exempt") v = v === true || v === 1 || v === "1" || v === "on" ? 1 : 0;
     if (["verify_photo", "verify_faceid", "verify_location"].includes(k)) { if (v === "" || v === "default") v = null; if (v !== null && !["on", "off"].includes(v)) throw bad(k, "Default, On or Off"); }
     if (k === "reports_to_top" && v !== null && !["ceo", "chairman", "both"].includes(v)) throw bad(k, "reports to must be the CEO, the Chairman or both");
@@ -120,6 +120,7 @@ export function cleanEmployee(db, body, cur = null, { today = null } = {}) {
 
 export function insertEmployee(db, values, by) {
   const now = nowIso();
+  if (values.shift === undefined || values.shift === null) values = { ...values, shift: defaultShiftNo() }; // new staff: the Flexible shift
   const cols = Object.keys(values);
   const r = db.prepare(`INSERT INTO employees(${cols.join(",")},created_at,updated_at) VALUES(${cols.map(() => "?").join(",")},?,?)`).run(...cols.map((c) => values[c]), now, now);
   return getEmployee(db, Number(r.lastInsertRowid));
@@ -134,7 +135,7 @@ function deactivateIfLeft(db, emp) {
 }
 
 /** May this person pick their own shift? Company switch on (default) and not locked by HR. */
-export const maySelfShift = (db, emp) => getSetting(db, "shift_self_select", true) !== false && !emp.shift_locked && SELF_SHIFTS.includes(Number(emp.shift));
+export const maySelfShift = (db, emp) => SELF_SHIFTS.includes(Number(emp.shift)) && getSetting(db, "shift_self_select", true) !== false && !emp.shift_locked; // never now: HR / Admin assign shifts
 
 export function profile(db, sess, emp, today) {
   // archived copies (a renewed ID, passport or visa) only for HR and Admin
@@ -152,7 +153,9 @@ export function profile(db, sess, emp, today) {
   if (!bank) { emp = { ...emp }; for (const k of BANK) delete emp[k]; }
   const out = { employee: emp, department: dept, seesBank: bank,
     pendingChanges: mine || ["hr", "admin"].includes(sess.user.role) ? pendingChangesOf(db, emp.id) : undefined, manager, files, requests, leave: leaveSummary(db, emp, today), permissions: permissionSummary(db, emp.id, today),
-    shiftSelf: !!(sess.employee && sess.employee.id === emp.id) && maySelfShift(db, emp), login: can(sess, "employee.viewAll") ? user : undefined };
+    shiftSelf: !!(sess.employee && sess.employee.id === emp.id) && maySelfShift(db, emp),
+    // the shift today, and a change waiting for a coming day
+    shiftToday: shiftOn(db, emp, today), shiftNext: db.prepare("SELECT shift, from_date \"from\" FROM shift_history WHERE employee_id=? AND from_date>? ORDER BY from_date, id DESC LIMIT 1").get(emp.id, today) || null, login: can(sess, "employee.viewAll") ? user : undefined };
   if (can(sess, "ledger.adjust")) out.ledger = ledgerRows(db, emp.id);
   return out;
 }
@@ -270,6 +273,14 @@ export function registerEmployees(api, ctx) {
     const emp = tx(db, () => {
       const cols = Object.keys(values);
       if (cols.length) db.prepare(`UPDATE employees SET ${cols.map((c) => `${c}=?`).join(",")},updated_at=? WHERE id=?`).run(...cols.map((c) => values[c]), nowIso(), cur.id);
+      // a new shift applies from the next day: today (and the days before) keep the shift they were worked under
+      if ("shift" in values && Number(values.shift) !== Number(cur.shift)) {
+        const from = new Date(Date.parse(ctx.today() + "T00:00:00Z") + 864e5).toISOString().slice(0, 10);
+        if (!db.prepare("SELECT 1 FROM shift_history WHERE employee_id=?").get(cur.id))
+          db.prepare("INSERT INTO shift_history(employee_id,shift,from_date,changed_by,changed_at) VALUES(?,?,?,?,?)").run(cur.id, cur.shift, "0001-01-01", null, nowIso());
+        db.prepare("INSERT INTO shift_history(employee_id,shift,from_date,changed_by,changed_at) VALUES(?,?,?,?,?)").run(cur.id, values.shift, from, req.sess.user.id, nowIso());
+        audit(db, req.sess.user.id, "employee.shift", "employee", cur.id, { shift: cur.shift }, { shift: values.shift, from });
+      }
       const e = getEmployee(db, cur.id);
       deactivateIfLeft(db, e);
       const hasStart = db.prepare("SELECT 1 FROM leave_ledger WHERE employee_id=? AND kind IN ('annual_credit','opening')").get(e.id);
