@@ -554,3 +554,6 @@ dialog.push-ask .row.end{justify-content:center}
 .ci-checks{display:inline-flex;gap:2px;margin-inline-end:4px;font-size:13px}
 .ci-flag{color:var(--warn, #a3670b);font-weight:600}
 .ci-flag .badge{margin-inline-start:6px}
+/* HR backup page */
+.hb-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-top:10px}
+.hb-grid .btn{width:100%}

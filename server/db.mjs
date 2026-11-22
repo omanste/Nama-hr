@@ -200,6 +200,9 @@ const MIGRATIONS = [
   // 37: staff IDs in one format — NAMA- and three digits (NAMA-07 → NAMA-007), wherever that number isn't already taken;
   //     each change is in the activity log
   (db) => { formatEmpNos(db); },
+  // 38: HR backups and restores (Admin): who, when, which environment, type, sections, counts, and the file kept
+  `CREATE TABLE hr_backups(id INTEGER PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('backup','restore','auto')), type TEXT NOT NULL,
+     sections TEXT, counts TEXT, env TEXT, file TEXT, by_user_id INTEGER, at TEXT NOT NULL);`,
 ];
 
 /** Staff IDs in one format: NAMA- and three digits (NAMA-07 → NAMA-007), wherever that number isn't on another record

@@ -29,6 +29,7 @@ const ROUTES = [
   ["/notifications", "notifications"],
   ["/import", "import"],
   ["/settings", "settings"],
+  ["/hr-backup", "hr-backup"],
   ["/users", "users"],
   ["/audit", "audit"],
   ["/cap-reviews", "cap-reviews"],
@@ -76,7 +77,7 @@ function navItems() {
   if (["hr", "admin", "ceo", "chairman", "consultant", "accounts"].includes(me.user.role) || me.isApprover || me.hasTeam) items.push(["#/attendance/online", "nav_att_online", "finger"]);
   if (["hr", "admin", "accounts", "ceo", "chairman"].includes(me.user.role)) items.push(["#/attendance/allowances", "nav_allowances", "list"], ["#/attendance/overtime", "nav_overtime", "clock"]);
   if (can.edit()) items.push(["#/profile-changes", "nav_profile_changes", "check", me.pendingProfileChanges], ["#/cap-reviews", "nav_cap_reviews", "clock", me.pendingCapReviews], ["#/import", "nav_import", "upload"]);
-  if (can.admin()) items.push(["#/settings", "nav_settings", "gear"], ["#/users", "nav_users", "key"]);
+  if (can.admin()) items.push(["#/settings", "nav_settings", "gear"], ["#/users", "nav_users", "key"], ["#/hr-backup", "nav_hr_backup", "upload"]);
   if (can.viewAll() && me.user.role !== "consultant") items.push(["#/audit", "nav_audit", "clock"]);
   if (me.employee) items.push(["#/me", "nav_me", "user"]); // my profile is always the last entry
   return items;

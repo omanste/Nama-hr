@@ -31,3 +31,25 @@ export function makeZip(files, when = new Date()) {
   const end = Buffer.concat([u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length), u32(cd.length), u32(offset), u16(0)]);
   return Buffer.concat([...local, cd, end]);
 }
+
+/** Read a .zip (stored or deflated entries, as makeZip writes and as common tools write) → Map(name → Buffer).
+ * Reads the central directory, so sizes are right even when a tool streamed the file. */
+export function readZip(buf) {
+  let end = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) if (buf.readUInt32LE(i) === 0x06054b50) { end = i; break; }
+  if (end < 0) throw new Error("not a zip file");
+  const count = buf.readUInt16LE(end + 10), cdOff = buf.readUInt32LE(end + 16);
+  const out = new Map();
+  let p = cdOff;
+  for (let n = 0; n < count; n++) {
+    if (buf.readUInt32LE(p) !== 0x02014b50) throw new Error("damaged zip file");
+    const method = buf.readUInt16LE(p + 10), csize = buf.readUInt32LE(p + 20);
+    const nlen = buf.readUInt16LE(p + 28), xlen = buf.readUInt16LE(p + 30), clen = buf.readUInt16LE(p + 32), local = buf.readUInt32LE(p + 42);
+    const name = buf.subarray(p + 46, p + 46 + nlen).toString("utf8");
+    const lstart = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
+    const data = buf.subarray(lstart, lstart + csize);
+    if (!name.endsWith("/")) out.set(name, method === 0 ? Buffer.from(data) : method === 8 ? zlib.inflateRawSync(data) : (() => { throw new Error(`unsupported zip method ${method}`); })());
+    p += 46 + nlen + xlen + clen;
+  }
+  return out;
+}

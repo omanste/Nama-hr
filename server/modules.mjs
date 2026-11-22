@@ -14,6 +14,7 @@ import { registerVoice } from "./voice.mjs";
 import { registerCalendar } from "./calendar.mjs";
 import { registerAttendance } from "./attendance.mjs";
 import { registerBackup } from "./backup.mjs";
+import { registerHrBackup } from "./hrbackup.mjs";
 import { registerProfileChanges } from "./profile-changes.mjs";
 
 import { registerCheckin } from "./checkin.mjs";
@@ -39,5 +40,6 @@ export async function registerModules(api, ctx) {
   registerOvertime(api, ctx);
   registerWebauthn(api, ctx);
   registerBackup(api, ctx);
+  registerHrBackup(api, ctx);
   registerProfileChanges(api, ctx);
 }
