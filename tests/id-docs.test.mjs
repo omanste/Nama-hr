@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { boot, adminClient, makePerson } from "./helpers.mjs";
-import { parseMrz, parseFront, parseArabicName, fullPrintedName, arabicNameFrom, arabicFromVariants, completeName } from "../server/idread.mjs";
+import { parseMrz, parseFront, parseArabicName, fullPrintedName, arabicNameFrom, arabicFromVariants, completeName, fromTextLayer, idFormat } from "../server/idread.mjs";
 import { toArabicName, completeFamily, completeArabicName, fixConfusedLetters } from "../server/names-ar.mjs";
 import { runExpiryCheck } from "../server/jobs.mjs";
 
@@ -510,4 +510,21 @@ test("a mistake on any profile field can be reported by the person, HR or Admin;
   fs.rmSync(dir, { recursive: true, force: true });
   // reporting changes nothing on the profile
   assert.equal((await admin.get(`/api/employees/${p.emp.id}`)).data.employee.name_en, "Sample Person Alt");
+});
+
+test("the electronic ID copy (PDF, 2026 layout): the English name wrapped onto two lines is read whole — never stretched (made-up card)", () => {
+  // the layout of the electronic copy: «نسخة إلكترونية» stored reversed, Arabic in joined letter shapes, the English name
+  // wrapped after "AL", the "<<<" name line cut at 30 letters ("AL<OB")
+  const ar = "سالم بن خالد بن محمد العبيداني".normalize("NFKD");
+  const text = ["\u202bةينورتكلإ ةخسن\u202c              \u202b\u202a12345678\u202c\u202c", "", `\u202b${ar}\u202c`, "",
+    "\u202b\u202aSAMPLE KHALID MOHAMMED AL\u202c\u202c", "\u202b\u202aOBAIDANI\u202c\u202c", "",
+    "IDOMN12345678<4<<<<<<<<<<<<<<<", "9001011M3001011OMN<<<<<<<<<<<0", "SAMPLE<KHALID<MOHAMMED<<AL<OBA"].join("\n");
+  const r = fromTextLayer(text).found;
+  assert.equal(r.format, "om-eid-copy");
+  assert.equal(r.name_en, "Sample Khalid Mohammed Al Obaidani");
+  assert.equal(r.name_ar, "سالم بن خالد بن محمد العبيداني");
+  // the cut "<<<" line finished from the wrapped printed line — and a second pass (with the Arabic) leaves it alone
+  assert.equal(completeName("Sample Khalid Ali Al Ob", { text: "SAMPLE KHALID ALI AL\nOBAIDANI" }), "Sample Khalid Ali Al Obaidani");
+  assert.equal(completeName("Sample Khalid Ali Al Obaidani", { text: "SAMPLE KHALID ALI AL\nOBAIDANI", nameAr: "سالم بن خالد بن علي العبيداني" }), "Sample Khalid Ali Al Obaidani");
+  assert.equal(idFormat("IDOMN12345678<4"), "om-id-scan");
 });

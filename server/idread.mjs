@@ -327,6 +327,10 @@ const cap = (w) => w[0].toUpperCase() + w.slice(1).toLowerCase();
 export function completeName(nameEn, { text = "", nameAr = "" } = {}) {
   const ws = String(nameEn || "").split(" ").filter(Boolean), frag = ws.at(-1) || "";
   if (ws.length < 2 || frag.length < 2 || isKnownName(frag)) return nameEn;
+  // already whole: the word is printed by itself on the card (the newer cards wrap a long English name onto a second
+  // line — "… AL" / "OBAIDANI" — so the family name stands alone there); never stretch it from the Arabic ("Obaidanii")
+  const printed = String(text || "").split(/\r?\n/).filter((l) => !l.includes("<")).flatMap((l) => l.toUpperCase().split(/[^A-Z]+/));
+  if (frag.length >= 4 && printed.includes(frag.toUpperCase())) return nameEn;
   const f = frag.toLowerCase(), others = ws.slice(0, -1).map((w) => w.toUpperCase()).filter((w) => w.length > 2);
   // a. the printed English name: a longer word starting with the cut letters, best on a line with the name's other words
   let best = null;
@@ -352,10 +356,34 @@ export function completeName(nameEn, { text = "", nameAr = "" } = {}) {
 function fixName(mrz, text) {
   if (!mrz.name_en) return;
   const full = fullPrintedName(text, mrz.name_en);
+  let done = !!full;
   if (full) mrz.name_en = full;
-  else if (mrz.name_cut) mrz.name_en = completeName(mrz.name_en, { text });
-  mrz.cut_name = !!mrz.name_cut && !full; // kept until the Arabic name is read, which can finish it too
+  else if (mrz.name_cut) { const c = completeName(mrz.name_en, { text }); done = c !== mrz.name_en; mrz.name_en = c; }
+  mrz.cut_name = !!mrz.name_cut && !done; // still cut: kept until the Arabic name is read, which can finish it too
   delete mrz.name_cut;
+}
+
+/** Which Omani card this text came from (see docs/id-formats.md): the electronic copy issued as a PDF ("نسخة إلكترونية",
+ * Arabic in joined letter shapes, a long English name wrapped onto a second line), a phone scan with a text layer, or a
+ * photo of the card. Kept with what was read, so a new version shows up in the readings. */
+export function idFormat(text) {
+  const t = String(text || "").normalize("NFKC").replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "");
+  if (/نسخة\s*إلكترونية|ةينورتكلإ\s*ةخسن/.test(t)) return "om-eid-copy";
+  if (/IDOMN/.test(t)) return "om-id-scan";
+  return null;
+}
+/** What a PDF's text layer gives: the "<<<" lines, the printed front, the full English name (wrapped lines too, never
+ * stretched — "Al Obaidani", not "Al Obaidanii") and the Arabic name. */
+export function fromTextLayer(text) {
+  const mrz = parseMrz(text), front = parseFront(text);
+  fixName(mrz, text);
+  const ar = arabicNameFrom(text, mrz.name_en); if (ar) front.name_ar = ar;
+  const cut = !!mrz.cut_name; delete mrz.cut_name;
+  if (cut && front.name_ar) mrz.name_en = completeName(mrz.name_en, { text, nameAr: front.name_ar });
+  const found = { ...front, ...mrz };
+  found.verified = Object.keys(mrz).filter((k) => k !== "kind");
+  const format = idFormat(text); if (format) found.format = format;
+  return { found, cut, mrz };
 }
 
 const run = promisify(execFile);
@@ -369,14 +397,9 @@ export async function readPdf(buffer, readImage = readDocument, opts = {}) {
     let text = "";
     try { text = (await run("pdftotext", ["-f", "1", "-l", "3", file, "-"], { timeout: 20000, maxBuffer: 4 << 20 })).stdout; }
     catch (e) { if (e.code === "ENOENT") return null; } // no poppler on this server: nothing to read with
-    const mrz = parseMrz(text), front = parseFront(text);
-    fixName(mrz, text);
-    const ar = arabicNameFrom(text, mrz.name_en); if (ar) front.name_ar = ar;
-    const cut = !!mrz.cut_name; delete mrz.cut_name;
-    if (cut && front.name_ar) mrz.name_en = completeName(mrz.name_en, { text, nameAr: front.name_ar });
-    if (mrz.expiry || mrz.dob || front.expiry) {
-      const found = { ...front, ...mrz };
-      found.verified = Object.keys(mrz).filter((k) => k !== "kind");
+    const { found: first, cut, mrz } = fromTextLayer(text);
+    if (mrz.expiry || mrz.dob || first.expiry) {
+      const found = first;
       // a phone scanner's text layer is English only and may garble the "<<<" lines: read the pages as pictures too —
       // for a cleaner coded name, the full printed name and the Arabic name
       if (opts.arabic) {
