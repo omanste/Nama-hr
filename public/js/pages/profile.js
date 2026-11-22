@@ -277,11 +277,18 @@ function devicesCard(e, own, can) {
     if (!(await faceIdSupported())) { toast(t("ci_faceid_unsupported"), "bad"); return; }
     try { await registerPhone(); toast(t("ci_faceid_registered")); load(); } catch (er) { if (!(er && er.name === "AbortError")) toast(faceIdError(er, { registering: true }), "bad"); }
   } }, "🔐 ", t("ci_faceid_register")) : null;
-  const exempt = can.edit() ? h("label", { class: "row", style: { gap: "8px", alignItems: "flex-start", marginTop: "10px", cursor: "pointer" } },
-    h("input", { type: "checkbox", name: "faceid_exempt", checked: !!e.faceid_exempt, style: { width: "22px", height: "22px", minHeight: "0", flex: "none" }, onchange: async (ev) => {
-      try { await api.put(`/api/employees/${e.id}`, { faceid_exempt: ev.target.checked }); toast(t("saved")); } catch (er) { ev.target.checked = !ev.target.checked; toast(errText(er), "bad"); }
-    } }), h("span", null, t("dev_exempt"), h("div", { class: "sub" }, t("dev_exempt_hint")))) : null;
-  box.append(...[h("h2", null, "🔐 ", t(own ? "dev_title" : "dev_title_hr")), h("p", { class: "sub" }, t("dev_hint")), list, addBtn ? h("div", { class: "row", style: { marginTop: "10px" } }, addBtn) : null, exempt].filter(Boolean));
+  // check-in verification for this person (HR / Admin): Default (the company's switch) / On / Off, for each check
+  const verify = can.edit() ? h("div", { class: "verify-person" }, h("h3", null, t("ver_person_title")), h("p", { class: "sub" }, t("ver_person_hint")),
+    h("div", { class: "fields" }, [["photo", "📷"], ["faceid", "🔐"], ["location", "📍"]].map(([k, ico]) => {
+      const cur = e[`verify_${k}`] || (k === "faceid" && e.faceid_exempt ? "off" : "");
+      const sel = select(`verify_${k}`, [["", t("ver_default")], ["on", t("ver_on")], ["off", t("ver_off")]], cur);
+      sel.addEventListener("change", async () => {
+        try { await api.put(`/api/employees/${e.id}`, { [`verify_${k}`]: sel.value || null, ...(k === "faceid" ? { faceid_exempt: false } : {}) }); toast(t("saved")); }
+        catch (er) { sel.value = cur; toast(errText(er), "bad"); }
+      });
+      return field(`${ico} ${t("ver_" + k)}`, sel);
+    }))) : null;
+  box.append(...[h("h2", null, "🔐 ", t(own ? "dev_title" : "dev_title_hr")), h("p", { class: "sub" }, t("dev_hint")), list, addBtn ? h("div", { class: "row", style: { marginTop: "10px" } }, addBtn) : null, verify].filter(Boolean));
   load();
   return box;
 }

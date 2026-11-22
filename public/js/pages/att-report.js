@@ -49,7 +49,7 @@ function period(key) {
 const pct = (x) => (x === null || x === undefined ? "—" : `${num(x)}%`);
 
 export async function render(el, _p, { me, can, query }) {
-  if (!["hr", "admin", "ceo", "chairman", "consultant", "accounts"].includes(me.user.role) && !me.isApprover) throw { status: 403 };
+  if (!["hr", "admin", "ceo", "chairman", "consultant", "accounts"].includes(me.user.role) && !me.isApprover && !me.hasTeam) throw { status: 403 };
   const depts = can.viewAll() ? (await api.get("/api/departments")).items : [];
   const [f0, t0] = query.get("from") ? [query.get("from"), query.get("to")] : period("last_week");
   const from = h("input", { type: "date", value: f0 }), to = h("input", { type: "date", value: t0 });
@@ -70,7 +70,7 @@ export async function render(el, _p, { me, can, query }) {
     ["att_h_missing", (s) => num(s.missing)], ["att_h_absent", (s) => num(s.absent)], ["att_h_pending", (s) => num(s.pending)],
     ["att_h_leave", (s) => num(s.leave)], ["att_h_mission", (s) => num(s.mission)], ["att_h_outside", (s) => num(s.outside || 0)],
     ["att_h_after", (s) => (s.afterMin ? pair(s.afterDays, s.afterMin) : "—")], ["att_h_extra", (s) => (s.extraMin ? durText(s.extraMin) : "—")],
-    ["att_h_hours", (s) => (s.onSite ? durText(s.onSite) : "—")]];
+    ["att_h_flagged", (s) => (s.flagged ? h("span", { class: "bad-text" }, "⚠️ ", num(s.flagged)) : "0")], ["att_h_hours", (s) => (s.onSite ? durText(s.onSite) : "—")]];
   // "3" over "1:25": how many times, then how long
   function pair(n, min) { return n ? h("span", { class: "pair" }, h("b", null, num(n)), h("small", null, durText(min))) : "—"; }
   const thead = (first) => h("thead", null, h("tr", null, h("th", { class: "name-col" }, first), COLS.map(([k]) => h("th", { class: "num" }, t(k)))));
@@ -124,7 +124,7 @@ export async function render(el, _p, { me, can, query }) {
   if (dept) dept.addEventListener("change", load);
 
   // HR / Admin and managers with people of their own (§7): the monthly PDF / Excel
-  const canMonthly = ["hr", "admin"].includes(me.user.role) || me.isApprover;
+  const canMonthly = ["hr", "admin"].includes(me.user.role) || me.isApprover || me.hasTeam;
   const lastMonth = (() => { const d = todayIso(); return d.slice(8) <= "05" ? period("last_month")[0].slice(0, 7) : d.slice(0, 7); })();
   el.append(pageHead(t("nav_att_report"),
     canMonthly ? h("button", { class: "btn primary", type: "button", onclick: () => monthlyDialog(lastMonth).catch((e) => toast(errText(e), "bad")) }, "📄 ", t("pdf_btn")) : null, h("a", { class: "btn", href: "#/attendance/online" }, "📍 ", t("nav_att_online")), ["hr", "admin", "accounts", "ceo", "chairman"].includes(me.user.role) ? h("a", { class: "btn", href: "#/attendance/allowances" }, "💰 ", t("nav_allowances")) : null, ["hr", "admin", "accounts", "ceo", "chairman"].includes(me.user.role) ? h("a", { class: "btn", href: "#/attendance/overtime" }, "⏱ ", t("nav_overtime")) : null, can.edit() ? h("a", { class: "btn", href: "#/attendance/upload" }, "⬆ ", t("nav_att_upload")) : null, csv),

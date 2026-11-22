@@ -70,10 +70,11 @@ after(async () => { await t.close(); });
 const register = async (p, ph) => { const o = (await p.c.post("/api/webauthn/register/options", {})).data; return p.c.post("/api/webauthn/register/verify", ph.create(o, t.base)); };
 const verify = async (p, ph, opts) => { const o = (await p.c.post("/api/webauthn/verify/options", {})).data; return p.c.post("/api/webauthn/verify", ph.get(o, t.base, opts)); };
 
-test("required by default: no check-in without the phone's face / fingerprint check", async () => {
+test("on by default: a check-in without the phone's face / fingerprint check is saved but flagged ⚠️", async () => {
   assert.equal((await s.c.get("/api/webauthn/status")).data.needed, true);
-  const r = await ci(s, "in");
-  assert.equal(r.status, 403); assert.equal(r.data.error, "faceid_required");
+  const r = await ci(s2, "in");
+  assert.equal(r.status, 201); assert.deepEqual(r.data.checkin.flags.map((f) => f.code), ["faceid_failed"]); assert.equal(r.data.checkin.checks.faceid, false);
+  assert.ok((await hr.c.get("/api/notifications")).data.items.some((n) => /Face ID \/ fingerprint not confirmed/.test(n.title_en)));
   assert.equal((await s.c.post("/api/webauthn/verify/options", {})).data.error, "no_device", "register a phone first");
 });
 
@@ -86,12 +87,14 @@ test("registering this phone counts as the check; the person, HR and Admin are t
   assert.equal(t.db.prepare("SELECT verified FROM att_checkins WHERE id=?").get(c.data.checkin.id).verified, 1);
   assert.ok((await s.c.get("/api/notifications")).data.items.some((n) => /new phone/.test(n.title_en)));
   assert.ok((await hr.c.get("/api/notifications")).data.items.some((n) => /new phone/.test(n.title_en)));
-  // one check, one check-in
+  assert.equal(c.data.checkin.flags.length, 0, "verified: no flag");
+  // one check, one check-in: the next one without a fresh check is flagged
   t.app.ctx.fakeClock = "17:00";
-  assert.equal((await ci(s, "out")).data.error, "faceid_required");
-  // the next one: verify with the phone, then check out
+  assert.deepEqual((await ci(s, "out")).data.checkin.flags.map((f) => f.code), ["faceid_failed"]);
+  // verify with the phone, then check out: not flagged
   assert.equal((await verify(s, ph)).status, 200);
-  assert.equal((await ci(s, "out")).status, 201);
+  const o = await ci(s, "out");
+  assert.equal(o.status, 201); assert.equal(o.data.checkin.flags.length, 0); assert.equal(o.data.checkin.checks.faceid, true);
   s.phone = ph;
 });
 

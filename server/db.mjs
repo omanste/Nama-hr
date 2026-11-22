@@ -185,6 +185,18 @@ const MIGRATIONS = [
    CREATE INDEX wc_user ON webauthn_creds(user_id);
    ALTER TABLE employees ADD COLUMN faceid_exempt INTEGER NOT NULL DEFAULT 0;
    ALTER TABLE att_checkins ADD COLUMN verified INTEGER NOT NULL DEFAULT 0;`,
+  // 36: check-in verification (Admin): photo, Face ID / fingerprint and location, each on or off for the company and
+  //     overridable per person; each check-in keeps which checks it passed, and a failed check flags it (allowed, then
+  //     accepted or not by the manager)
+  `ALTER TABLE employees ADD COLUMN verify_photo TEXT CHECK(verify_photo IN ('on','off'));
+   ALTER TABLE employees ADD COLUMN verify_faceid TEXT CHECK(verify_faceid IN ('on','off'));
+   ALTER TABLE employees ADD COLUMN verify_location TEXT CHECK(verify_location IN ('on','off'));
+   UPDATE employees SET verify_faceid='off' WHERE faceid_exempt=1;
+   ALTER TABLE att_checkins ADD COLUMN checks TEXT;
+   ALTER TABLE att_checkins ADD COLUMN flags TEXT;
+   ALTER TABLE att_checkins ADD COLUMN flag_status TEXT CHECK(flag_status IN ('open','accepted','rejected'));
+   ALTER TABLE att_checkins ADD COLUMN flag_by INTEGER; ALTER TABLE att_checkins ADD COLUMN flag_at TEXT; ALTER TABLE att_checkins ADD COLUMN flag_note TEXT;
+   CREATE INDEX ac_flag ON att_checkins(flag_status);`,
 ];
 
 /** Recreate a table with one CHECK changed, keeping every row, id and column (foreign keys are off while this runs). */

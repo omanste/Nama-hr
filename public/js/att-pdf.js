@@ -6,6 +6,7 @@
 import { api } from "./api.js";
 import { t, nm, getLang, tx } from "./i18n.js";
 import { h, num, dmy, clockText, durText } from "./ui.js";
+import { flagLabel } from "./checkin.js";
 
 const W = 1123, H = 794; // A4 landscape at 96 dpi
 const SCALE = 2; // whole pixels both ways: a page image a fraction taller than the page spills onto a blank page
@@ -43,11 +44,13 @@ export function figures(s) {
     ["att_work_days", num(s.workDays)], ["att_compliance", pct(s.compliance)], ["att_late", pair(s.late, s.lateMin)], ["att_early", pair(s.early, s.earlyMin)],
     ["att_missing", num(s.missing)], ["att_absent", num(s.absent)], ["att_pending_abs", num(s.pending)], ["att_leave_days", num(s.leave)],
     ["att_mission_days", num(s.mission)], ["ci_outside", num(s.outside || 0)], ["att_after", s.afterMin ? pair(s.afterDays, s.afterMin) : "—"],
-    ["att_extra", hours(s.extraMin)], ["att_total_hours", hours(s.onSite)],
+    ["att_extra", hours(s.extraMin)], ["att_flagged", num(s.flagged || 0)], ["att_total_hours", hours(s.onSite)],
   ];
 }
-const COLS = ["att_h_work", "att_h_compliance", "att_h_late", "att_h_early", "att_h_missing", "att_h_absent", "att_h_pending", "att_h_leave", "att_h_mission", "att_h_outside", "att_h_after", "att_h_extra", "att_h_hours"];
+const COLS = ["att_h_work", "att_h_compliance", "att_h_late", "att_h_early", "att_h_missing", "att_h_absent", "att_h_pending", "att_h_leave", "att_h_mission", "att_h_outside", "att_h_after", "att_h_extra", "att_h_flagged", "att_h_hours"];
 const rowCells = (s) => figures(s).map(([, v]) => v);
+/** Under a name in the staff table: the checks switched off for that person (📷 🔐 📍 crossed). */
+const offMark = (p) => (p.checksOff && p.checksOff.length ? ` · ${t("pdf_off_short")} ${p.checksOff.map((k) => ({ photo: "📷", faceid: "🔐", location: "📍" })[k]).join("")}` : "");
 
 const CSS = `
 *{box-sizing:border-box}
@@ -63,7 +66,7 @@ const CSS = `
 h2{font-size:15px;font-weight:600;margin:14px 0 8px;color:#154540}
 h2 small{font-weight:400;color:#5b6b68;font-size:11px;margin-inline-start:8px}
 .rules{font-size:10.5px;color:#5b6b68;margin:0 0 10px}
-.tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .tile{border:1px solid #dfe5e3;border-radius:8px;padding:9px 11px;background:#f7f9f8}
 .tile b{display:block;font-size:17px;font-weight:600;color:#154540;font-variant-numeric:tabular-nums}
 .tile span{font-size:10.5px;color:#5b6b68}
@@ -79,10 +82,11 @@ tr.tot td{background:#efe6cf!important;font-weight:600;border-top:2px solid #a88
 .days th{padding:3px 3px}
 .days td.st{font-weight:600;text-align:start;padding-inline:6px}
 .days tr.q td{color:#8a9794}
+.days td.st .flag{color:#a3670b;font-weight:600}
 .who{display:flex;gap:18px;align-items:baseline;margin:9px 0 5px}
 .who b{font-size:16px;font-weight:600;color:#154540}
 .who span{color:#5b6b68}
-.mini{display:grid;grid-template-columns:repeat(13,1fr);gap:4px;margin-top:8px}
+.mini{display:grid;grid-template-columns:repeat(14,1fr);gap:4px;margin-top:8px}
 .mini div{border:1px solid #dfe5e3;border-radius:6px;padding:4px 5px;background:#f7f9f8}
 .mini b{display:block;font-size:11.5px;font-weight:600;color:#154540;white-space:nowrap}
 .mini span{font-size:8.5px;color:#5b6b68;white-space:pre-line;line-height:1.15;display:block}
@@ -118,7 +122,7 @@ function summaryPage(D, logo) {
       tile(t("att_late"), pair(T.late, T.lateMin)), tile(t("att_early"), pair(T.early, T.earlyMin)), tile(t("att_missing"), num(T.missing)),
       tile(t("att_absent"), num(T.absent)), tile(t("att_pending_abs"), num(T.pending)), tile(t("att_leave_days"), num(T.leave)),
       tile(t("att_mission_days"), num(T.mission)), tile(t("ci_outside"), num(T.outside || 0)), tile(t("att_after"), T.afterMin ? pair(T.afterDays, T.afterMin) : "—"),
-      tile(t("att_extra"), hours(T.extraMin))),
+      tile(t("att_extra"), hours(T.extraMin)), tile(`⚠️ ${t("att_flagged")}`, num(T.flagged || 0))),
     h("p", { class: "note" }, t("pdf_note")),
   ]);
 }
@@ -133,7 +137,7 @@ function staffPages(D, logo) {
       h("h2", null, t("pdf_part2"), D.people.length > PER ? h("small", null, `${num(i + 1)}–${num(Math.min(i + PER, D.people.length))} / ${num(D.people.length)}`) : null),
       h("table", null, colgroup.cloneNode(true),
         h("thead", null, h("tr", null, h("th", { style: "text-align:start;padding-inline:6px" }, t("employee")), COLS.map((k) => h("th", null, t(k))))),
-        h("tbody", null, chunk.map((p) => h("tr", null, h("td", { class: "nm" }, nameOf(p.employee), h("small", null, `${p.employee.emp_no} · ${dept(p.employee) || t("shift_" + (p.employee.shift || 2))}`)), rowCells(p.summary).map((v) => h("td", null, v)))),
+        h("tbody", null, chunk.map((p) => h("tr", null, h("td", { class: "nm" }, nameOf(p.employee), h("small", null, `${p.employee.emp_no} · ${dept(p.employee) || t("shift_" + (p.employee.shift || 2))}`, offMark(p))), rowCells(p.summary).map((v) => h("td", null, v)))),
           last ? h("tr", { class: "tot" }, h("td", { class: "nm" }, t("pdf_totals")), rowCells(D.total).map((v) => h("td", null, v))) : null)),
     ]));
   }
@@ -153,7 +157,8 @@ function personPage(D, logo, p) {
       h("td", null, d.out !== null ? clockText(d.out) : quiet ? "" : "—"),
       h("td", null, d.onSite ? durText(d.onSite) : ""), h("td", null, d.late ? num(d.late) : ""), h("td", null, d.early ? num(d.early) : ""),
       h("td", null, d.after ? durText(d.after) : ""), h("td", null, d.extra ? durText(d.extra) : ""),
-      h("td", { class: "st", style: `color:${STATUS_COLOR[d.status] || "#8a9794"}` }, statusText(d), d.holiday ? ` · ${tx(d.holiday)}` : "", d.outside ? ` · ${t("pdf_outside_short")}` : ""));
+      h("td", { class: "st", style: `color:${STATUS_COLOR[d.status] || "#8a9794"}` }, statusText(d), d.holiday ? ` · ${tx(d.holiday)}` : "", d.outside ? ` · ${t("pdf_outside_short")}` : "",
+        (d.flags || []).map((f) => h("span", { class: "flag" }, ` ⚠️ ${f.time} ${f.flags.map(flagLabel).join("، ")}${f.status === "accepted" ? ` (${t("ci_flag_accepted")})` : f.status === "rejected" ? ` (${t("ci_flag_rejected")})` : ""}`))));
   });
   const heads = ["date", "pdf_day", "pdf_shift", "att_in", "pdf_expected_out", "att_out", "pdf_hours", "pdf_late_min", "pdf_early_min", "att_after", "pdf_extra_short", "status"];
   const widths = [6, 6, 7, 6.5, 8, 6.5, 6.5, 6.5, 6.5, 7.5, 7.5, 25];
@@ -164,6 +169,7 @@ function personPage(D, logo, p) {
       h("thead", null, h("tr", null, heads.map((k, i) => h("th", { style: i === 11 ? "text-align:start;padding-inline:6px" : null }, t(k))))),
       h("tbody", null, rows)),
     h("div", { class: "mini" }, figures(s).map(([k, v], i) => h("div", null, h("b", null, v), h("span", null, t(COLS[i]))))),
+    p.checksOff && p.checksOff.length ? h("p", { class: "note" }, "ℹ️ ", t("ver_off_note", { list: p.checksOff.map((k) => t("ver_" + k)).join(getLang() === "ar" ? "، " : ", ") })) : null,
   ]);
 }
 
@@ -241,21 +247,22 @@ export async function downloadXlsx(D) {
     [t("att_on_time_days"), T.onTime], [`${t("att_late")} (${t("pdf_times")})`, T.late], [`${t("att_late")} (${t("pdf_hours_unit")})`, H2(T.lateMin)],
     [`${t("att_early")} (${t("pdf_times")})`, T.early], [`${t("att_early")} (${t("pdf_hours_unit")})`, H2(T.earlyMin)], [t("att_missing"), T.missing], [t("att_absent"), T.absent],
     [t("att_pending_abs"), T.pending], [t("att_leave_days"), T.leave], [t("att_mission_days"), T.mission], [t("ci_outside"), T.outside || 0],
-    [`${t("att_after")} (${t("pdf_hours_unit")})`, H2(T.afterMin)], [`${t("att_extra")} (${t("pdf_hours_unit")})`, H2(T.extraMin)], [`${t("att_total_hours")} (${t("pdf_hours_unit")})`, H2(T.onSite)]];
+    [`${t("att_after")} (${t("pdf_hours_unit")})`, H2(T.afterMin)], [`${t("att_extra")} (${t("pdf_hours_unit")})`, H2(T.extraMin)], [t("att_flagged"), T.flagged || 0], [`${t("att_total_hours")} (${t("pdf_hours_unit")})`, H2(T.onSite)]];
   const ws1 = X.utils.aoa_to_sheet(summary); ws1["!cols"] = [{ wch: 36 }, { wch: 24 }];
   const cell = ws1["B9"]; if (cell && cell.v !== "") cell.z = "0.0%";
   const head = [t("emp_no_short"), t("employee"), t("f_department"), t("att_work_days"), t("att_compliance"), `${t("att_late")} (${t("pdf_times")})`, `${t("att_late")} (${t("pdf_hours_unit")})`,
     `${t("att_early")} (${t("pdf_times")})`, `${t("att_early")} (${t("pdf_hours_unit")})`, t("att_missing"), t("att_absent"), t("att_pending_abs"), t("att_leave_days"), t("att_mission_days"),
-    t("ci_outside"), `${t("att_after")} (${t("pdf_hours_unit")})`, `${t("att_extra")} (${t("pdf_hours_unit")})`, `${t("att_total_hours")} (${t("pdf_hours_unit")})`];
-  const line = (s) => [s.workDays, s.compliance === null ? "" : s.compliance, s.late, H2(s.lateMin), s.early, H2(s.earlyMin), s.missing, s.absent, s.pending, s.leave, s.mission, s.outside || 0, H2(s.afterMin), H2(s.extraMin), H2(s.onSite)];
-  const staff = [head, ...D.people.map((p) => [p.employee.emp_no, nameOf(p.employee), dept(p.employee), ...line(p.summary)]), ["", t("pdf_totals"), "", ...line(T)]];
+    t("ci_outside"), `${t("att_after")} (${t("pdf_hours_unit")})`, `${t("att_extra")} (${t("pdf_hours_unit")})`, t("att_flagged"), `${t("att_total_hours")} (${t("pdf_hours_unit")})`, t("ver_checks_off")];
+  const line = (s) => [s.workDays, s.compliance === null ? "" : s.compliance, s.late, H2(s.lateMin), s.early, H2(s.earlyMin), s.missing, s.absent, s.pending, s.leave, s.mission, s.outside || 0, H2(s.afterMin), H2(s.extraMin), s.flagged || 0, H2(s.onSite)];
+  const offText = (p) => (p.checksOff || []).map((k) => t("ver_" + k)).join(", ");
+  const staff = [head, ...D.people.map((p) => [p.employee.emp_no, nameOf(p.employee), dept(p.employee), ...line(p.summary), offText(p)]), ["", t("pdf_totals"), "", ...line(T)]];
   const ws2 = X.utils.aoa_to_sheet(staff); ws2["!cols"] = [{ wch: 10 }, { wch: 32 }, { wch: 18 }, ...head.slice(3).map(() => ({ wch: 12 }))];
   const dh = [t("emp_no_short"), t("employee"), t("date"), t("pdf_day"), t("pdf_shift"), t("att_in"), t("pdf_expected_out"), t("att_out"), `${t("pdf_hours")} (h:mm)`, t("pdf_late_min"), t("pdf_early_min"), `${t("att_after")} (${t("pdf_minutes")})`, `${t("pdf_extra_short")} (${t("pdf_minutes")})`, t("status")];
   const days = [dh];
   for (const p of D.people) for (const d of p.days) {
     if (d.status === "no_data") continue;
     days.push([p.employee.emp_no, nameOf(p.employee), d.date, weekday(d.date), d.shift ? (d.shift.flex ? t("pdf_flex_short") : t("shift_" + d.shift.no)) : "", d.in !== null ? clockText(d.in) : "", d.expectedOut !== null ? clockText(d.expectedOut) : "",
-      d.out !== null ? clockText(d.out) : "", d.onSite ? durText(d.onSite) : "", d.late || 0, d.early || 0, d.after || 0, d.extra || 0, statusText(d) + (d.holiday ? ` · ${tx(d.holiday)}` : "")]);
+      d.out !== null ? clockText(d.out) : "", d.onSite ? durText(d.onSite) : "", d.late || 0, d.early || 0, d.after || 0, d.extra || 0, statusText(d) + (d.holiday ? ` · ${tx(d.holiday)}` : "") + (d.flags || []).map((f) => ` ⚠️ ${f.time} ${f.flags.map(flagLabel).join(", ")}${f.status && f.status !== "open" ? ` (${t("ci_flag_" + f.status)})` : ""}`).join("")]);
   }
   const ws3 = X.utils.aoa_to_sheet(days); ws3["!cols"] = [{ wch: 10 }, { wch: 30 }, { wch: 11 }, { wch: 8 }, { wch: 10 }, ...dh.slice(5, 13).map(() => ({ wch: 11 })), { wch: 28 }];
   if (D.scope !== "person") { X.utils.book_append_sheet(wb, ws1, t("pdf_sheet_summary").slice(0, 31)); X.utils.book_append_sheet(wb, ws2, t("pdf_sheet_staff").slice(0, 31)); }

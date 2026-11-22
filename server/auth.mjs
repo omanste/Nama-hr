@@ -195,7 +195,7 @@ export function registerAuth(api, ctx) {
           ${s.user.role === "hr" ? "OR route_reason='hr_final'" : ""})`).get(own, s.user.id, s.user.id, s.user.id, today, today).n;
     // check-ins outside the work sites waiting for this person (their team; HR/Admin: everyone's), counted with approvals
     const myDepts = s.employee ? db.prepare("SELECT id FROM departments WHERE approver_employee_id=? AND active=1").all(s.employee.id).map((d) => d.id) : [];
-    const pendingCheckins = db.prepare(`SELECT count(*) n FROM att_checkins c JOIN employees e ON e.id=c.employee_id WHERE c.approval='pending' AND c.employee_id<>?
+    const pendingCheckins = db.prepare(`SELECT count(*) n FROM att_checkins c JOIN employees e ON e.id=c.employee_id WHERE (c.approval='pending' OR c.flag_status='open') AND c.employee_id<>?
       ${["hr", "admin"].includes(s.user.role) ? "" : `AND (e.manager_employee_id=? ${myDepts.length ? `OR e.department_id IN (${myDepts.join(",")})` : ""} ${["ceo", "chairman"].includes(s.user.role) ? `OR e.reports_to_top IN ('${s.user.role}','both')` : ""})`}`)
       .get(...(["hr", "admin"].includes(s.user.role) ? [own] : [own, own])).n;
     const pendingCapReviews = ["hr", "admin"].includes(s.user.role) ? db.prepare("SELECT count(*) n FROM cap_reviews WHERE status='pending'").get().n : 0;

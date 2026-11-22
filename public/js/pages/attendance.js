@@ -4,7 +4,7 @@ import { api } from "../api.js";
 import { t, nm, getLang, tx } from "../i18n.js";
 import { h, select, pageHead, empty, num, dmy, todayIso, toast, errText, confirm, clockText, durText, dateTime, viewFile } from "../ui.js";
 import { render as rerender } from "../app.js";
-import { checkinPlace } from "../checkin.js";
+import { checkinPlace, flagLabel } from "../checkin.js";
 import { monthlyData, downloadPdf } from "../att-pdf.js";
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -31,6 +31,7 @@ export function summaryTiles(s) {
     s.restWorked ? tile(num(s.restWorked), t("att_rest_worked")) : null,
     tile(s.afterMin ? durText(s.afterMin) : "—", `${t("att_after")} · ${t("att_n_days", { n: num(s.afterDays || 0) })}`),
     s.extraMin ? tile(durText(s.extraMin), t("att_extra")) : null,
+    tile(num(s.flagged || 0), `⚠️ ${t("att_flagged")}`, s.flagged ? "warn" : ""),
     tile(s.onSite ? durText(s.onSite) : "—", t("att_total_hours")),
     tile(s.onSiteDays ? durText(Math.round(s.onSite / s.onSiteDays)) : "—", t("att_avg_on_site")));
 }
@@ -62,6 +63,8 @@ export async function render(el, _p, { me, query, can }) {
   const online = d.days.some((x) => x.checkins && x.checkins.length);
   if (!d.linked.length && !online && d.employee.att_mode === "machine") notes.push(h("div", { class: "note" }, t("att_not_linked")));
   if (d.start && `${month}-01` < d.start) notes.push(h("div", { class: "note" }, t("att_info_before", { d: dmy(d.start) })));
+  // a check switched off for this person (photo, Face ID, location): said, so a missing 📷 / 🔐 / 📍 isn't a surprise
+  if (d.checksOff && d.checksOff.length) notes.push(h("p", { class: "sub" }, t("ver_off_note", { list: d.checksOff.map((k) => t("ver_" + k)).join(getLang() === "ar" ? "، " : ", ") })));
   if (d.dataTo) notes.push(h("p", { class: "sub" }, t("att_data_to", { d: dmy(d.dataTo) }), " · ", t("att_shift_now"), ": ", h("b", null, t("shift_" + (d.employee.shift || 2)))));
 
   const flex = d.days.some((x) => x.shift && x.shift.flex);
@@ -100,7 +103,8 @@ export async function render(el, _p, { me, query, can }) {
       h("td", { class: "num" }, x.late ? h("span", { class: "bad-text" }, durText(x.late)) : quiet ? "" : "—"),
       h("td", { class: "num" }, x.early ? h("span", { class: "bad-text" }, durText(x.early)) : quiet ? "" : "—"),
       h("td", { class: "num" }, x.after ? h("span", { class: "good-text" }, durText(x.after)) : quiet ? "" : "—"),
-      h("td", null, h("span", { class: `badge ${STATUS_CLASS[x.status] || ""}` }, status), x.info && ["absent", "missing"].includes(x.status) ? h("span", { class: "muted" }, " ", t("att_info_only")) : null),
+      h("td", null, h("span", { class: `badge ${STATUS_CLASS[x.status] || ""}` }, status),
+        cis.some((c) => c.flags && c.flags.length) ? h("span", { class: "ci-flag", title: cis.filter((c) => c.flags && c.flags.length).map((c) => `${c.time} ${c.flags.map(flagLabel).join(", ")}`).join(" · ") }, " ⚠️") : null, x.info && ["absent", "missing"].includes(x.status) ? h("span", { class: "muted" }, " ", t("att_info_only")) : null),
       reqLinks.length || ask || more ? h("td", null, reqLinks, ask, more) : h("td", { "data-label": "" }));
   });
 

@@ -16,6 +16,7 @@ import { attendanceExempt } from "./attendance.mjs";
 import { approvedDepartments } from "./perm.mjs";
 import { removeUpload } from "./files.mjs";
 import { faceidNeeded, peekVerified, takeVerified } from "./webauthn.mjs";
+import { verifyFor, flagsText } from "./verify.mjs";
 
 const bad = (field, message) => Object.assign(new HttpError(400, "invalid", message), { field });
 const ipOf = (req) => String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",").pop().trim();
@@ -202,11 +203,17 @@ export async function resolveMapLink(text, fetchImpl = fetch) {
   return null;
 }
 
+/** A check-in row with its checks and flags read back: checks {photo, faceid, location}, flags [{code, km}]. */
+export const withChecks = (c) => {
+  const parse = (x, d) => { try { return x ? JSON.parse(x) : d; } catch { return d; } };
+  return { ...c, checks: parse(c.checks, null), flags: parse(c.flags, []) };
+};
+
 export function registerCheckin(api, ctx) {
   const { db } = ctx;
   const sitesNow = () => getSetting(db, "att_sites", []);
-  const today = (sess) => db.prepare("SELECT c.id, c.kind, c.at, c.site_id, c.outside, c.reason, c.approval, c.decision_note, c.verified FROM att_checkins c WHERE c.employee_id=? AND substr(c.at,1,10)=? ORDER BY c.at, c.id")
-    .all(sess.employee.id, ctx.today());
+  const today = (sess) => db.prepare("SELECT c.id, c.kind, c.at, c.site_id, c.outside, c.reason, c.approval, c.decision_note, c.verified, c.checks, c.flags, c.flag_status, c.flag_note FROM att_checkins c WHERE c.employee_id=? AND substr(c.at,1,10)=? ORDER BY c.at, c.id")
+    .all(sess.employee.id, ctx.today()).map(withChecks);
 
   // the home page card: may I check in, have I accepted the notice, what did I record today
   api.get("/api/attendance/checkin/today", (req, res) => {
@@ -218,7 +225,7 @@ export function registerCheckin(api, ctx) {
     const emp = sess.employee, day = ctx.today(), now = clockMin(ctx.clock()), shift = dayShift(db, emp, day);
     const next = items.length && items[items.length - 1].kind === "in" ? "out" : "in";
     const open = openExtra(db, emp.id, day);
-    send(req, res, 200, { enabled: true, consent: !!sess.user.checkin_consent_at, items: items.map((c) => ({ ...c, site: sites.find((s) => s.id === c.site_id) || null })),
+    send(req, res, 200, { enabled: true, verify: verifyFor(db, emp), consent: !!sess.user.checkin_consent_at, items: items.map((c) => ({ ...c, site: sites.find((s) => s.id === c.site_id) || null })),
       next, sites: sites.length, shift_end: pad2(shift.end),
       // flexible hours: the on-time window, and once arrived, today's own check-out time (the home badge counts down to it)
       flex: shift.flex ? { from: pad2(shift.flex.from), to: pad2(shift.flex.to), hours: shift.flex.hours } : null,
@@ -256,17 +263,22 @@ export function registerCheckin(api, ctx) {
     if (!may.ok) throw new HttpError(403, "forbidden", may.why === "exempt" ? "Top management isn't under the attendance policy" : "Online check-in isn't on for you");
     if (!sess.user.checkin_consent_at) throw new HttpError(409, "consent_required", "Please read and accept the notice first");
     const q = req.query;
-    // Face ID / fingerprint just before (required unless HR exempted the person): one verification, one check-in
-    const faceCred = peekVerified(sess); // used up only once the check-in is saved (asking for a reason doesn't spend it)
-    if (faceidNeeded(ctx, emp) && !faceCred) throw new HttpError(403, "faceid_required", "Confirm it's you with your face or fingerprint first");
+    // what this person is asked for (Admin's switches, or their own): a check that is on but fails still saves the
+    // check-in — flagged, for the manager to accept or not
+    const V = verifyFor(db, emp), flags = [];
+    const faceCred = V.faceid ? peekVerified(sess) : null; // used up only once the check-in is saved (asking for a reason doesn't spend it)
+    if (V.faceid && !faceCred) flags.push({ code: "faceid_failed" });
     const kind = q.get("kind");
     if (!["in", "out"].includes(kind)) throw bad("kind", "Check in or check out?");
-    const lat = Number(q.get("lat")), lng = Number(q.get("lng")), acc = q.get("acc") === null ? null : Number(q.get("acc"));
-    if (!q.get("lat") || !q.get("lng") || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180)
-      throw bad("location", "Your location is needed — allow location for this site and try again");
-    const where = siteOf(sitesNow(), { lat, lng });
+    let lat = Number(q.get("lat")), lng = Number(q.get("lng"));
+    const acc = q.get("acc") === null ? null : Number(q.get("acc"));
+    const hasLoc = V.location && !!q.get("lat") && !!q.get("lng") && Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+    if (!hasLoc) { lat = null; lng = null; }
+    if (V.location && !hasLoc) flags.push({ code: "no_location" });
+    const where = hasLoc ? siteOf(sitesNow(), { lat, lng }) : { inside: null, nearest: null, distance: null };
     const reason = String(q.get("reason") || "").trim().slice(0, 300);
-    if (!where.inside && !reason) throw Object.assign(bad("reason", "You're outside every work site — say why"), { extra: { outside: true, nearest: where.nearest, distance: where.distance } });
+    if (hasLoc && !where.inside && !reason) throw Object.assign(bad("reason", "You're outside every work site — say why"), { extra: { outside: true, nearest: where.nearest, distance: where.distance } });
+    if (hasLoc && !where.inside) flags.push({ code: "outside", km: where.distance === null ? null : Math.round(where.distance / 100) / 10 });
     // leaving more than 30 minutes after the shift on a working day: why (the extra time goes to the manager, then HR)
     const today = ctx.today(), now = clockMin(ctx.clock()), shift = dayShift(db, emp, today);
     const lateOut = kind === "out" && workingDay(db, emp, today) && now > shift.end + AFTER_HOURS_MIN;
@@ -274,26 +286,32 @@ export function registerCheckin(api, ctx) {
     const extraReason = String(q.get("extra_reason") || "").trim().slice(0, 300) || (open && open.reason) || "";
     if (lateOut && !extraReason)
       throw Object.assign(bad("extra_reason", "You're leaving after your working hours — say why"), { extra: { after_hours: true, shift_end: pad2(shift.end) } });
-    const photo = await storeUpload(ctx, req, { employeeId: emp.id, kind: "checkin", body: photoBody });
+    let photo = null;
+    if (V.photo) {
+      if (photoBody && photoBody.length) photo = await storeUpload(ctx, req, { employeeId: emp.id, kind: "checkin", body: photoBody });
+      else flags.push({ code: "no_photo" });
+      if (photo && q.get("photo_dark") === "1") flags.push({ code: "photo_unclear" }); // the page measured it almost black
+    }
     const verifiedFace = faceCred ? 1 : 0;
+    const checks = { photo: !!photo, faceid: !!verifiedFace, location: hasLoc };
     const at = `${today} ${ctx.clock()}`;
     const row = tx(db, () => {
-      const r = db.prepare(`INSERT INTO att_checkins(employee_id,kind,at,lat,lng,accuracy_m,site_id,outside,reason,photo_file_id,device_id,ip,user_agent,created_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(emp.id, kind, at, lat, lng, Number.isFinite(acc) ? Math.round(acc) : null, where.inside ? where.inside.id : null,
-        where.inside ? 0 : 1, reason || null, photo.id, String(q.get("device") || "").slice(0, 64) || null, ipOf(req), String(req.headers["user-agent"] || "").slice(0, 200), nowIso());
+      const r = db.prepare(`INSERT INTO att_checkins(employee_id,kind,at,lat,lng,accuracy_m,site_id,outside,reason,photo_file_id,device_id,ip,user_agent,created_at,checks,flags,flag_status)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(emp.id, kind, at, lat, lng, hasLoc && Number.isFinite(acc) ? Math.round(acc) : null, where.inside ? where.inside.id : null,
+        hasLoc && !where.inside ? 1 : 0, reason || null, photo ? photo.id : null, String(q.get("device") || "").slice(0, 64) || null, ipOf(req), String(req.headers["user-agent"] || "").slice(0, 200), nowIso(),
+        JSON.stringify(checks), flags.length ? JSON.stringify(flags) : null, flags.length ? "open" : null);
       if (verifiedFace) { db.prepare("UPDATE att_checkins SET verified=1 WHERE id=?").run(r.lastInsertRowid); takeVerified(sess); }
-      // outside every site: it counts only once the manager approves it
-      if (!where.inside) db.prepare("UPDATE att_checkins SET approval='pending' WHERE id=?").run(r.lastInsertRowid);
       const c = db.prepare("SELECT * FROM att_checkins WHERE id=?").get(r.lastInsertRowid);
-      audit(db, sess.user.id, `checkin.${kind}`, "employee", emp.id, null, { id: c.id, at, site: c.site_id, outside: c.outside }); // no location or photo in the log
+      audit(db, sess.user.id, `checkin.${kind}`, "employee", emp.id, null, { id: c.id, at, site: c.site_id, outside: c.outside, checks, flags: flags.map((f) => f.code) }); // no location or photo in the log
       return c;
     });
-    // outside every site: the manager is asked to approve it (the direct manager, else the department's approver; HR if neither)
-    if (row.outside) {
-      const to = approversOf(db, emp);
-      notify(ctx, to.length ? to : hrTeam(db, { except: [sess.user.id] }), {
-        title_ar: `${kind === "in" ? "تسجيل حضور" : "تسجيل انصراف"} خارج مواقع العمل بانتظار موافقتك`, title_en: `${kind === "in" ? "Check-in" : "Check-out"} outside the work sites awaiting your approval`,
-        body_ar: `${emp.name_ar || emp.name_en} · ${at.slice(11)} — ${reason}`, body_en: `${emp.name_en || emp.name_ar} · ${at.slice(11)} — ${reason}`, link: "#/approvals" });
+    // a failed check: the direct manager (or the department's approver) and HR are told — "Name checked in 08:52 — outside work site (1.2 km away)"
+    if (flags.length) {
+      const to = [...new Set([...approversOf(db, emp), ...hrTeam(db, { except: [sess.user.id] })])].filter((id) => id !== sess.user.id);
+      const verb = (lang) => (kind === "in" ? (lang === "ar" ? "سجّل حضوره" : "checked in") : lang === "ar" ? "سجّل انصرافه" : "checked out");
+      notify(ctx, to, {
+        title_ar: `⚠️ ${emp.name_ar || emp.name_en} ${verb("ar")} ${at.slice(11)} — ${flagsText(flags, "ar")}`, title_en: `⚠️ ${emp.name_en || emp.name_ar} ${verb("en")} ${at.slice(11)} — ${flagsText(flags, "en")}`,
+        body_ar: reason ? `السبب: ${reason}` : "راجع التسجيل واقبله أو لا تقبله", body_en: reason ? `Reason: ${reason}` : "Review it: accept it or not", link: "#/approvals" });
     }
     let extra = null;
     if (lateOut) {
@@ -304,7 +322,7 @@ export function registerCheckin(api, ctx) {
       } else extra = fileForPerson(ctx, emp, sess.user.id, { type: "overtime", ...v, reason: extraReason, details: { source: "checkout", checkin_id: row.id } });
     }
     const after = dayShift(db, emp, today); // with today's arrival saved: the person's own check-out time
-    send(req, res, 201, { checkin: { id: row.id, kind: row.kind, at: row.at, outside: !!row.outside, approval: row.approval, site: where.inside }, extra: extra && { id: extra.id, minutes: extra.minutes },
+    send(req, res, 201, { checkin: { id: row.id, kind: row.kind, at: row.at, outside: !!row.outside, approval: row.approval, site: where.inside, checks, flags }, extra: extra && { id: extra.id, minutes: extra.minutes },
       expected_out: after.flex && workingDay(db, emp, today) ? pad2(after.end) : null, early: kind === "out" && after.flex && workingDay(db, emp, today) && now < after.end ? after.end - now : 0 });
   });
 
@@ -313,13 +331,13 @@ export function registerCheckin(api, ctx) {
     const sess = req.sess, emp = sess.employee, q = req.query;
     if (!canCheckIn(db, emp).ok) throw new HttpError(403, "forbidden", "Online check-in isn't on for you");
     const kind = q.get("kind") === "out" ? "out" : "in", lat = Number(q.get("lat")), lng = Number(q.get("lng"));
-    if (!q.get("lat") || !q.get("lng") || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180)
-      throw bad("location", "Your location is needed — allow location for this site and try again");
-    const where = siteOf(sitesNow(), { lat, lng });
+    // no location (switched off for this person, or the phone couldn't give one): nothing to compare with the sites
+    const hasLoc = verifyFor(db, emp).location && !!q.get("lat") && !!q.get("lng") && Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+    const where = hasLoc ? siteOf(sitesNow(), { lat, lng }) : { inside: true, nearest: null, distance: null };
     const today = ctx.today(), now = clockMin(ctx.clock()), shift = dayShift(db, emp, today);
     const after = kind === "out" && workingDay(db, emp, today) && now > shift.end + AFTER_HOURS_MIN;
     const open = after ? openExtra(db, emp.id, today) : null;
-    send(req, res, 200, { inside: !!where.inside, site: where.inside, nearest: where.nearest, distance: where.distance,
+    send(req, res, 200, { inside: !!where.inside, site: where.inside === true ? null : where.inside, nearest: where.nearest, distance: where.distance,
       after_hours: after && !(open && open.reason), shift_end: pad2(shift.end),
       // flexible hours: checking out before one's own check-out time counts as leaving early (the page asks first)
       early: kind === "out" && shift.flex && shift.flex.effIn !== null && workingDay(db, emp, today) && now < shift.end ? shift.end - now : 0 });
@@ -367,7 +385,8 @@ export function registerCheckin(api, ctx) {
     const sites = sitesNow(), siteName = (id) => sites.find((x) => x.id === id) || null;
     const one = (c) => c && { id: c.id, time: c.at.slice(11, 16), site: c.site_id ? { name_ar: (siteName(c.site_id) || {}).name_ar || null, name_en: (siteName(c.site_id) || {}).name_en || null } : null,
       outside: !!c.outside, reason: c.reason || null, approval: c.approval || null, decision_note: c.decision_note || null,
-      photo_file_id: c.photo_file_id || null, lat: c.lat, lng: c.lng, accuracy: c.accuracy_m, verified: !!c.verified };
+      photo_file_id: c.photo_file_id || null, lat: c.lat, lng: c.lng, accuracy: c.accuracy_m, verified: !!c.verified,
+      checks: withChecks(c).checks, flags: withChecks(c).flags, flag_status: c.flag_status || null, flag_note: c.flag_note || null };
     const byKey = new Map();
     for (const c of list) {
       const k = `${c.employee_id}|${c.at.slice(0, 10)}`;
@@ -397,9 +416,9 @@ export function registerCheckin(api, ctx) {
 
   api.get("/api/attendance/checkins/pending", (req, res) => {
     const items = db.prepare(`SELECT c.*, e.emp_no, e.name_ar, e.name_en, e.photo_file_id emp_photo FROM att_checkins c JOIN employees e ON e.id=c.employee_id
-      WHERE c.approval='pending' ORDER BY c.at`).all().filter((c) => mayDecideCheckin(db, req.sess, c));
+      WHERE c.approval='pending' OR c.flag_status='open' ORDER BY c.at`).all().filter((c) => mayDecideCheckin(db, req.sess, c)).map(withChecks);
     const sites = getSetting(db, "att_sites", []);
-    send(req, res, 200, { items: items.map((c) => ({ ...c, nearest: siteOf(sites, c).nearest, distance: c.lat === null ? null : siteOf(sites, c).distance })) });
+    send(req, res, 200, { items: items.map((c) => ({ ...c, nearest: c.lat === null ? null : siteOf(sites, c).nearest, distance: c.lat === null ? null : siteOf(sites, c).distance })) });
   });
   for (const action of ["approve", "reject"]) api.post(`/api/attendance/checkins/:id/${action}`, async (req, res) => {
     const sess = req.sess;
@@ -408,16 +427,25 @@ export function registerCheckin(api, ctx) {
     const c = db.prepare("SELECT * FROM att_checkins WHERE id=?").get(Number(req.params.id));
     if (!c) throw new HttpError(404, "not_found", "Not found");
     if (!mayDecideCheckin(db, sess, c)) throw new HttpError(403, "forbidden", "You do not have permission for this");
-    if (c.approval !== "pending") throw new HttpError(409, "not_pending", "This has already been decided");
-    if (action === "reject" && !note) throw bad("note", "Please give a reason");
+    const flagged = c.flag_status === "open";
+    if (c.approval !== "pending" && !flagged) throw new HttpError(409, "not_pending", "This has already been decided");
+    if (action === "reject" && !note && !flagged) throw bad("note", "Please give a reason");
     const approval = action === "approve" ? "approved" : "rejected";
     tx(db, () => {
-      db.prepare("UPDATE att_checkins SET approval=?, decided_by=?, decided_at=?, decision_note=? WHERE id=?").run(approval, sess.user.id, nowIso(), note || null, c.id);
-      audit(db, sess.user.id, `checkin.${action}`, "employee", c.employee_id, { id: c.id, approval: c.approval }, { id: c.id, approval, note });
+      if (flagged) {
+        // a flagged check-in: Accepted (it stands) or Not accepted (it no longer counts), with an optional comment
+        db.prepare("UPDATE att_checkins SET flag_status=?, flag_by=?, flag_at=?, flag_note=? WHERE id=?").run(action === "approve" ? "accepted" : "rejected", sess.user.id, nowIso(), note || null, c.id);
+        if (action === "reject" || c.approval === "pending") db.prepare("UPDATE att_checkins SET approval=?, decided_by=?, decided_at=?, decision_note=? WHERE id=?").run(approval, sess.user.id, nowIso(), note || null, c.id);
+        audit(db, sess.user.id, `checkin.flag_${action === "approve" ? "accept" : "reject"}`, "employee", c.employee_id, { id: c.id, flag_status: "open", flags: c.flags }, { id: c.id, flag_status: action === "approve" ? "accepted" : "rejected", note });
+      } else {
+        db.prepare("UPDATE att_checkins SET approval=?, decided_by=?, decided_at=?, decision_note=? WHERE id=?").run(approval, sess.user.id, nowIso(), note || null, c.id);
+        audit(db, sess.user.id, `checkin.${action}`, "employee", c.employee_id, { id: c.id, approval: c.approval }, { id: c.id, approval, note });
+      }
     });
     const owner = (db.prepare("SELECT id FROM users WHERE employee_id=? AND active=1").get(c.employee_id) || {}).id;
-    if (owner) notify(ctx, [owner], { title_ar: approval === "approved" ? "تمت الموافقة على تسجيلك خارج مواقع العمل" : "رُفض تسجيلك خارج مواقع العمل",
-      title_en: approval === "approved" ? "Your check-in outside the work sites was approved" : "Your check-in outside the work sites was rejected",
+    if (owner) notify(ctx, [owner], { ...(flagged ? { title_ar: approval === "approved" ? "قُبل تسجيلك المعلَّم ⚠️" : "لم يُقبل تسجيلك المعلَّم ⚠️",
+      title_en: approval === "approved" ? "Your flagged check-in was accepted" : "Your flagged check-in was not accepted" } : { title_ar: approval === "approved" ? "تمت الموافقة على تسجيلك خارج مواقع العمل" : "رُفض تسجيلك خارج مواقع العمل",
+      title_en: approval === "approved" ? "Your check-in outside the work sites was approved" : "Your check-in outside the work sites was rejected" }),
       body_ar: `${c.at}${note ? ` — ${note}` : ""}`, body_en: `${c.at}${note ? ` — ${note}` : ""}`, link: `#/attendance?m=${c.at.slice(0, 7)}` });
     send(req, res, 200, { ok: true, approval });
   });

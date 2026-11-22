@@ -13,10 +13,12 @@ import { getEmployee } from "./employees.mjs";
 import { TYPES, PERMISSION_TYPES, isIsoDate, addDays, clockMin, permissionSpan } from "./leave.mjs";
 import { shiftFor, isRestDay, flexRules } from "./shifts.mjs";
 import { readStamp } from "../public/js/punches.js";
+import { verifyFor, checksOff } from "./verify.mjs";
 
 const err = (status, code, message, field) => Object.assign(new HttpError(status, code, message), field ? { field } : {});
 const forbidden = () => new HttpError(403, "forbidden", "You do not have permission for this");
 const DUP_GAP = 15; // punches closer than this (minutes) are one punch pressed twice
+const parseJson = (x, d) => { try { return x ? JSON.parse(x) : d; } catch { return d; } };
 const toMin = (at) => +at.slice(11, 13) * 60 + +at.slice(14, 16);
 const MANAGERS = ["hr", "admin"]; // see everyone's attendance with names (policy §7, §18)
 /** The CEO and the Chairman are outside the fingerprint policy: not measured, not in the reports. */
@@ -123,7 +125,8 @@ export function employeeDays(db, emp, from, to, today, source = "all", nowMin = 
     if (!byDay.has(k)) byDay.set(k, []);
     const s = c.site_id && sites.get(c.site_id);
     byDay.get(k).push({ id: c.id, kind: c.kind, time: c.at.slice(11, 16), outside: !!c.outside, reason: c.reason, site_ar: s ? s.name_ar : null, site_en: s ? s.name_en : null,
-      photo_file_id: c.photo_file_id, lat: c.lat, lng: c.lng, accuracy: c.accuracy_m, approval: c.approval, decision_note: c.decision_note, verified: !!c.verified });
+      photo_file_id: c.photo_file_id, lat: c.lat, lng: c.lng, accuracy: c.accuracy_m, approval: c.approval, decision_note: c.decision_note, verified: !!c.verified,
+      checks: parseJson(c.checks, null), flags: parseJson(c.flags, []), flag_status: c.flag_status || null, flag_note: c.flag_note || null });
   }
   const grace = Number(getSetting(db, "late_grace_min", 15)) || 0;
   const reqs = db.prepare("SELECT * FROM leave_requests WHERE employee_id=? AND status IN ('pending','approved') AND start_date<=? AND end_date>=?").all(emp.id, to, from);
@@ -170,7 +173,7 @@ export function employeeDays(db, emp, from, to, today, source = "all", nowMin = 
 
 /** Totals over days (policy §18: approved leave and tasks are left out of the compliance rate). */
 export function summarize(days) {
-  const s = { afterMin: 0, afterDays: 0, extraMin: 0, outside: 0, workDays: 0, present: 0, onTime: 0, late: 0, lateMin: 0, early: 0, earlyMin: 0, missing: 0, absent: 0, pending: 0, leave: 0, mission: 0, restWorked: 0, onSite: 0, onSiteDays: 0, compliance: null };
+  const s = { flagged: 0, afterMin: 0, afterDays: 0, extraMin: 0, outside: 0, workDays: 0, present: 0, onTime: 0, late: 0, lateMin: 0, early: 0, earlyMin: 0, missing: 0, absent: 0, pending: 0, leave: 0, mission: 0, restWorked: 0, onSite: 0, onSiteDays: 0, compliance: null };
   for (const d of days) {
     if (["rest_worked", "holiday_worked"].includes(d.status)) s.restWorked++;
     if (d.status === "leave") s.leave++;
@@ -190,6 +193,7 @@ export function summarize(days) {
     if (d.status === "pending") s.pending++;
     if (d.onSite) { s.onSite += d.onSite; s.onSiteDays++; }
     if (d.checkins && d.checkins.some((c) => c.outside)) s.outside++; // a day with an online check-in outside the work sites
+    if (d.checkins) s.flagged += d.checkins.filter((c) => c.flags && c.flags.length).length; // check-ins with a failed check (⚠️)
   }
   s.compliance = s.workDays ? Math.round((s.onTime / s.workDays) * 1000) / 10 : null;
   return s;
@@ -250,7 +254,7 @@ export function attendanceReport(db, sess, from, to, today, deptId = 0, source =
   const depts = new Map();
   const people = [];
   for (const e of all) {
-    if (mineDepts && !mineDepts.includes(e.department_id)) continue;
+    if (mineDepts && !mineDepts.includes(e.department_id) && !named.has(e.id)) continue; // a manager: their departments and the people who report to them
     const { days } = employeeDays(db, e, from, to, today, source, nowMin);
     const s = summarize(days);
     if (!s.workDays && !s.leave && !s.mission && !s.restWorked) continue; // no data for this person in the period
@@ -265,7 +269,7 @@ export function attendanceReport(db, sess, from, to, today, deptId = 0, source =
   const total = rows.reduce((a, t) => { for (const k of Object.keys(t)) if (typeof t[k] === "number" && !["id", "compliance"].includes(k)) a[k] = (a[k] || 0) + t[k]; return a; }, {});
   total.compliance = total.workDays ? Math.round((total.onTime / total.workDays) * 1000) / 10 : null;
   // requests still open, and how long HR took to settle fingerprint corrections (§18)
-  const ids = all.filter((e) => !mineDepts || mineDepts.includes(e.department_id)).map((e) => e.id);
+  const ids = all.filter((e) => !mineDepts || mineDepts.includes(e.department_id) || named.has(e.id)).map((e) => e.id);
   const inIds = ids.length ? `(${ids.join(",")})` : "(-1)";
   const open = db.prepare(`SELECT count(*) n FROM leave_requests WHERE employee_id IN ${inIds} AND start_date<=? AND end_date>=?
     AND (status='pending' OR (status='approved' AND hr_class IS NULL AND type IN ('early','late','break','correction')))`).get(to, from).n;
@@ -362,6 +366,7 @@ export function registerAttendance(api, ctx) {
     const review = db.prepare("SELECT r.*, u.username FROM att_reviews r LEFT JOIN users u ON u.id=r.user_id WHERE r.employee_id=? AND r.month=?").get(emp.id, month) || null;
     const linked = db.prepare("SELECT machine_no FROM att_devices WHERE employee_id=? AND ignored=0").all(emp.id).map((r) => r.machine_no);
     send(req, res, 200, { employee: { id: emp.id, emp_no: emp.emp_no, name_ar: emp.name_ar, name_en: emp.name_en, shift: emp.shift, join_date: emp.join_date, att_mode: emp.att_mode || "both" },
+      verify: verifyFor(db, emp), checksOff: checksOff(db, emp),
       grace: Number(getSetting(db, "late_grace_min", 15)) || 0,
       flex: (() => { const f = flexRules(db); return f ? { from: f.from, to: f.to, hours: f.hours } : null; })(),
       month, source, days, summary: summarize(days), review, linked, dataFrom, dataTo, start: getSetting(db, "attendance_start", null),
@@ -411,7 +416,10 @@ export function registerAttendance(api, ctx) {
       people.push({ employee: { id: e.id, emp_no: e.emp_no, name_ar: e.name_ar, name_en: e.name_en, dept_ar: e.dept_ar || null, dept_en: e.dept_en || null, shift: e.shift, job: e.job_title || null },
         summary, days: days.map((x) => ({ date: x.date, status: x.status, leave: x.leave || null, missing: x.missing, in: x.in, out: x.out, expectedOut: x.expectedOut ?? null,
           onSite: x.onSite || 0, late: x.late || 0, early: x.early || 0, after: x.after || 0, extra: x.extra || 0, holiday: x.holiday || null, info: !!x.info,
-          shift: x.shift, outside: !!(x.checkins && x.checkins.some((c) => c.outside)) })) });
+          shift: x.shift, outside: !!(x.checkins && x.checkins.some((c) => c.outside)),
+          flags: (x.checkins || []).filter((c) => c.flags && c.flags.length).map((c) => ({ kind: c.kind, time: c.time, flags: c.flags, status: c.flag_status })),
+          checks: (x.checkins || []).map((c) => ({ kind: c.kind, time: c.time, checks: c.checks })) })),
+        verify: verifyFor(db, e), checksOff: checksOff(db, e) });
     }
     const total = summarize([]);
     for (const p of people) for (const k of Object.keys(total)) if (typeof p.summary[k] === "number" && k !== "compliance") total[k] += p.summary[k];
@@ -435,7 +443,7 @@ export function registerAttendance(api, ctx) {
   api.get("/api/attendance/report", (req, res) => {
     const sess = req.sess;
     const mine = approvedDepartments(db, sess.employee && sess.employee.id);
-    if (!["hr", "admin", "ceo", "chairman", "consultant", "accounts"].includes(sess.user.role) && !mine.length) throw forbidden();
+    if (!["hr", "admin", "ceo", "chairman", "consultant", "accounts"].includes(sess.user.role) && !mine.length && !teamOf(db, sess).length) throw forbidden(); // a direct manager: their own people
     const today = ctx.today();
     let [from, to] = lastWeek(today);
     if (req.query.get("from")) from = req.query.get("from");
@@ -447,8 +455,8 @@ export function registerAttendance(api, ctx) {
     r.source = source;
     if (req.query.get("format") === "csv") {
       const h = (m) => (m / 60).toFixed(1);
-      const head = ["Work days", "On time", "Compliance %", "Late (times)", "Late (hours)", "Left early (times)", "Left early (hours)", "Missing punch", "Absent (unexcused)", "Absence pending a request", "Leave days", "External task days", "Worked on a rest day", "Outside work sites (days)", "Worked after official hours (days)", "Worked after official hours (hours)", "Approved extra time (hours)"];
-      const vals = (s) => [s.workDays, s.onTime, s.compliance ?? "", s.late, h(s.lateMin), s.early, h(s.earlyMin), s.missing, s.absent, s.pending, s.leave, s.mission, s.restWorked, s.outside || 0, s.afterDays || 0, h(s.afterMin || 0), h(s.extraMin || 0)];
+      const head = ["Work days", "On time", "Compliance %", "Late (times)", "Late (hours)", "Left early (times)", "Left early (hours)", "Missing punch", "Absent (unexcused)", "Absence pending a request", "Leave days", "External task days", "Worked on a rest day", "Outside work sites (days)", "Worked after official hours (days)", "Worked after official hours (hours)", "Approved extra time (hours)", "Flagged check-ins"];
+      const vals = (s) => [s.workDays, s.onTime, s.compliance ?? "", s.late, h(s.lateMin), s.early, h(s.earlyMin), s.missing, s.absent, s.pending, s.leave, s.mission, s.restWorked, s.outside || 0, s.afterDays || 0, h(s.afterMin || 0), h(s.extraMin || 0), s.flagged || 0];
       const lines = [["Department", "Staff", ...head].join(",")];
       for (const d of r.departments) lines.push([d.name_en || d.name_ar || "—", d.staff, ...vals(d)].join(","));
       if (r.people.length) {

@@ -10,6 +10,7 @@ import { rerouteFallbacks } from "./requests.mjs";
 import { shiftTimes, SHIFTS, flexOn, FLEX_DEFAULTS } from "./shifts.mjs";
 import { overtimeRates } from "./overtime.mjs";
 import { faceidMode, FACEID_MODES } from "./webauthn.mjs";
+import { verifyDefaults, CHECKS } from "./verify.mjs";
 
 export const DEFAULT_CONTRACT_TYPES = ["Unlimited", "Limited", "Probation", "Part-time"];
 /** Leave that needs the CEO's final approval after the manager's (exceptions to the normal policy). */
@@ -67,6 +68,8 @@ export function readSettings(db) {
     flex_hours: getSetting(db, "flex_hours", FLEX_DEFAULTS.flex_hours), remind_before_out_min: getSetting(db, "remind_before_out_min", 10),
     // Face ID / fingerprint at check-in: required (default), optional, or off — HR can exempt a person on their profile
     faceid_mode: faceidMode(db),
+    // check-in verification for everyone (each person can be set apart on their profile): photo, Face ID, location
+    verify: verifyDefaults(db),
     // external tasks: the allowance for each day outside Muscat and each overnight stay (OMR; HR sets them)
     mission_day_allowance: getSetting(db, "mission_day_allowance", 0),
     mission_night_allowance: getSetting(db, "mission_night_allowance", 0),
@@ -174,7 +177,7 @@ export function registerAdmin(api, ctx) {
   api.put("/api/settings", async (req, res) => {
     need(req.sess, "settings.edit");
     const b = await readJson(req);
-    const allowed = ["managers_approver_employee_id", "managers_approver_title", "chairman_employee_id", "ceo_final_types", "att_sites", "late_grace_min", "remind_checkin_min", "remind_checkout_min", "remind_before_out_min", "flex_on", "flex_start", "flex_end", "flex_hours", "faceid_mode", "contract_types", "shift_1_start", "shift_1_end", "shift_2_start", "shift_2_end", "shift_3_start", "shift_3_end", "shift_4_start", "shift_4_end", "ramadan_start", "ramadan_end", "ramadan_hours", "attendance_start", "shift_self_select", "official_holidays"];
+    const allowed = ["managers_approver_employee_id", "managers_approver_title", "chairman_employee_id", "ceo_final_types", "att_sites", "late_grace_min", "remind_checkin_min", "remind_checkout_min", "remind_before_out_min", "flex_on", "flex_start", "flex_end", "flex_hours", "faceid_mode", "verify", "verify_photo", "verify_faceid", "verify_location", "contract_types", "shift_1_start", "shift_1_end", "shift_2_start", "shift_2_end", "shift_3_start", "shift_3_end", "shift_4_start", "shift_4_end", "ramadan_start", "ramadan_end", "ramadan_hours", "attendance_start", "shift_self_select", "official_holidays"];
     if ("official_holidays" in b) {
       if (!Array.isArray(b.official_holidays) || !b.official_holidays.every((x) => x && isIsoDate(x.date))) throw invalid("official_holidays", "each holiday needs a valid date");
       b.official_holidays = b.official_holidays.map((x) => ({ date: x.date, name: String(x.name || "").trim().slice(0, 80) })).sort((x, y) => (x.date < y.date ? -1 : 1));
@@ -200,6 +203,14 @@ export function registerAdmin(api, ctx) {
     if ("chairman_employee_id" in b && b.chairman_employee_id !== null && !getEmployee(db, b.chairman_employee_id)) throw invalid("chairman_employee_id", "unknown employee");
     if ("late_grace_min" in b && !(Number.isInteger(b.late_grace_min) && b.late_grace_min >= 0 && b.late_grace_min <= 60)) throw invalid("late_grace_min", "grace must be 0–60 minutes");
     if ("faceid_mode" in b && !FACEID_MODES.includes(b.faceid_mode)) throw invalid("faceid_mode", "required, optional or off");
+    if ("verify" in b) {
+      if (!b.verify || typeof b.verify !== "object" || Object.keys(b.verify).some((k) => !CHECKS.includes(k) || typeof b.verify[k] !== "boolean")) throw invalid("verify", "photo, faceid and location: true or false");
+      // stored as one setting each (verify_photo …); Face ID keeps the older faceid_mode in step
+      for (const [k, v] of Object.entries(b.verify)) b[`verify_${k}`] = v;
+      if ("faceid" in b.verify && !("faceid_mode" in b)) b.faceid_mode = b.verify.faceid ? "required" : "off";
+      delete b.verify;
+    } else if ("faceid_mode" in b) b.verify_faceid = b.faceid_mode === "required";
+    for (const c of CHECKS) if (`verify_${c}` in b && typeof b[`verify_${c}`] !== "boolean") throw invalid(`verify_${c}`, "must be true or false");
     if ("flex_on" in b && typeof b.flex_on !== "boolean") throw invalid("flex_on", "must be true or false");
     for (const k of ["flex_start", "flex_end"]) if (k in b && !/^(0[5-9]|1[0-2]):[0-5]\d$/.test(String(b[k]))) throw invalid(k, "time must be 05:00–12:59 (HH:MM)");
     { const fs_ = "flex_start" in b ? b.flex_start : getSetting(db, "flex_start", FLEX_DEFAULTS.flex_start), fe = "flex_end" in b ? b.flex_end : getSetting(db, "flex_end", FLEX_DEFAULTS.flex_end);

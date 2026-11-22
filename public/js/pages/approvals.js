@@ -3,6 +3,7 @@ import { t, nm, getLang } from "../i18n.js";
 import { h, when, amountText, daysText, pageHead, empty, select, field, dmy, toast, errText, todayIso, confirm, viewFile, avatar } from "../ui.js";
 import { render as rerender } from "../app.js";
 import { decide } from "./request.js";
+import { flagLabel } from "../checkin.js";
 
 // leaves that need a supporting document before approval (Art. 47, 84)
 const PROOF = new Set(["sick", "bereavement", "marriage", "paternity", "maternity", "hajj", "umrah", "exam", "patient_care"]);
@@ -12,22 +13,26 @@ function outsideSection(list) {
   if (!list.length) return null;
   const act = (c, action) => async () => {
     let note = "";
-    if (action === "reject") { note = await confirm(t("ci_reject_q"), { input: t("reject_reason"), required: true, okText: t("reject"), danger: true }); if (note === null) return; }
+    const flagged = c.flag_status === "open";
+    // a flagged check-in: Accepted / Not accepted, the comment optional; an older one outside the sites: a reason to reject
+    if (flagged) { note = await confirm(t(action === "approve" ? "ci_flag_accept_q" : "ci_flag_reject_q"), { input: t("ci_flag_comment"), required: false, okText: t(action === "approve" ? "ci_flag_accept" : "ci_flag_reject"), danger: action !== "approve" }); if (note === null) return; }
+    else if (action === "reject") { note = await confirm(t("ci_reject_q"), { input: t("reject_reason"), required: true, okText: t("reject"), danger: true }); if (note === null) return; }
     try { await api.post(`/api/attendance/checkins/${c.id}/${action}`, { note }); toast(t("saved")); rerender(); } catch (e) { toast(errText(e), "bad"); }
   };
   const near = (c) => (c.nearest ? t("ci_nearest", { name: getLang() === "en" ? c.nearest.name_en || c.nearest.name_ar : c.nearest.name_ar || c.nearest.name_en, km: ((c.distance || 0) / 1000).toFixed(1) }) : "");
-  return h("section", { class: "card" }, h("h2", null, t("ci_pending_title"), " ", h("span", { class: "badge b-pending" }, list.length)),
-    h("p", { class: "sub" }, t("ci_pending_hint")),
+  return h("section", { class: "card" }, h("h2", null, t("ci_flags_title"), " ", h("span", { class: "badge b-pending" }, list.length)),
+    h("p", { class: "sub" }, t("ci_flags_hint")),
     h("div", { class: "list" }, list.map((c) => h("div", { class: "item", style: { flexWrap: "wrap" } },
       avatar({ ...c, photo_file_id: c.emp_photo }, 36),
       h("div", { class: "grow" }, h("div", { class: "title" }, nm(c), h("span", { class: "muted" }, ` · ${c.emp_no}`)),
         h("div", { class: "meta" }, t(c.kind === "in" ? "ci_check_in" : "ci_check_out"), ` · ${dmy(c.at.slice(0, 10))} ${c.at.slice(11)}`, near(c) ? ` · ${near(c)}` : ""),
-        h("div", { dir: "auto" }, "“", c.reason, "”")),
+        c.flags && c.flags.length ? h("div", { class: "ci-flag" }, "⚠️ ", c.flags.map(flagLabel).join(getLang() === "ar" ? "، " : ", ")) : null,
+        c.reason ? h("div", { dir: "auto" }, "“", c.reason, "”") : null),
       h("div", { class: "row doc-actions" },
         c.photo_file_id ? h("button", { class: "btn small", type: "button", onclick: () => viewFile({ id: c.photo_file_id, name: `${nm(c)} · ${c.at}`, mime: "image/jpeg" }) }, "📷 ", t("ci_photo")) : null,
         c.lat !== null ? h("a", { class: "btn small", href: `https://maps.google.com/?q=${c.lat},${c.lng}`, target: "_blank", rel: "noopener" }, "🗺 ", t("ci_map")) : null,
-        h("button", { class: "btn small danger", type: "button", onclick: act(c, "reject") }, t("reject")),
-        h("button", { class: "btn small ok", type: "button", onclick: act(c, "approve") }, t("approve")))))));
+        h("button", { class: "btn small danger", type: "button", onclick: act(c, "reject") }, t(c.flag_status === "open" ? "ci_flag_reject" : "reject")),
+        h("button", { class: "btn small ok", type: "button", onclick: act(c, "approve") }, t(c.flag_status === "open" ? "ci_flag_accept" : "approve")))))));
 }
 
 function coverSection(cover, me) {

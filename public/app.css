@@ -547,3 +547,10 @@ dialog.push-ask .row.end{justify-content:center}
   .att-pcard .pair{flex-direction:row;gap:6px;align-items:baseline}
 }
 .checkin-card .ci-mine{margin-top:10px}
+/* check-in verification: switches (Admin), checks used and flags on each check-in */
+.verify-list{display:grid;gap:10px;margin:8px 0}
+.verify-row{display:flex;gap:12px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:10px;cursor:pointer;background:var(--surface-2)}
+.verify-person{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.ci-checks{display:inline-flex;gap:2px;margin-inline-end:4px;font-size:13px}
+.ci-flag{color:var(--warn, #a3670b);font-weight:600}
+.ci-flag .badge{margin-inline-start:6px}

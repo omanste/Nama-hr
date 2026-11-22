@@ -8,6 +8,7 @@ import { send, readJson, HttpError } from "./http.mjs";
 import { can } from "./perm.mjs";
 import { audit } from "./audit.mjs";
 import { notify, hrTeam } from "./notify.mjs";
+import { verifyFor, setFaceDefault } from "./verify.mjs";
 
 export const FACEID_MODES = ["required", "optional", "off"];
 const CHALLENGE_MS = 5 * 60e3, VERIFIED_MS = 2 * 60e3;
@@ -18,7 +19,8 @@ const verified = new Map();   // session token → { at, credId }
 let defaultMode = "required"; // set from the environment when the module starts (tests start with it off)
 export const faceidMode = (ctxOrDb) => { const db = ctxOrDb.db || ctxOrDb; const m = getSetting(db, "faceid_mode", defaultMode); return FACEID_MODES.includes(m) ? m : "required"; };
 /** Does this person have to verify at check-in? */
-export const faceidNeeded = (ctx, emp) => faceidMode(ctx) === "required" && !(emp && emp.faceid_exempt);
+export const faceidNeeded = (ctx, emp) => verifyFor(ctx.db || ctx, emp).faceid; // Admin's switch, or the person's own setting
+setFaceDefault((db) => faceidMode(db) === "required");
 
 /** A fresh verification for this session (not used up): the credential id or null. */
 export function peekVerified(sess) {
@@ -57,7 +59,7 @@ export function registerWebauthn(api, ctx) {
   // what the check-in screen needs to know
   api.get("/api/webauthn/status", (req, res) => {
     const emp = req.sess.employee;
-    send(req, res, 200, { mode: faceidMode(ctx), needed: faceidNeeded(ctx, emp), exempt: !!(emp && emp.faceid_exempt), devices: creds(req.sess.user.id).length });
+    send(req, res, 200, { mode: faceidMode(ctx), needed: faceidNeeded(ctx, emp), exempt: !!emp && !faceidNeeded(ctx, emp), devices: creds(req.sess.user.id).length });
   });
 
   api.post("/api/webauthn/register/options", async (req, res) => {

@@ -35,7 +35,7 @@ const GONE = ["resigned", "terminated", "disabled"]; // no access to the portal
 const TEXT = ["name_ar", "name_en", "civil_id", "passport_no", "nationality", "mobile", "address", "emergency_name", "emergency_relation", "emergency_phone", "job_title", "contract_type"];
 const DATES = ["civil_id_expiry", "passport_expiry", "visa_expiry", "dob", "join_date", "contract_end"];
 export const LONG = ["education", "specialization", "experience", "languages", "skills", "certifications", "main_tasks"];
-export const FIELDS = ["emp_no", ...TEXT, ...LONG, "email", ...DATES, "department_id", "manager_employee_id", "status", "gender", "shift", "shift_locked", "faceid_exempt", "att_mode", "reports_to_top", "personal_email", "personal_phone", "perm_wilayat", "current_area", ...BANK];
+export const FIELDS = ["emp_no", ...TEXT, ...LONG, "email", ...DATES, "department_id", "manager_employee_id", "status", "gender", "shift", "shift_locked", "faceid_exempt", "verify_photo", "verify_faceid", "verify_location", "att_mode", "reports_to_top", "personal_email", "personal_phone", "perm_wilayat", "current_area", ...BANK];
 export const GENDERS = ["male", "female"];
 const EXPIRIES = ["civil_id_expiry", "passport_expiry", "visa_expiry"];
 /** An email as typed on any keyboard: without invisible direction marks, zero-width characters and spaces, in lower case. */
@@ -73,6 +73,7 @@ export function cleanEmployee(db, body, cur = null, { today = null } = {}) {
     if (k === "gender" && v !== null && !GENDERS.includes(v)) throw bad(k, "gender must be male or female");
     if (k === "shift") { if (v === null) continue; v = Number(v); if (!SHIFTS.includes(v)) throw bad(k, "shift must be 1, 2, 3 or 4"); }
     if (k === "shift_locked" || k === "faceid_exempt") v = v === true || v === 1 || v === "1" || v === "on" ? 1 : 0;
+    if (["verify_photo", "verify_faceid", "verify_location"].includes(k)) { if (v === "" || v === "default") v = null; if (v !== null && !["on", "off"].includes(v)) throw bad(k, "Default, On or Off"); }
     if (k === "reports_to_top" && v !== null && !["ceo", "chairman", "both"].includes(v)) throw bad(k, "reports to must be the CEO, the Chairman or both");
     if (k === "att_mode") { if (v === null) v = "both"; if (!["machine", "online", "both"].includes(v)) throw bad(k, "attendance method must be machine, online or both"); }
     if ((k === "name_ar" || k === "name_en") && v === null) v = ""; // names are never NULL, just empty

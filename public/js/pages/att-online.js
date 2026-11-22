@@ -26,7 +26,7 @@ export async function render(el, _p, { me, can, query }) {
     let r;
     try { r = await api.get(`/api/attendance/checkins?${qs}`); } catch (e) { clear(out).append(empty(errText(e))); return; }
     const outside = r.rows.filter((x) => (x.in && x.in.outside) || (x.out && x.out.outside)).length;
-    const waiting = r.rows.filter((x) => [x.in, x.out].some((c) => c && c.approval === "pending")).length;
+    const waiting = r.rows.filter((x) => [x.in, x.out].some((c) => c && (c.approval === "pending" || c.flag_status === "open"))).length;
     clear(out).append(
       h("div", { class: "grid tiles" },
         h("div", { class: "card tile" }, h("div", { class: "n" }, num(r.rows.length)), h("div", { class: "l" }, t("ol_days"))),

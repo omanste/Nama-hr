@@ -104,7 +104,7 @@ test("check-in: notice first, then location and a photo; inside the site; the se
   assert.equal(st.enabled, true); assert.equal(st.consent, false); assert.equal(st.next, "in");
   assert.equal((await ci(s, "in")).status, 409, "the notice comes first");
   assert.equal((await s.c.post("/api/attendance/checkin/consent", {})).status, 200);
-  assert.equal((await s.c.upload("/api/attendance/checkin?kind=in&device=x", jpg, "image/jpeg")).status, 400, "no location");
+  assert.equal((await s.c.upload(`/api/attendance/checkin?kind=sideways&lat=${OFFICE.lat}&lng=${OFFICE.lng}`, jpg, "image/jpeg")).status, 400, "in or out"); // no location: allowed and flagged (verify.test)
   assert.equal((await s.c.upload(`/api/attendance/checkin?kind=in&lat=${OFFICE.lat}&lng=${OFFICE.lng}`, Buffer.from("%PDF-1.4"), "application/pdf")).status, 415, "a photo, not a file");
   t.app.ctx.fakeClock = "09:12";
   const r = await ci(s, "in");
@@ -113,17 +113,19 @@ test("check-in: notice first, then location and a photo; inside the site; the se
   assert.equal(st.next, "out"); assert.equal(st.items[0].site.name_en, "Head office");
 });
 
-test("check-out outside every site needs a reason and the manager's approval; it counts only once approved", async () => {
+test("check-out outside every site: a reason, then saved and flagged ⚠️ (it counts); the manager accepts it or not", async () => {
   t.app.ctx.fakeClock = "16:40";
   const r1 = await ci(s, "out", FAR);
   assert.equal(r1.status, 400); assert.equal(r1.data.field, "reason"); assert.equal(r1.data.outside, true); assert.equal(r1.data.nearest.name_en, "Head office");
   const r2 = await ci(s, "out", FAR, "&reason=" + encodeURIComponent("زيارة موقع عميل"));
-  assert.equal(r2.status, 201); assert.equal(r2.data.checkin.outside, true); assert.equal(r2.data.checkin.approval, "pending");
-  assert.ok((await mgr.c.get("/api/notifications")).data.items.some((n) => /outside the work sites awaiting your approval/.test(n.title_en)));
-  // waiting: the check-out doesn't count yet (the arrival does) — read after the shift has ended
+  assert.equal(r2.status, 201); assert.equal(r2.data.checkin.outside, true); assert.equal(r2.data.checkin.approval, null);
+  assert.equal(r2.data.checkin.flags[0].code, "outside"); assert.ok(r2.data.checkin.flags[0].km > 1);
+  assert.ok((await mgr.c.get("/api/notifications")).data.items.some((n) => /checked out 16:40 — outside work site \(\d+(\.\d)? km away\)/.test(n.title_en)));
+  assert.ok((await hr.c.get("/api/notifications")).data.items.some((n) => /checked out 16:40 — outside work site/.test(n.title_en)), "HR too");
+  // it counts while the manager looks at it — read after the shift has ended
   t.app.ctx.fakeClock = "23:30";
   let day = (await s.c.get(`/api/attendance/employee/${s.emp.id}?month=2026-11`)).data.days.find((x) => x.date === "2026-11-02");
-  assert.equal(day.status, "pending", "waiting for the manager, not a missing punch"); assert.equal(day.missing, "out"); assert.equal(day.checkins[1].approval, "pending");
+  assert.equal(day.status, "present"); assert.equal(day.checkins[1].flag_status, "open"); assert.equal(day.checkins[1].flags[0].code, "outside");
   // who may decide: the manager (or HR/Admin), not a colleague, not the person
   const pend = (await mgr.c.get("/api/attendance/checkins/pending")).data.items;
   assert.equal(pend.length, 1); assert.equal(pend[0].nearest.name_en, "Head office");
@@ -131,10 +133,10 @@ test("check-out outside every site needs a reason and the manager's approval; it
   assert.equal((await s.c.post(`/api/attendance/checkins/${pend[0].id}/approve`, {})).status, 403);
   assert.equal((await other.c.post(`/api/attendance/checkins/${pend[0].id}/approve`, {})).status, 403);
   assert.ok((await mgr.c.get("/api/me")).data.pendingCheckins >= 1);
-  assert.equal((await mgr.c.post(`/api/attendance/checkins/${pend[0].id}/reject`, {})).status, 400, "a reason to reject");
-  assert.equal((await mgr.c.post(`/api/attendance/checkins/${pend[0].id}/approve`, {})).status, 200);
+  assert.equal((await mgr.c.post(`/api/attendance/checkins/${pend[0].id}/approve`, { note: "زيارة معروفة" })).status, 200);
   assert.equal((await mgr.c.post(`/api/attendance/checkins/${pend[0].id}/approve`, {})).status, 409);
-  assert.ok((await s.c.get("/api/notifications")).data.items.some((n) => /was approved/.test(n.title_en)));
+  assert.ok((await s.c.get("/api/notifications")).data.items.some((n) => /flagged check-in was accepted/.test(n.title_en)));
+  assert.ok(t.db.prepare("SELECT 1 FROM audit_log WHERE action='checkin.flag_accept'").get(), "logged");
 });
 
 test("a rejected check-in outside the sites doesn't count", async () => {
@@ -179,7 +181,7 @@ test("the online check-in log: one line per person per day, first in / last out,
   assert.equal(r.status, 200);
   const row = r.data.rows.find((x) => x.employee.id === s.emp.id && x.date === "2026-11-02");
   assert.equal(row.in.time, "09:12"); assert.equal(row.in.site.name_en, "Head office"); assert.equal(row.in.outside, false);
-  assert.equal(row.out.time, "16:40"); assert.equal(row.out.outside, true); assert.equal(row.out.reason, "زيارة موقع عميل"); assert.equal(row.out.approval, "approved");
+  assert.equal(row.out.time, "16:40"); assert.equal(row.out.outside, true); assert.equal(row.out.reason, "زيارة موقع عميل"); assert.equal(row.out.flag_status, "accepted");
   assert.equal(row.minutes, 448); assert.ok(row.in.photo_file_id && row.in.lat);
   // filters: by person, by department
   assert.ok((await hr.c.get(`/api/attendance/checkins?from=2026-11-01&to=2026-11-02&emp=${other.emp.id}`)).data.rows.every((x) => x.employee.id === other.emp.id));
@@ -365,7 +367,7 @@ test("outside the sites from a phone: the quick check asks for the reason first;
   assert.equal(out.inside, false); assert.equal(out.nearest.name_en, "Head office"); assert.ok(out.distance > 1000); assert.equal(out.after_hours, false);
   const inn = (await p.c.get(`/api/attendance/checkin/check?kind=in&lat=${OFFICE.lat}&lng=${OFFICE.lng}`)).data;
   assert.equal(inn.inside, true); assert.equal(inn.site.name_en, "Head office");
-  assert.equal((await p.c.get("/api/attendance/checkin/check?kind=in")).status, 400, "a location is needed");
+  assert.equal((await p.c.get("/api/attendance/checkin/check?kind=in")).data.inside, true, "no location: nothing to compare (the check-in is flagged)");
   // a phone-sized photo sent slowly: no answer before the last byte arrived
   const net = await import("node:net");
   const url = new URL(t.base), photo = Buffer.alloc(600 * 1024, 7); photo[0] = 0xff; photo[1] = 0xd8;
@@ -381,9 +383,9 @@ test("outside the sites from a phone: the quick check asks for the reason first;
   });
   assert.equal(answer.early, false, "the server waited for the whole photo: " + answer.got.slice(0, 300));
   assert.match(answer.got, /^HTTP\/1\.1 400/); assert.match(answer.got, /"outside":true/);
-  // with the reason: saved, waiting for the manager
+  // with the reason: saved and flagged for the manager
   const ok = await ci(p, "in", FAR, "&reason=" + encodeURIComponent("زيارة موقع"));
-  assert.equal(ok.status, 201); assert.equal(ok.data.checkin.approval, "pending");
+  assert.equal(ok.status, 201); assert.equal(ok.data.checkin.flags[0].code, "outside");
   t.app.ctx.fakeToday = "2026-11-02"; t.app.ctx.fakeClock = "23:30";
 });
 

@@ -20,9 +20,7 @@ export async function checkinCard() {
   setOutState(st);
   const last = st.items[st.items.length - 1];
   const line = (c) => h("div", { class: "ci-line" }, h("b", null, t(c.kind === "in" ? "ci_in_at" : "ci_out_at", { time: c.at.slice(11, 16) })), " · ",
-    c.outside ? h("span", { class: "bad-text" }, t("ci_outside")) : h("span", null, "📍 ", siteName(c.site)),
-    c.verified ? h("span", { class: "ci-ico", title: t("ci_faceid_ok"), "aria-label": t("ci_faceid_ok") }, "🔐") : null,
-    c.approval ? h("span", { class: `badge ${c.approval === "approved" ? "b-approved" : c.approval === "rejected" ? "b-rejected" : "b-pending"}`, title: c.decision_note || "", style: { marginInlineStart: "6px" } }, t("ci_appr_" + c.approval)) : null);
+    checkinPlace(c, { reason: false }));
   const next = st.next;
   const mainBtn = h("button", { class: `btn ${next === "in" ? "primary" : "gold"} ci-btn`, type: "button", onclick: (ev) => start(next, st, ev.currentTarget) },
     next === "in" ? "⏱ " : "🏁 ", t(next === "in" ? "ci_check_in" : "ci_check_out"));
@@ -65,35 +63,49 @@ async function start(kind, st, btn) {
   if (running) return;
   running = true;
   btn.disabled = true;
+  // what this person is asked for (Admin's switches, or their own): a check that fails never stops the check-in —
+  // after asking, it goes ahead flagged ⚠️ for the manager
+  const V = st.verify || { photo: true, faceid: true, location: true };
   try {
     if (!st.consent) { if (!(await notice())) return; await api.post("/api/attendance/checkin/consent", {}); st.consent = true; }
-    toast(t("ci_locating"));
-    const pos = await locate();
+    let pos = null;
+    if (V.location) {
+      toast(t("ci_locating"));
+      try { pos = await locate(); } catch (e) { if (!(await goOnFlagged(e.message || t("ci_geo_failed")))) return; }
+    }
     // before the photo: does this place need a reason (outside the work sites), or leaving after hours?
     let reason = "", extraReason = "";
     try {
-      const c = await api.get(`/api/attendance/checkin/check?${new URLSearchParams({ kind, lat: pos.coords.latitude, lng: pos.coords.longitude })}`);
-      if (!c.inside) { reason = await reasonDialog(c); if (!reason) return; }
+      const q = { kind, ...(pos ? { lat: pos.coords.latitude, lng: pos.coords.longitude } : {}) };
+      const c = await api.get(`/api/attendance/checkin/check?${new URLSearchParams(q)}`);
+      if (pos && !c.inside) { reason = await reasonDialog(c); if (!reason) return; }
       if (kind === "out" && c.early && !(await confirm(t("ci_early_q", { t: c.shift_end }), { okText: t("ci_early_go") }))) return;
       if (c.after_hours) { extraReason = await reasonDialog(null, { title: t("ci_extra_title"), hint: t("ci_extra_hint", { t: c.shift_end }) }); if (!extraReason) return; }
     } catch (e) { if (e.status && e.status !== 404) throw e; } // an older server: it asks after the photo instead
-    // Face ID / fingerprint on this phone (required unless HR exempted the person): it's really them
-    if (!(await faceId())) return;
-    const photo = await camera();
-    if (!photo) return;
+    // Face ID / fingerprint on this phone (when on for this person): it's really them
+    if (V.faceid && !(await faceId()) && !(await goOnFlagged(t("ci_faceid_not_done")))) return;
+    let photo = null;
+    if (V.photo) {
+      try { photo = await camera(); } catch (e) { if (!(await goOnFlagged(e.message || t("ci_camera_denied")))) return; }
+      if (!photo && !(await goOnFlagged(t("ci_no_photo_taken")))) return;
+    }
     await send(kind, pos, photo, reason, extraReason);
   } catch (e) { toast(e.status || e.error ? errText(e) : (e.message && !/load failed|failed to fetch|network/i.test(e.message) ? e.message : t("ci_conn_lost")), "bad"); }
   finally { btn.disabled = false; running = false; }
 }
+/** A check couldn't be done: go on anyway (the record is flagged ⚠️ and the manager is told), or stop. */
+const goOnFlagged = (why) => choiceDialog("⚠️ " + t("ci_flag_title"), `${why} — ${t("ci_flag_text")}`, [[false, t("cancel")], [true, t("ci_flag_go"), "primary"]]).then((v) => v === true);
 
 async function send(kind, pos, photo, reason, extraReason = "") {
-  const qs = new URLSearchParams({ kind, lat: pos.coords.latitude, lng: pos.coords.longitude, acc: Math.round(pos.coords.accuracy || 0), device: deviceId(), name: `checkin-${kind}.jpg` });
+  const qs = new URLSearchParams({ kind, ...(pos ? { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: Math.round(pos.coords.accuracy || 0) } : {}), device: deviceId(), name: `checkin-${kind}.jpg` });
+  if (photo && photo.dark) qs.set("photo_dark", "1"); // almost black: flagged as unclear
   if (reason) qs.set("reason", reason);
   if (extraReason) qs.set("extra_reason", extraReason);
   try {
-    const r = await api.upload(`/api/attendance/checkin?${qs}`, photo);
+    const r = await api.upload(`/api/attendance/checkin?${qs}`, photo || new Blob([], { type: "image/jpeg" }));
     const done = r.checkin.site ? `${t(kind === "in" ? "ci_done_in" : "ci_done_out", { time: r.checkin.at.slice(11, 16) })} · ${siteName(r.checkin.site)}` : t("ci_outside_needs_ok");
     // flexible hours: say when the day ends for them (in 08:45 → "Your check-out time today: 16:45")
+    if (r.checkin.flags && r.checkin.flags.length) setTimeout(() => toast(`⚠️ ${t("ci_flagged_sent")}`, "ok", 6000), 3000);
     toast(kind === "in" && r.expected_out ? `${done} · ${t("ci_out_time_today", { t: r.expected_out })}` : done, "ok", kind === "in" && r.expected_out ? 9000 : undefined);
     if (r.extra) setTimeout(() => toast(t("ci_extra_sent")), 2500);
     rerender();
@@ -192,8 +204,8 @@ async function verifyPhone() {
 async function faceId() {
   let st;
   try { st = await api.get("/api/webauthn/status"); } catch { return true; } // an older server: no Face ID step
-  if (st.mode === "off" || st.exempt || (!st.needed && !st.devices)) return true;
-  const must = st.needed;
+  if (!st.needed) return true; // off for this person (Admin's switch or their own setting)
+  const must = true;
   if (!(await faceIdSupported())) { if (must) { toast(t("ci_faceid_unsupported"), "bad"); return false; } return true; }
   try {
     if (!st.devices) {
@@ -225,6 +237,16 @@ const choiceDialog = (title, text, buttons) => new Promise((resolve) => {
 });
 const faceIdRetry = () => choiceDialog("🔐 " + t("ci_faceid_title"), t("ci_faceid_retry_text"), [[null, t("cancel")], ["register", t("ci_faceid_register_this")], ["retry", t("ci_faceid_retry"), "primary"]]);
 
+/** Is the picture almost black (a camera that showed nothing)? Average brightness of a small copy. */
+function isDark(canvas) {
+  try {
+    const c = document.createElement("canvas"); c.width = 32; c.height = 24;
+    const g = c.getContext("2d"); g.drawImage(canvas, 0, 0, 32, 24);
+    const d = g.getImageData(0, 0, 32, 24).data; let sum = 0;
+    for (let i = 0; i < d.length; i += 4) sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    return sum / (d.length / 4) < 18;
+  } catch { return false; }
+}
 /** Shrink a photo to 640 px wide as a JPEG (like the live camera's), from an image file. */
 function shrinkImage(file) {
   return new Promise((resolve) => {
@@ -233,7 +255,8 @@ function shrinkImage(file) {
       const w = Math.min(640, img.naturalWidth || 640), hgt = Math.round(w * ((img.naturalHeight || 480) / (img.naturalWidth || 640)));
       const c = document.createElement("canvas"); c.width = w; c.height = hgt;
       c.getContext("2d").drawImage(img, 0, 0, w, hgt); URL.revokeObjectURL(url);
-      c.toBlob((b) => resolve(b || file), "image/jpeg", 0.82);
+      const dark = isDark(c);
+      c.toBlob((b) => { const out = b || file; if (dark) out.dark = true; resolve(out); }, "image/jpeg", 0.82);
     };
     img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
     img.src = url;
@@ -291,7 +314,8 @@ function camera() {
       const w = Math.min(640, video.videoWidth), hgt = Math.round(w * (video.videoHeight / video.videoWidth));
       const c = document.createElement("canvas"); c.width = w; c.height = hgt;
       c.getContext("2d").drawImage(video, 0, 0, w, hgt);
-      c.toBlob((b) => { stop(); finish(b); close(); }, "image/jpeg", 0.82);
+      const dark = isDark(c);
+      c.toBlob((b) => { if (b && dark) b.dark = true; stop(); finish(b); close(); }, "image/jpeg", 0.82);
     };
   });
 }
@@ -315,12 +339,22 @@ function reasonDialog(info, { title = t("ci_outside_title"), hint = t("ci_outsid
 export function checkinPlace(c, { reason = true } = {}) {
   if (!c) return null;
   const site = c.site || { name_ar: c.site_ar, name_en: c.site_en };
-  return h("span", { class: "ci-place" },
-    c.outside ? h("span", { class: "bad-text", title: c.reason || "" }, t("ci_outside"), reason && c.reason ? ` — ${c.reason}` : "")
+  const ch = c.checks, flags = c.flags || [];
+  const used = ch ? h("span", { class: "ci-checks", title: t("ci_checks_used") }, ch.photo ? h("span", { title: t("ci_chk_photo") }, "📷") : null, ch.faceid || c.verified ? h("span", { title: t("ci_chk_faceid") }, "🔐") : null, ch.location ? h("span", { title: t("ci_chk_location") }, "📍") : null) : null;
+  const flagged = flags.length ? h("span", { class: "ci-flag", title: c.flag_note || "" }, "⚠️ ", flags.map(flagLabel).join(getLang() === "ar" ? "، " : ", "),
+    h("span", { class: `badge ${c.flag_status === "accepted" ? "b-approved" : c.flag_status === "rejected" ? "b-rejected" : "b-pending"}` }, t("ci_flag_" + (c.flag_status || "open"))),
+    c.flag_note ? h("span", { class: "muted" }, ` “${c.flag_note}”`) : null) : null;
+  return h("span", { class: "ci-place" }, used, flagged,
+    ch && !ch.location && !c.outside ? null : c.outside ? h("span", { class: "bad-text", title: c.reason || "" }, t("ci_outside"), reason && c.reason ? ` — ${c.reason}` : "")
       : h("span", null, "📍 ", getLang() === "en" ? site.name_en || site.name_ar || "" : site.name_ar || site.name_en || ""),
-    c.approval ? h("span", { class: `badge ${c.approval === "approved" ? "b-approved" : c.approval === "rejected" ? "b-rejected" : "b-pending"}`, title: c.decision_note || "" }, t("ci_appr_" + c.approval)) : null,
+    c.approval && !flags.length ? h("span", { class: `badge ${c.approval === "approved" ? "b-approved" : c.approval === "rejected" ? "b-rejected" : "b-pending"}`, title: c.decision_note || "" }, t("ci_appr_" + c.approval)) : null,
     c.photo_file_id ? h("button", { class: "linkish ci-ico", type: "button", title: t("ci_photo"), "aria-label": t("ci_photo"), onclick: () => viewFile({ id: c.photo_file_id, name: `${t("ci_photo")} · ${c.time || ""}`, mime: "image/jpeg" }) }, "📷") : null,
     c.lat !== null && c.lat !== undefined ? h("a", { class: "ci-ico", href: `https://maps.google.com/?q=${c.lat},${c.lng}`, target: "_blank", rel: "noopener", title: t("ci_map") + (c.accuracy ? ` (±${c.accuracy} m)` : ""), "aria-label": t("ci_map") }, "🗺") : null);
+}
+
+/** A flag's reason in words: "outside work site (1.2 km away)". */
+export function flagLabel(f) {
+  return f.code === "outside" && f.km !== null && f.km !== undefined ? t("ci_fl_outside_km", { km: f.km }) : t("ci_fl_" + f.code);
 }
 
 /* ---- today's own check-out time (flexible hours): the home card and the header chip count down to it, all day ---- */

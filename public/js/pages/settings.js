@@ -64,6 +64,7 @@ export async function render(el, _p, { can }) {
         shift_1_start: sh[1].start.value, shift_1_end: sh[1].end.value, shift_2_start: sh[2].start.value, shift_2_end: sh[2].end.value, shift_3_start: sh[3].start.value, shift_3_end: sh[3].end.value, shift_4_start: sh[4].start.value, shift_4_end: sh[4].end.value,
         ...(attStart.value ? { attendance_start: attStart.value } : {}), shift_self_select: selfShift.value === "1",
         ramadan_start: rStart.value || null, ramadan_end: rEnd.value || null, ramadan_hours: Number(rHours.value) })) }, t("save")))),
+    verifyCard(settings, save),
     flexCard(settings, save),
     sitesCard(settings, save),
     h("section", { class: "card" }, h("h2", null, t("official_holidays")),
@@ -100,6 +101,20 @@ function restoreCard() {
     h("div", { class: "row end", style: { marginTop: "12px" } }, btn), out);
 }
 
+/** Check-in verification (Admin): photo, Face ID / fingerprint and location — on or off for everyone (a person can be set
+ * apart on their profile). A check that is on but fails still saves the check-in, flagged ⚠️ for the manager. */
+function verifyCard(settings, save) {
+  const v = settings.verify || { photo: true, faceid: true, location: true };
+  const sw = (k) => h("input", { type: "checkbox", name: `verify_${k}`, checked: v[k] !== false, style: { width: "22px", height: "22px", minHeight: "0", flex: "none" } });
+  const boxes = { photo: sw("photo"), faceid: sw("faceid"), location: sw("location") };
+  const row = (k, ico) => h("label", { class: "verify-row" }, boxes[k], h("span", null, h("b", null, ico, " ", t(`ver_${k}`)), h("div", { class: "sub" }, t(`ver_${k}_hint`))));
+  return h("section", { class: "card", id: "verify" }, h("h2", null, t("ver_title")), h("p", { class: "sub" }, t("ver_hint")),
+    h("div", { class: "verify-list" }, row("photo", "📷"), row("faceid", "🔐"), row("location", "📍")),
+    h("p", { class: "note" }, t("ver_flag_note")),
+    h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", {
+      verify: { photo: boxes.photo.checked, faceid: boxes.faceid.checked, location: boxes.location.checked } })) }, t("save"))));
+}
+
 /** Flexible hours for all staff and shifts (Admin): the on-time arrival window, the required hours, the reminder before one's check-out time. */
 function flexCard(settings, save) {
   const on = h("input", { type: "checkbox", name: "flex_on", checked: settings.flex_on !== false });
@@ -126,7 +141,6 @@ function sitesCard(settings, save) {
   const rows = h("div", { class: "sites" });
   const grace = h("input", { type: "number", min: 0, max: 60, step: 1, value: settings.late_grace_min ?? 15, style: { maxWidth: "120px" } });
   const remIn = h("input", { type: "number", name: "remind_checkin_min", min: 1, max: 120, step: 1, value: settings.remind_checkin_min ?? 10, style: { maxWidth: "120px" } });
-  const faceMode = select("faceid_mode", [["required", t("set_faceid_required")], ["optional", t("set_faceid_optional")], ["off", t("set_faceid_off")]], settings.faceid_mode || "required");
   const remOut = h("input", { type: "number", name: "remind_checkout_min", min: 1, max: 120, step: 1, value: settings.remind_checkout_min ?? 10, style: { maxWidth: "120px" } });
   const row = (s = {}) => {
     const inp = (k, attrs) => h("input", { name: k, value: s[k] ?? "", ...attrs });
@@ -156,7 +170,7 @@ function sitesCard(settings, save) {
   return h("section", { class: "card" }, h("h2", null, t("att_sites")), h("p", { class: "sub" }, t("att_sites_hint")), rows,
     h("div", { class: "row", style: { marginTop: "10px" } }, h("button", { class: "btn", type: "button", onclick: () => rows.append(row()) }, "+ ", t("site_add"))),
     h("div", { class: "fields", style: { marginTop: "14px" } }, field(t("late_grace"), grace, { hint: t("att_policy_note", { n: grace.value }) }),
-      field(t("remind_in"), remIn, { hint: t("remind_in_hint") }), field(t("remind_out"), remOut, { hint: t("remind_out_hint") }), field(t("set_faceid"), faceMode, { hint: t("set_faceid_hint") })),
+      field(t("remind_in"), remIn, { hint: t("remind_in_hint") }), field(t("remind_out"), remOut, { hint: t("remind_out_hint") })),
     h("div", { class: "row end", style: { marginTop: "12px" } }, h("button", { class: "btn primary", type: "button", onclick: () => save(() => api.put("/api/settings", {
-      att_sites: [...rows.children].map((r) => r.read()), late_grace_min: Number(grace.value), remind_checkin_min: Number(remIn.value), remind_checkout_min: Number(remOut.value), faceid_mode: faceMode.value })) }, t("save"))));
+      att_sites: [...rows.children].map((r) => r.read()), late_grace_min: Number(grace.value), remind_checkin_min: Number(remIn.value), remind_checkout_min: Number(remOut.value) })) }, t("save"))));
 }
