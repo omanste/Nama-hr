@@ -88,7 +88,7 @@ test("settings only: a .json with the HR settings and nothing else", async () =>
 });
 
 test("restore into an empty portal: preview first, typed RESTORE, then the same HR data, documents and attendance", async () => {
-  B = await boot({ FAKE_TODAY: "2026-11-05" }); servers.push(B);
+  B = await boot({ FAKE_TODAY: "2026-11-05" }); servers.push(B); B.app.ctx.fakeClock = "10:00"; // the same moment as the original portal, so "today" is judged alike
   adminB = await adminClient(B.base);
   const p = await preview(B, adminB, fullZip);
   assert.equal(p.status, 200, JSON.stringify(p.data));

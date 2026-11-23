@@ -532,9 +532,14 @@ export function runWeeklyAttendance(ctx, today) {
  * approved permission covering now), on leave, on an external task, holiday / weekly rest, not in yet, absent.
  * Combined sources (fingerprint and online). Returns { code, in?, out?, since? }. */
 export function presenceNow(db, emp, today, nowMin) {
+  try { return presence(db, emp, today, nowMin); } catch { return { code: "unknown" }; } // never nothing: the screen always has a word
+}
+function presence(db, emp, today, nowMin) {
   if (attendanceExempt(db).includes(emp.id)) return { code: "exempt" };
   const d = employeeDays(db, emp, today, today, "all", nowMin).days[0];
   if (!d) return { code: "unknown" };
+  // a weekend or an official holiday reads as one even when today has no attendance data yet (unless they came in)
+  const offDay = isRestDay(today) ? "rest" : getSetting(db, "official_holidays", []).some((x) => x.date === today) ? "holiday" : null;
   const reqs = db.prepare("SELECT type, early_time, end_time, details FROM leave_requests WHERE employee_id=? AND status='approved' AND start_date<=? AND end_date>=?").all(emp.id, today, today);
   const within = (a, b) => a !== null && b !== null && nowMin !== null && nowMin >= a && nowMin < b;
   const sh = d.shift || { start: 540, end: 1020 };
@@ -546,10 +551,13 @@ export function presenceNow(db, emp, today, nowMin) {
   if (d.in !== null && d.out !== null) return { code: "checked_out", in: d.in, out: d.out };
   if (d.in !== null) return excused ? { code: "excused", in: d.in } : { code: "on_duty", in: d.in };
   if (excused) return { code: "excused" };
+  if (offDay) return { code: offDay };
   if (d.status === "holiday" || d.status === "holiday_worked") return { code: "holiday" };
   if (d.status === "rest" || d.status === "rest_worked") return { code: "rest" };
   if (d.status === "pending") return { code: "pending" };
   if (nowMin !== null && nowMin < sh.end && ["today", "no_data", "absent", "missing"].includes(d.status)) return { code: "not_in", from: sh.start };
   if (d.status === "absent") return { code: "absent" };
-  return { code: d.status === "no_data" ? "no_record" : d.status };
+  if (d.status === "missing") return { code: "missing_in" };
+  // nothing recorded for today: no online check-in, and the fingerprint file doesn't reach today yet
+  return { code: "no_record", lastUpload: db.prepare("SELECT max(to_date) d FROM att_uploads").get().d || null };
 }

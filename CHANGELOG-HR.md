@@ -22,6 +22,9 @@ The history before this page existed (26 October – 22 November 2026) was fille
 are the dates of each change on dev.
 
 ## 2026-11-23
+- [Profiles · Fix] Staff tab: every current person has a live status | تبويب الموظفين: حالة حية لكل موظف حالي
+  People with nothing recorded today now show “No record today” (with the date the fingerprint data reaches), weekends and holidays always read as such, and the CEO and Chairman show “Outside attendance” — instead of a plain “Active”. | من لا يوجد له تسجيل اليوم يظهر «لا يوجد تسجيل اليوم» (مع تاريخ آخر بيانات البصمة)، وأيام الراحة والعطل تظهر كذلك دائماً، والرئيس التنفيذي ورئيس مجلس الإدارة «خارج نظام الحضور» — بدلاً من «نشط».
+  key: staff-now-every
 - [Reports · Improvement] Attendance report: one line per row | تقرير الحضور: سطر واحد لكل صف
   By department and By person: the name on one line, each figure as “3 · 1:25” on one line, every row the same height; cards on small screens. | حسب القسم وحسب الموظف: الاسم في سطر واحد وكل رقم مثل «3 · 1:25» في سطر واحد وكل الصفوف بنفس الارتفاع، وبطاقات على الشاشات الصغيرة.
   key: att-report-one-line

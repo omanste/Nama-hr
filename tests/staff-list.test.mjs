@@ -86,3 +86,18 @@ test("the Staff list says where each current person is right now, from today's a
   assert.deepEqual([byNo.P1, byNo.P2, byNo.P3, byNo.P4].length, 4);
   assert.ok(r.items.filter((e) => ["P1", "P2", "P3", "P4"].includes(e.emp_no)).every((e) => e.now && e.now.code));
 });
+
+test("no current person is left without a live status: no record today, weekend, outside attendance, never nothing", async () => {
+  const { presenceNow } = await import("../server/attendance.mjs");
+  const { getEmployee } = await import("../server/employees.mjs");
+  const e = (await admin.post("/api/employees", { emp_no: "P9", name_ar: "بلا تسجيل", join_date: "2021-01-01" })).data.employee;
+  const at = (day, min) => presenceNow(t.db, getEmployee(t.db, e.id), day, min);
+  assert.equal(at("2026-11-23", 10 * 60).code, "not_in", "before the shift ends: not in yet");
+  assert.equal(at("2026-11-23", 20 * 60).code, "no_record", "after it, with nothing recorded");
+  assert.equal(at("2026-11-27", 11 * 60).code, "rest", "a Friday reads as weekly rest even without data");
+  const ceo = (await admin.post("/api/employees", { emp_no: "P10", name_ar: "رئيس", join_date: "2021-01-01" })).data.employee;
+  await admin.put("/api/settings", { managers_approver_employee_id: ceo.id });
+  assert.equal(presenceNow(t.db, getEmployee(t.db, ceo.id), "2026-11-23", 600).code, "exempt");
+  const items = (await hr.c.get("/api/staff-list")).data.items.filter((x) => ["active", "on_leave"].includes(x.status));
+  assert.ok(items.every((x) => x.now && x.now.code), "every current person has one");
+});
