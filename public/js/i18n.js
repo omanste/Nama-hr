@@ -183,7 +183,7 @@ const D = {
   f_name_ar: ["الاسم بالعربية", "Name (Arabic)"], f_name_en: ["الاسم بالإنجليزية", "Name (English)"], f_emp_no: ["الرقم الوظيفي", "Employee ID"],
   f_emp_no_hint: ["اتركه فارغاً لإنشائه تلقائياً", "Leave empty to generate"], f_photo: ["الصورة", "Photo"],
   f_civil_id: ["الرقم المدني", "Civil ID"], f_civil_id_expiry: ["انتهاء البطاقة المدنية", "Civil ID expiry"], f_nationality: ["الجنسية", "Nationality"],
-  f_dob: ["تاريخ الميلاد", "Date of birth"], f_mobile: ["الهاتف", "Mobile"], f_email: ["البريد الإلكتروني", "Email"], f_address: ["تفاصيل العنوان (السكة، المبنى)", "Address details (way, building)"],
+  f_dob: ["تاريخ الميلاد", "Date of birth"], f_mobile: ["الهاتف", "Mobile"], f_email: ["البريد الإلكتروني للعمل", "Work e-mail"], f_address: ["تفاصيل العنوان (السكة، المبنى)", "Address details (way, building)"],
   f_emergency_name: ["جهة الاتصال للطوارئ", "Emergency contact"], f_emergency_relation: ["صلة القرابة", "Relationship"], f_emergency_phone: ["هاتف الطوارئ", "Emergency phone"],
   f_department_id: ["القسم", "Department"], f_department: ["القسم", "Department"], f_job_title: ["المسمى الوظيفي", "Job title"], f_manager_employee_id: ["المدير المباشر", "Direct manager"],
   f_join_date: ["تاريخ التعيين", "Join date"], f_contract_type: ["نوع العقد", "Contract type"], f_contract_end: ["نهاية العقد", "Contract end"],

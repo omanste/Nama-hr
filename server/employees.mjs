@@ -270,12 +270,14 @@ export function registerEmployees(api, ctx) {
 
   // staff keep their own contact details current; the work e-mail stays with HR/Admin
   // sections people keep up to date themselves (HR/Admin can too): saved at once; their own changes go to HR/Admin to verify
-  const selfSection = (name, fields) => api.put(`/api/employees/:id/${name}`, async (req, res) => {
+  // `hrOnly`: fields only HR / Admin may change here (the work e-mail on Contact); from anyone else they're ignored
+  const selfSection = (name, fields, hrOnly = []) => api.put(`/api/employees/:id/${name}`, async (req, res) => {
     const cur = getEmployee(db, req.params.id);
     if (!cur) throw new HttpError(404, "not_found", "Employee not found");
     if (!can(req.sess, "employee.edit") && cur.id !== req.sess.user.employee_id) throw new HttpError(403, "forbidden", "You do not have permission for this");
     const b = await readJson(req);
-    const body = Object.fromEntries(fields.filter((k) => k in b).map((k) => [k, b[k]]));
+    const allowed = can(req.sess, "employee.edit") ? [...fields, ...hrOnly] : fields;
+    const body = Object.fromEntries(allowed.filter((k) => k in b).map((k) => [k, b[k]]));
     const values = cleanEmployee(db, { ...body, confirm_past: !!b.confirm_past }, cur, { today: ctx.today(), form: true });
     const emp = tx(db, () => {
       const cols = Object.keys(values);
@@ -287,7 +289,7 @@ export function registerEmployees(api, ctx) {
     });
     send(req, res, 200, { employee: emp });
   });
-  selfSection("contact", CONTACT);
+  selfSection("contact", CONTACT, ["email"]);
   selfSection("qualifications", LONG);
   selfSection("bank", BANK);
   // ID numbers and dates typed by hand (when a document couldn't be read) — HR verifies them like the rest

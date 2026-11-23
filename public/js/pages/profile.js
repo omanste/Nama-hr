@@ -221,7 +221,7 @@ export async function render(el, params, { me, can, opts }) {
         ["f_passport_no", e.passport_no && h("span", { dir: "ltr" }, e.passport_no)], ["f_passport_expiry", e.passport_expiry ? h("span", null, dmy(e.passport_expiry), " ", expiryBadge(e.passport_expiry)) : null],
         ["f_visa_expiry", e.visa_expiry ? h("span", null, dmy(e.visa_expiry), " ", expiryBadge(e.visa_expiry)) : null]])),
       h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_contact")), badgeIfPending(p, "contact"),
-          mayUpload ? h("button", { class: "btn small", type: "button", onclick: () => contactDialog(e) }, t("edit")) : null),
+          mayUpload ? h("button", { class: "btn small", type: "button", onclick: () => contactDialog(e, can.edit()) }, t("edit")) : null),
         facts([
           ["f_mobile", e.mobile && h("a", { href: `tel:${e.mobile}`, dir: "ltr" }, phoneText(e.mobile))], ["f_personal_phone", e.personal_phone && h("a", { href: `tel:${e.personal_phone}`, dir: "ltr" }, phoneText(e.personal_phone))],
           ["f_email", e.email && h("a", { href: `mailto:${e.email}` }, e.email)], ["f_personal_email", e.personal_email && h("a", { href: `mailto:${e.personal_email}`, dir: "ltr" }, e.personal_email)]]),
@@ -707,13 +707,15 @@ function placePicker(name, groups, current, known) {
   return { el: h("div", { class: "grid", style: { gap: "6px" } }, sel, other), sel, value: () => (sel.value === "__other" ? other.value.trim() : sel.value) || null };
 }
 
-async function contactDialog(e) {
+async function contactDialog(e, hr = false) {
   const ar = getLang() === "ar";
   const rels = await relations();
   const inp = (k, attrs = {}) => h("input", { name: k, value: e[k] || "", ...attrs });
   const tel = { type: "tel", dir: "ltr", inputmode: "tel" };
   const inputs = {
     mobile: inp("mobile", tel), personal_phone: inp("personal_phone", tel), personal_email: emailInput("personal_email", e.personal_email),
+    // the work e-mail: HR / Admin change it here; the person sees it (greyed out)
+    email: Object.assign(emailInput("email", e.email), hr ? {} : { disabled: true, title: t("email_by_hr") }),
     address: inp("address", { placeholder: t("address_hint") }), emergency_name: inp("emergency_name"), emergency_relation: relationInput("emergency_relation", e.emergency_relation, rels), emergency_phone: inp("emergency_phone", tel),
   };
   const perm = placePicker("perm_wilayat", GOVERNORATES.map(([gEn, gAr, ws]) => [ar ? gAr : gEn, ws.map(([en, a]) => [en, ar ? a : en])]), e.perm_wilayat, isWilayat);
@@ -721,17 +723,17 @@ async function contactDialog(e) {
   const err = h("div", { class: "form-error" });
   const dlg = h("dialog", { class: "dialog wide" }, h("form", { class: "form", onsubmit: async (ev) => {
     ev.preventDefault();
-    const body = { ...Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.value])), perm_wilayat: perm.value(), current_area: cur.value() };
+    const body = { ...Object.fromEntries(Object.entries(inputs).filter(([k]) => k !== "email" || hr).map(([k, i]) => [k, i.value])), perm_wilayat: perm.value(), current_area: cur.value() };
     try { await api.put(`/api/employees/${e.id}/contact`, body); dlg.close(); toast(t("saved")); rerender(); }
     catch (er) { err.textContent = er.field ? `${t("f_" + er.field)}: ${errText(er)}` : errText(er); }
   } },
     h("h2", null, t("sec_contact")),
-    h("div", { class: "fields" }, ["mobile", "personal_phone", "personal_email"].map((k) => field(t("f_" + k), inputs[k]))),
+    h("div", { class: "fields" }, ["mobile", "personal_phone", "email", "personal_email"].map((k) => field(t("f_" + k), inputs[k], k === "email" && !hr ? { hint: t("email_by_hr") } : {}))),
     h("h3", null, t("sec_address")),
     h("div", { class: "fields" }, field(t("f_perm_wilayat"), perm.el), field(t("f_current_area"), cur.el), field(t("f_address"), inputs.address, { full: true })),
     h("h3", null, t("sec_emergency")),
     h("div", { class: "fields" }, ["emergency_name", "emergency_relation", "emergency_phone"].map((k) => field(t(k === "emergency_name" ? "emergency_person" : "f_" + k), inputs[k]))),
-    h("p", { class: "sub" }, t("email_by_hr"), " ", t("verify_note")), err,
+    h("p", { class: "sub" }, t("verify_note")), err,
     h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("cancel")), h("button", { class: "btn primary", type: "submit" }, t("save")))));
   dlg.addEventListener("close", () => dlg.remove());
   document.body.append(dlg); dlg.showModal();

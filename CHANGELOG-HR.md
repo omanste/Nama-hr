@@ -22,6 +22,9 @@ The history before this page existed (26 October – 22 November 2026) was fille
 are the dates of each change on dev.
 
 ## 2026-11-23
+- [Profiles · Improvement] Work e-mail and personal e-mail side by side in the contact details | البريد الإلكتروني للعمل والبريد الشخصي جنباً إلى جنب في بيانات التواصل
+  HR sets the work e-mail from the Contact window next to the personal one; staff see it there but can't change it. | تضبط الموارد البشرية بريد العمل من نافذة التواصل بجانب البريد الشخصي، ويراه الموظف دون أن يغيّره.
+  key: work-email-contact
 - [Verification · Improvement] iPhone Face ID setup steps when the phone can't save the key | خطوات تجهيز الآيفون عند تعذّر حفظ مفتاح التحقق بالوجه
   When an iPhone can't register for Face ID check-in, the portal now shows the two iPhone settings to turn on, then “Try again”. | عند تعذّر تسجيل الآيفون للتحقق بالوجه تعرض البوابة الإعدادين المطلوب تفعيلهما في الآيفون ثم «حاول مرة أخرى».
   key: ios-passkey-setup

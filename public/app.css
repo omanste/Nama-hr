@@ -664,3 +664,5 @@ span.ico{cursor:default}
 .src-now{margin:6px 0 10px}
 
 .ios-setup ol{margin:4px 0 8px;padding-inline-start:22px;display:grid;gap:6px}.ios-setup li{line-height:1.6}
+
+input:disabled{background:var(--surface-2);color:var(--muted);cursor:not-allowed}

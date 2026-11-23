@@ -60,3 +60,14 @@ test("staff edit their own contact details, but not the work e-mail or anyone el
   assert.equal((await staff.c.put(`/api/employees/${staff2.emp.id}/contact`, { mobile: "1" })).status, 403);
   assert.equal((await staff.c.put(`/api/employees/${staff.emp.id}`, { email: "a@b.om" })).status, 403);
 });
+
+test("HR sets the work e-mail from the Contact window, next to the personal one; a wrong one is refused", async () => {
+  const r = await hr.c.put(`/api/employees/${staff.emp.id}/contact`, { email: "staff.one@nama.om", personal_email: "me@example.com" });
+  assert.equal(r.status, 200);
+  assert.deepEqual([r.data.employee.email, r.data.employee.personal_email], ["staff.one@nama.om", "me@example.com"]);
+  const bad = await hr.c.put(`/api/employees/${staff.emp.id}/contact`, { email: "not an email" });
+  assert.equal(bad.status, 400); assert.equal(bad.data.field, "email");
+  // the person can't change it from their own Contact window
+  await staff.c.put(`/api/employees/${staff.emp.id}/contact`, { email: "other@x.om" });
+  assert.equal((await hr.c.get(`/api/employees/${staff.emp.id}`)).data.employee.email, "staff.one@nama.om");
+});
