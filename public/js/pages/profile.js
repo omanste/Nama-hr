@@ -11,7 +11,7 @@ import { appliesTo } from "../leave-types.js";
 import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, errText, confirm, select, field, backLink, todayIso, isPermission, isAttendanceReq, durText, viewFile, busy, saveWithExpiryCheck, emailInput } from "../ui.js";
 import { balanceHero, requestItem } from "./home.js";
 import { render as rerender, refreshMe } from "../app.js";
-import { registerPhone, faceIdSupported, faceIdError } from "../checkin.js";
+import { registerWithHelp, faceIdSupported, faceIdError } from "../checkin.js";
 
 const DOC_TYPES = ["civil_id", "passport", "visa", "resume", "certificate", "course", "contract", "medical", "consent", "other"]; // also the order the categories are listed in
 // staff may add their own papers (a copy of their contract too); payout consents stay with HR (server enforces the same)
@@ -280,7 +280,7 @@ function devicesCard(e, own, can) {
   };
   const addBtn = own ? h("button", { class: "btn", type: "button", onclick: async () => {
     if (!(await faceIdSupported())) { toast(t("ci_faceid_unsupported"), "bad"); return; }
-    try { await registerPhone(); toast(t("ci_faceid_registered")); load(); } catch (er) { if (!(er && er.name === "AbortError")) toast(faceIdError(er, { registering: true }), "bad"); }
+    try { if (await registerWithHelp()) { toast(t("ci_faceid_registered")); load(); } } catch (er) { toast(faceIdError(er, { registering: true }), "bad"); }
   } }, "🔐 ", t("ci_faceid_register")) : null;
   // check-in verification for this person (HR / Admin): Default (the company's switch) / On / Off, for each check
   const verify = can.admin() ? h("div", { class: "verify-person" }, h("h3", null, t("ver_person_title")), h("p", { class: "sub" }, t("ver_person_hint")),

@@ -228,6 +228,31 @@ export async function registerPhone({ intro = false } = {}) {
   if (!c) throw new Error(t("ci_faceid_cancelled"));
   return api.post("/api/webauthn/register/verify", credJSON(c));
 }
+/** The iPhone's setup, as numbered steps in a window that stays until it is closed: an iPhone saves the Face ID key only in
+ * Apple's Passwords (iCloud Keychain); with another password app alone (e.g. Google) iOS asks "Choose how to manage your
+ * passkeys" and nothing is saved. Resolves "retry" or null. */
+const iosSetupDialog = () => new Promise((resolve) => {
+  let answer = null;
+  const dlg = h("dialog", { class: "dialog ios-setup" }, h("div", { class: "form" },
+    h("h2", null, "🔐 ", t("ci_ios_setup_title")), h("p", { class: "sub" }, t("ci_ios_setup_why")),
+    h("ol", null, ["ci_ios_step_1", "ci_ios_step_2", "ci_ios_step_3"].map((k) => h("li", null, t(k)))),
+    h("p", { class: "sub" }, t("ci_ios_setup_fallback")),
+    h("div", { class: "row end" }, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, t("close")),
+      h("button", { class: "btn primary", type: "button", onclick: () => { answer = "retry"; dlg.close(); } }, t("ci_faceid_retry")))));
+  dlg.addEventListener("close", () => { dlg.remove(); resolve(answer); });
+  document.body.append(dlg); dlg.showModal();
+});
+/** Register this phone; on an iPhone that couldn't save the key, show the setup steps and let them try again.
+ * True when registered, false when given up (AbortError: our own window was closed); other errors are thrown. */
+export async function registerWithHelp(opts = {}) {
+  for (;;) {
+    try { await registerPhone(opts); return true; } catch (e) {
+      if (e && e.name === "AbortError") return false;
+      if (!(isIOS() && e && e.name === "NotAllowedError")) throw e;
+      if ((await iosSetupDialog()) !== "retry") return false;
+    }
+  }
+}
 async function verifyPhone() {
   const o = await api.post("/api/webauthn/verify/options", {});
   const pk = { ...o, challenge: fromB64u(o.challenge), allowCredentials: (o.allowCredentials || []).map((c) => ({ ...c, id: fromB64u(c.id) })) };
@@ -244,7 +269,7 @@ async function faceId() {
   if (!(await faceIdSupported())) { if (must) { toast(t("ci_faceid_unsupported"), "bad"); return false; } return true; }
   try {
     if (!st.devices) {
-      try { await registerPhone({ intro: true }); } catch (e) { if (e && e.name === "AbortError") return false; toast(faceIdError(e, { registering: true }), "bad"); return false; }
+      try { if (!(await registerWithHelp({ intro: true }))) return false; } catch (e) { toast(faceIdError(e, { registering: true }), "bad"); return false; }
       toast(t("ci_faceid_registered"));
       return true;
     }
@@ -256,7 +281,7 @@ async function faceId() {
     // a new phone (the key is on the old one), or the person cancelled: register this phone, or try again later
     if (e && (e.name === "NotAllowedError" || e.name === "InvalidStateError" || e.error === "unknown_device")) {
       const choice = await faceIdRetry();
-      if (choice === "register") { try { await registerPhone(); toast(t("ci_faceid_registered")); return true; } catch (e2) { toast(faceIdError(e2, { registering: true }), "bad"); return false; } }
+      if (choice === "register") { try { if (!(await registerWithHelp())) return false; toast(t("ci_faceid_registered")); return true; } catch (e2) { toast(faceIdError(e2, { registering: true }), "bad"); return false; } }
       if (choice === "retry") return faceId();
       return false;
     }
