@@ -83,12 +83,39 @@ export async function render(el, _p, { me, can, query }) {
     ["att_h_missing", (s) => num(s.missing)], ["att_h_absent", (s) => num(s.absent)], ["att_h_pending", (s) => num(s.pending)],
     ["att_h_leave", (s) => num(s.leave)], ["att_h_mission", (s) => num(s.mission)], ["att_h_outside", (s) => num(s.outside || 0)],
     ["att_h_after", (s) => (s.afterMin ? pair(s.afterDays, s.afterMin) : "—")], ["att_h_extra", (s) => (s.extraMin ? durText(s.extraMin) : "—")],
-    ["att_h_flagged", (s) => (s.flagged ? h("span", { class: "pair bad-text" }, h("b", null, "⚠️ ", num(s.flagged)), s.unverified ? h("small", null, `${t("att_unverified")} ${num(s.unverified)}`) : null) : "0")], ["att_h_hours", (s) => (s.worked || s.onSite ? durText(s.worked ?? s.onSite) : "—")]];
+    ["att_h_flagged", (s) => (s.flagged ? h("span", { class: "pair1 bad-text", title: s.unverified ? `${t("att_unverified")} ${num(s.unverified)}` : "" }, "⚠️ ", h("b", null, num(s.flagged)), s.unverified ? h("small", null, ` · ${num(s.unverified)}`) : null) : "—")], ["att_h_hours", (s) => (s.worked || s.onSite ? durText(s.worked ?? s.onSite) : "—")]];
   // "3" over "1:25": how many times, then how long
-  function pair(n, min) { return n ? h("span", { class: "pair" }, h("b", null, num(n)), h("small", null, durText(min))) : "—"; }
-  const thead = (first) => h("thead", null, h("tr", null, h("th", { class: "name-col" }, first), COLS.map(([k]) => h("th", { class: "num" }, t(k)))));
+  // "3 · 1:25" on one line: how many times, then how long
+  function pair(n, min) { return n ? h("span", { class: "pair1" }, h("b", null, num(n)), h("small", null, ` · ${durText(min)}`)) : "—"; }
   const cells = (s) => COLS.map(([, f]) => h("td", { class: "num" }, f(s)));
-  const grid = (first, rows) => h("div", { class: "table-wrap keep-table att-grid" }, h("table", null, thead(first), h("tbody", null, rows)));
+  // one line per row: fixed columns (the name as wide as the longest name as drawn), every row the same height
+  const grid = (first, rows, withNo = false) => h("div", { class: "table-wrap keep-table att-grid att-one-wrap" }, h("table", { class: "att-one" },
+    h("colgroup", null, withNo ? h("col", { style: "width:70px" }) : null, h("col", { class: "nm-col" }), COLS.map(() => h("col"))),
+    h("thead", null, h("tr", null, withNo ? h("th", { class: "num" }, t("emp_no_short")) : null, h("th", { class: "name-col" }, first), COLS.map(([k]) => h("th", { class: "num" }, t(k))))),
+    h("tbody", null, rows)));
+  // after drawing: size the name column; when the table can't fit this screen even with a smaller font, the cards instead
+  function fit() {
+    for (const tb of out.querySelectorAll("table.att-one")) {
+      const sec = tb.closest("section"); sec.classList.remove("att-narrow");
+      const cells = [...tb.querySelectorAll("td.name-col")]; if (!cells.length || !tb.offsetParent) continue;
+      // each figure column as wide as its widest value (headers may wrap), at least 40 px
+      const cols = [...tb.querySelectorAll("col")], first = cols.findIndex((c) => c.classList.contains("nm-col")) + 1;
+      // … and as wide as the longest word of its header (headers wrap between words, never inside one)
+      const ths = [...tb.querySelectorAll("thead th")].slice(first), ctx2 = (fit.c ||= document.createElement("canvas").getContext("2d"));
+      const headW = (th) => { const cs = getComputedStyle(th); ctx2.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`; return Math.ceil(Math.max(...th.textContent.split(/\s+/).map((w) => ctx2.measureText(w).width))) + 10; };
+      const cellW = (c) => { if (!c) return 0; const x = c.firstElementChild; if (x) return x.getBoundingClientRect().width + 10; const cs = getComputedStyle(c); ctx2.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`; return Math.ceil(ctx2.measureText(c.textContent).width) + 10; };
+      const widths = COLS.map((_, i) => Math.max(36, ths[i] ? headW(ths[i]) : 0, ...[...tb.querySelectorAll("tbody tr")].map((r) => cellW(r.cells[first + i]))));
+      widths.forEach((w, i) => { cols[first + i].style.width = `${w}px`; });
+      const no = first > 1 ? 70 : 0;
+      const room = tb.parentElement.clientWidth - widths.reduce((a, b) => a + b, 0) - no;
+      let px = 13.5, need = 0;
+      for (;;) { tb.style.setProperty("--att-name", `${px}px`); need = Math.ceil(Math.max(...cells.map((td) => td.firstChild.scrollWidth)) + 14); if (need <= room || px <= 10.5) break; px -= 0.5; }
+      if (need > room) { sec.classList.add("att-narrow"); continue; }
+      tb.querySelector("col.nm-col").style.width = `${need}px`;
+    }
+  }
+  addEventListener("resize", () => { if (out.isConnected) requestAnimationFrame(fit); });
+  if (document.fonts) document.fonts.addEventListener("loadingdone", () => { if (out.isConnected) requestAnimationFrame(fit); });
   // phones: a card per row — the name, then the figures as small labelled boxes
   const cardOf = (title, sub, s) => h("div", { class: "card att-pcard" }, h("div", { class: "pc-head" }, title, sub ? h("div", { class: "muted" }, sub) : null),
     h("div", { class: "pc-grid" }, COLS.map(([k, f]) => h("div", null, h("span", null, t(k)), h("b", null, f(s))))));
@@ -117,12 +144,13 @@ export async function render(el, _p, { me, can, query }) {
         h("div", { class: "card tile" }, h("div", { class: "n" }, num(r.openRequests)), h("div", { class: "l" }, t("att_open_requests"))),
         h("div", { class: "card tile" }, h("div", { class: "n" }, r.correctionHours === null ? "—" : t("hours", { n: num(r.correctionHours) })), h("div", { class: "l" }, t("att_corr_time")))),
       h("section", { class: "card", style: { marginTop: "16px" } }, h("h2", null, t("att_by_department")),
-        r.departments.length ? [grid(t("f_department"), r.departments.map((d) => h("tr", null, h("td", { class: "name-col" }, h("b", null, nm(d) || t("no_department")), h("div", { class: "muted" }, t("att_n_staff", { n: num(d.staff) }))), cells(d)))),
+        r.departments.length ? [grid(t("f_department"), r.departments.map((d) => h("tr", null, h("td", { class: "name-col" }, h("span", null, h("b", null, nm(d) || t("no_department")), h("span", { class: "muted" }, ` · ${num(d.staff)}`))), cells(d)))),
           h("div", { class: "att-cards" }, r.departments.map((d) => cardOf(h("b", null, nm(d) || t("no_department")), t("att_n_staff", { n: num(d.staff) }), d)))] : empty(t("att_no_data"))),
       r.people.length ? h("section", { class: "card", style: { marginTop: "16px" } }, h("h2", null, t("att_by_person")), h("p", { class: "sub" }, t("att_by_person_note")),
-        grid(t("employee"), r.people.map((p) => h("tr", null, h("td", { class: "name-col" }, personLink(p), h("div", { class: "muted" }, personSub(p))), cells(p)))),
+        grid(t("employee"), r.people.map((p) => h("tr", null, h("td", { class: "num mono" }, p.employee.emp_no), h("td", { class: "name-col", title: personSub(p) }, personLink(p)), cells(p))), true),
         h("div", { class: "att-cards" }, r.people.map((p) => cardOf(personLink(p), personSub(p), p)))) : null].filter(Boolean));
     function personLink(p) { return h("a", { href: `#/attendance?emp=${p.employee.id}&m=${r.to.slice(0, 7)}&source=${source}` }, nm(p.employee)); }
+    requestAnimationFrame(fit);
   }
 
   async function loadQueue() {

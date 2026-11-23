@@ -44,14 +44,14 @@ export async function render(el, _p, { can, query }) {
   const jobs = [...new Set(R.items.map(jobOf).filter(Boolean))].sort((a, b) => a.localeCompare(b, L));
   const job = sel("job", [["", `${t("sl_filter_job")}: ${t("all")}`], ...jobs.map((j) => [j, j])], "", t("sl_filter_job"));
   const q = h("input", { type: "search", placeholder: t("sl_search"), "aria-label": t("sl_search"), value: query.get("q") || "" });
-  let sort = loadSort(), narrow = false;
+  let sort = loadSort(), narrow = false, nowF = "";
   const out = h("div", { class: "sl-out" });
   const fold = (v) => String(v || "").toLowerCase().replace(/[\u064B-\u0652\u0640]/g, "").replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه");
   function shown() {
     const s = fold(q.value.trim());
     return R.items.filter((e) => (status.value === "current" ? ["active", "on_leave"].includes(e.status) : !status.value || e.status === status.value)
       && (!dept.value || String(e.department_id) === dept.value) && (!job.value || jobOf(e) === job.value)
-      && (!s || [e.name_ar, e.name_en, e.emp_no].some((v) => fold(v).includes(s))));
+      && (!s || [e.name_ar, e.name_en, e.emp_no].some((v) => fold(v).includes(s))) && (!nowF || (live(e) && live(e).code === nowF)));
   }
   const coll = new Intl.Collator(L === "ar" ? "ar" : "en", { numeric: true, sensitivity: "base" }); // NAMA-2 before NAMA-10
   const value = (e, k) => ({ emp_no: e.emp_no, name: nameOf(e).text, dept: deptOf(e), job: jobOf(e), join: e.join_date, remaining: e.remaining, status: STATUSES.indexOf(e.status) })[k];
@@ -63,18 +63,30 @@ export async function render(el, _p, { can, query }) {
   });
   const setSort = (key) => { sort = { key, dir: sort.key === key ? -sort.dir : 1 }; saveSort(sort); draw(); };
   // the text of each cell, the same for the screen and the files
+  // the live status: where a current person is right now (from today's attendance); others keep their employment status
+  const NOW_CLASS = { on_duty: "b-approved", checked_out: "b-disabled", on_break: "b-pending", excused: "b-on_leave", on_leave: "b-on_leave", mission: "b-mission",
+    holiday: "b-disabled", rest: "b-disabled", not_in: "b-pending", absent: "b-rejected", pending: "b-pending" };
+  const live = (e) => (["active", "on_leave"].includes(e.status) && e.now && NOW_CLASS[e.now.code] ? e.now : null);
+  const hm = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  const nowText = (n) => t("now_" + n.code) + (n.code === "on_duty" || n.code === "excused" ? (n.in !== undefined && n.in !== null ? ` ${hm(n.in)}` : "") : n.code === "checked_out" ? ` ${hm(n.out)}` : n.code === "on_break" && n.since ? ` ${n.since}` : "");
+  const statusText = (e) => (live(e) ? nowText(live(e)) : t("st_" + e.status));
+  const statusBadge = (e) => (live(e) ? h("span", { class: `badge ${NOW_CLASS[live(e).code]}`, title: t("st_" + e.status) }, nowText(live(e))) : badge(e.status, "st_"));
   const cellText = (e, k) => k === "emp_no" ? e.emp_no || "—" : k === "name" ? (nameOf(e).text ? nameOf(e).text + (nameOf(e).tag ? ` ${nameOf(e).tag}` : "") : "—")
-    : k === "dept" ? deptOf(e) || "—" : k === "job" ? jobOf(e) || "—" : k === "join" ? dmy(e.join_date) : k === "remaining" ? t("days", { n: num(daysLeft(e)) }) : t("st_" + e.status);
+    : k === "dept" ? deptOf(e) || "—" : k === "job" ? jobOf(e) || "—" : k === "join" ? dmy(e.join_date) : k === "remaining" ? t("days", { n: num(daysLeft(e)) }) : statusText(e);
   function draw() {
     const list = sorted(shown());
     const counts = Object.fromEntries(STATUSES.map((s) => [s, list.filter((e) => e.status === s).length]));
-    const summary = h("p", { class: "sub sl-count" }, t("sl_total", { n: num(list.length) }), " · ", STATUSES.filter((s) => counts[s]).map((s) => `${t("st_" + s)} ${num(counts[s])}`).join(" · "));
+    // and right now: how many are on duty, out, on leave, on a task… (as of the time shown)
+    const nowCounts = {}; for (const e of list) { const n = live(e); if (n) nowCounts[n.code] = (nowCounts[n.code] || 0) + 1; }
+    const nowLine = Object.keys(nowCounts).length ? h("div", { class: "sl-now" }, h("span", { class: "muted" }, t("now_as_of", { t: R.clock || "" })),
+      Object.keys(NOW_CLASS).filter((k) => nowCounts[k]).map((k) => h("button", { type: "button", class: `badge ${NOW_CLASS[k]}${nowF === k ? " on" : ""}`, onclick: () => { nowF = nowF === k ? "" : k; draw(); } }, `${t("now_" + k)} · ${num(nowCounts[k])}`))) : null;
+    const summary = h("div", null, h("p", { class: "sub sl-count" }, t("sl_total", { n: num(list.length) }), " · ", STATUSES.filter((s) => counts[s]).map((s) => `${t("st_" + s)} ${num(counts[s])}`).join(" · ")), nowLine);
     if (!list.length) return clear(out).append(summary, empty());
     if (narrow || !matchMedia("(min-width: 700px)").matches) {
       clear(out).append(summary, h("div", { class: "list sl-cards" }, list.map((e) => h("a", { class: "item", href: `#/staff/${e.id}` }, // no photo here: the whole width for the name
         h("div", { class: "grow" }, h("div", { class: "title sl-nm" }, h("span", null, nameOf(e).text || "—"), nameOf(e).tag ? h("small", { class: "sl-tag" }, nameOf(e).tag) : null),
           h("div", { class: "meta" }, [e.emp_no, deptOf(e), jobOf(e)].filter(Boolean).join(" · ")),
-          h("div", { class: "meta row", style: { gap: "6px" } }, badge(e.status, "st_"), `${t("sl_join")}: ${dmy(e.join_date)} · ${cellText(e, "remaining")}`))))));
+          h("div", { class: "meta row", style: { gap: "6px" } }, statusBadge(e), `${t("sl_join")}: ${dmy(e.join_date)} · ${cellText(e, "remaining")}`))))));
       // a name too long for the card: a slightly smaller font, never cut or broken
       const shrink = () => out.querySelectorAll(".sl-cards .sl-nm").forEach((n) => { n.style.fontSize = ""; let px = parseFloat(getComputedStyle(n).fontSize); while (n.scrollWidth > n.clientWidth + 1 && px > 9.5) { px -= 0.5; n.style.fontSize = `${px}px`; } });
       requestAnimationFrame(shrink); setTimeout(shrink, 900); if (document.fonts) document.fonts.ready.then(() => requestAnimationFrame(shrink));
@@ -83,13 +95,13 @@ export async function render(el, _p, { can, query }) {
     const th = ([k, label]) => h("th", { class: CENTER.has(k) ? "c" : null, "aria-sort": sort.key === k ? (sort.dir > 0 ? "ascending" : "descending") : "none" },
       h("button", { class: "th-sort", type: "button", onclick: () => setSort(k) }, t(label), h("span", { class: "arrow", "aria-hidden": "true" }, sort.key === k ? (sort.dir > 0 ? "▲" : "▼") : "↕")));
     clear(out).append(summary, h("div", { class: "table-wrap sl-wrap" }, h("table", { class: "sl-table" },
-      h("colgroup", null, h("col", { style: "width:104px" }), h("col", { style: "width:240px" }), h("col"), h("col"), h("col", { style: "width:108px" }), h("col", { style: "width:104px" }), h("col", { style: "width:132px" }), h("col", { style: "width:60px" })),
+      h("colgroup", null, h("col", { style: "width:104px" }), h("col", { style: "width:240px" }), h("col"), h("col"), h("col", { style: "width:108px" }), h("col", { style: "width:104px" }), h("col", { style: "width:140px" }), h("col", { style: "width:62px" })),
       h("thead", null, h("tr", null, COLS.map(th), h("th", null, ""))),
       h("tbody", null, list.map((e) => h("tr", null,
         h("td", { class: "c mono" }, e.emp_no || "—"),
         h("td", { class: "sl-nm" }, h("a", { href: `#/staff/${e.id}` }, avatar(e, 28), h("span", null, nameOf(e).text || "—"), nameOf(e).tag ? h("small", { class: "sl-tag" }, nameOf(e).tag) : null)),
         h("td", { class: "cut", title: deptOf(e) }, deptOf(e) || "—"), h("td", { class: "cut", title: jobOf(e) }, jobOf(e) || "—"),
-        h("td", { class: "c" }, dmy(e.join_date)), h("td", { class: "c" }, cellText(e, "remaining")), h("td", { class: "c" }, badge(e.status, "st_")),
+        h("td", { class: "c" }, dmy(e.join_date)), h("td", { class: "c" }, cellText(e, "remaining")), h("td", { class: "c" }, statusBadge(e)),
         h("td", { class: "c" }, h("a", { class: "btn small", href: `#/staff/${e.id}/edit`, title: t("edit"), "aria-label": t("edit") }, "✎"))))))));
     requestAnimationFrame(fit);
   }
@@ -101,7 +113,7 @@ export async function render(el, _p, { can, query }) {
     const tb = out.querySelector(".sl-table"); if (!tb) return;
     const col = tb.querySelectorAll("col")[1], cells = [...tb.querySelectorAll("td.sl-nm")]; if (!cells.length) return;
     const cs = getComputedStyle(cells[0]), pad = parseFloat(cs.paddingInlineStart) + parseFloat(cs.paddingInlineEnd);
-    const room = tb.parentElement.clientWidth - (104 + 108 + 104 + 132 + 60) - 2 * 120; // the other columns, and at least 120 px each for Department and Job title
+    const room = tb.parentElement.clientWidth - (104 + 108 + 104 + 140 + 62) - 2 * 120; // the other columns, and at least 120 px each for Department and Job title
     let px = 14, need = 0;
     for (;;) {
       tb.style.setProperty("--sl-name", `${px}px`);
@@ -158,7 +170,7 @@ async function staffPdf(list, { R, cellText, nameOf, stamp, onStep }) {
       h("table", { class: "sl", style: "table-layout:fixed;width:100%" },
         h("colgroup", null, h("col", { style: "width:80px" }), h("col", { style: `width:${Math.ceil(nameW)}px` }), h("col"), h("col"), h("col", { style: "width:82px" }), h("col", { style: "width:84px" }), h("col", { style: "width:96px" })),
         h("thead", null, h("tr", null, COLS.map(([k, l]) => h("th", { class: CENTER.has(k) ? "c" : "s" }, t(l))))),
-        h("tbody", null, chunk.map((e) => h("tr", null, COLS.map(([k]) => k === "status" ? h("td", { class: "c" }, h("span", { class: `b b-${e.status}` }, t("st_" + e.status)))
+        h("tbody", null, chunk.map((e) => h("tr", null, COLS.map(([k]) => k === "status" ? h("td", { class: "c" }, h("span", { class: `b b-${e.status}` }, cellText(e, "status")))
           : k === "name" ? h("td", { class: "s n" }, nameOf(e).text || "—", nameOf(e).tag ? h("small", null, nameOf(e).tag) : null)
           : h("td", { class: CENTER.has(k) ? "c" : "s" }, cellText(e, k))))))),
     ]));

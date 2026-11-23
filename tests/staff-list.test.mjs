@@ -68,3 +68,21 @@ test("Resigned / Terminated: the last working day is needed and kept, they can n
   const back = await hr.c.put(`/api/employees/${b.emp.id}`, { status: "active" });
   assert.equal(back.data.employee.last_working_day, null);
 });
+
+test("the Staff list says where each current person is right now, from today's attendance", async () => {
+  const { presenceNow } = await import("../server/attendance.mjs");
+  const { getEmployee } = await import("../server/employees.mjs");
+  const ins = t.db.prepare("INSERT INTO att_checkins(employee_id,kind,at,lat,lng,outside,created_at,ip,user_agent,checks,verified) VALUES(?,?,?,?,?,?,?,?,?,?,?)");
+  const make = async (no) => (await admin.post("/api/employees", { emp_no: no, name_ar: no, join_date: "2021-01-01" })).data.employee;
+  const [onDuty, out, away, task] = [await make("P1"), await make("P2"), await make("P3"), await make("P4")];
+  for (const e of [onDuty, out, away, task]) ins.run(e.id, "in", "2026-11-01 09:00", 23.6, 58.5, 0, "x", "1", "u", "{}", 1); // online from before
+  ins.run(onDuty.id, "in", "2026-11-23 08:41", 23.6, 58.5, 0, "x", "1", "u", "{}", 1);
+  ins.run(out.id, "in", "2026-11-23 08:30", 23.6, 58.5, 0, "x", "1", "u", "{}", 1); ins.run(out.id, "out", "2026-11-23 11:00", 23.6, 58.5, 0, "x", "1", "u", "{}", 1);
+  t.db.prepare("INSERT INTO leave_requests(employee_id,type,start_date,end_date,minutes,status,created_at,early_time,end_time) VALUES(?,?,?,?,?,?,?,?,?)").run(task.id, "mission", "2026-11-23", "2026-11-23", 420, "approved", "x", "09:00", "16:00");
+  const at = (e) => presenceNow(t.db, getEmployee(t.db, e.id), "2026-11-23", 11 * 60 + 30).code;
+  assert.deepEqual([at(onDuty), at(out), at(away), at(task)], ["on_duty", "checked_out", "not_in", "mission"]);
+  const r = (await hr.c.get("/api/staff-list")).data;
+  const byNo = Object.fromEntries(r.items.map((e) => [e.emp_no, e.now && e.now.code]));
+  assert.deepEqual([byNo.P1, byNo.P2, byNo.P3, byNo.P4].length, 4);
+  assert.ok(r.items.filter((e) => ["P1", "P2", "P3", "P4"].includes(e.emp_no)).every((e) => e.now && e.now.code));
+});

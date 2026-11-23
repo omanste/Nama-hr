@@ -22,6 +22,12 @@ The history before this page existed (26 October – 22 November 2026) was fille
 are the dates of each change on dev.
 
 ## 2026-11-23
+- [Reports · Improvement] Attendance report: one line per row | تقرير الحضور: سطر واحد لكل صف
+  By department and By person: the name on one line, each figure as “3 · 1:25” on one line, every row the same height; cards on small screens. | حسب القسم وحسب الموظف: الاسم في سطر واحد وكل رقم مثل «3 · 1:25» في سطر واحد وكل الصفوف بنفس الارتفاع، وبطاقات على الشاشات الصغيرة.
+  key: att-report-one-line
+- [Profiles · New feature] Staff tab: where each person is right now | تبويب الموظفين: أين الموظف الآن
+  The status shows, from today's attendance, who is on duty (and since when), checked out, on a break, excused, on leave, on an external task, on a holiday or not in yet; tap a count to see who. | تعرض الحالة من حضور اليوم: في الدوام (ومنذ متى)، انصرف، في استراحة، مستأذن، في إجازة، في مهمة خارجية، في عطلة، أو لم يحضر بعد؛ واضغط على العدد لترى من هم.
+  key: staff-now
 - [Attendance · Improvement] Online check-in log: one line per person per day | سجل الحضور الإلكتروني: سطر واحد لكل موظف في اليوم
   Date, number, name on one line, department, check-in and check-out with small icons (🔐 📷 🗺️ ⚠️), hours and the place — all in one row; phones get a card per row. | التاريخ والرقم والاسم في سطر واحد والقسم والحضور والانصراف مع أيقونات صغيرة (🔐 📷 🗺️ ⚠️) والساعات والموقع — كلها في سطر واحد، وفي الهاتف بطاقة لكل سطر.
   key: checkin-log-one-line

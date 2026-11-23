@@ -527,3 +527,29 @@ export function runWeeklyAttendance(ctx, today) {
   notify(ctx, to_, { title_ar: "تقرير الحضور الأسبوعي جاهز", title_en: "The weekly attendance report is ready", body_ar: `${dmy(from)} – ${dmy(to)}`, body_en: `${dmy(from)} – ${dmy(to)}`, link: `#/attendance/report?from=${from}&to=${to}` });
   return to_.length;
 }
+
+/** Where a person is right now, from today's attendance: on duty (checked in), checked out, on a break, excused (an
+ * approved permission covering now), on leave, on an external task, holiday / weekly rest, not in yet, absent.
+ * Combined sources (fingerprint and online). Returns { code, in?, out?, since? }. */
+export function presenceNow(db, emp, today, nowMin) {
+  if (attendanceExempt(db).includes(emp.id)) return { code: "exempt" };
+  const d = employeeDays(db, emp, today, today, "all", nowMin).days[0];
+  if (!d) return { code: "unknown" };
+  const reqs = db.prepare("SELECT type, early_time, end_time, details FROM leave_requests WHERE employee_id=? AND status='approved' AND start_date<=? AND end_date>=?").all(emp.id, today, today);
+  const within = (a, b) => a !== null && b !== null && nowMin !== null && nowMin >= a && nowMin < b;
+  const sh = d.shift || { start: 540, end: 1020 };
+  const brk = reqs.find((r) => r.type === "break");
+  if (brk) { let dt = {}; try { dt = JSON.parse(brk.details || "{}"); } catch {} if (dt.actual_start && !dt.actual_end) return { code: "on_break", since: dt.actual_start }; }
+  if (d.status === "leave") return { code: "on_leave", leave: d.leave };
+  if (reqs.some((r) => r.type === "mission" && (!r.early_time || within(clockMin(r.early_time), clockMin(r.end_time)))) || d.status === "mission") return { code: "mission" };
+  const excused = reqs.some((r) => PERMISSION_TYPES.includes(r.type) && r.type !== "break" && (() => { try { const [a, b] = permissionSpan(r.type, { time: r.early_time, endTime: r.end_time, dayStart: sh.start, dayEnd: sh.end }); return within(a, b); } catch { return false; } })());
+  if (d.in !== null && d.out !== null) return { code: "checked_out", in: d.in, out: d.out };
+  if (d.in !== null) return excused ? { code: "excused", in: d.in } : { code: "on_duty", in: d.in };
+  if (excused) return { code: "excused" };
+  if (d.status === "holiday" || d.status === "holiday_worked") return { code: "holiday" };
+  if (d.status === "rest" || d.status === "rest_worked") return { code: "rest" };
+  if (d.status === "pending") return { code: "pending" };
+  if (nowMin !== null && nowMin < sh.end && ["today", "no_data", "absent", "missing"].includes(d.status)) return { code: "not_in", from: sh.start };
+  if (d.status === "absent") return { code: "absent" };
+  return { code: d.status === "no_data" ? "no_record" : d.status };
+}

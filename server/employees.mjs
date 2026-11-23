@@ -5,7 +5,7 @@ import { nowIso, tx, getSetting } from "./db.mjs";
 import { send, readJson, HttpError } from "./http.mjs";
 import { can, canViewEmployee, approvedDepartments } from "./perm.mjs";
 import { audit } from "./audit.mjs";
-import { isIsoDate, ANNUAL, DAY, fmtDays, addDays, TYPES } from "./leave.mjs";
+import { isIsoDate, ANNUAL, DAY, fmtDays, addDays, TYPES, clockMin } from "./leave.mjs";
 import { postLedger, leaveSummary, ledgerRows, yearStartFor, balanceOf, pendingMinutes } from "./ledger.mjs";
 import { tempPassword, hashPassword } from "./auth.mjs";
 import { toCountryCode } from "../public/js/countries.js";
@@ -15,6 +15,7 @@ import { SHIFTS, SELF_SHIFTS, defaultShiftNo, shiftOn } from "./shifts.mjs";
 import { PHONE_FIELDS, cleanPhone, cleanRelation } from "./phone.mjs";
 import { recordSelfChange, pendingChangesOf } from "./profile-changes.mjs";
 import { removeUpload } from "./files.mjs";
+import { presenceNow } from "./attendance.mjs";
 
 const CONTACT = ["mobile", "personal_phone", "personal_email", "perm_wilayat", "current_area", "address", "emergency_name", "emergency_relation", "emergency_phone"];
 const BANK = ["bank_name", "bank_account", "bank_iban"];
@@ -275,9 +276,12 @@ export function registerEmployees(api, ctx) {
         e.last_working_day,e.photo_file_id,e.gender,(SELECT coalesce(sum(minutes),0) FROM leave_ledger l WHERE l.employee_id=e.id) remaining
       FROM employees e LEFT JOIN departments d ON d.id=e.department_id ORDER BY e.emp_no`).all();
     const current = items.filter((e) => e.status === "active" || e.status === "on_leave");
+    // where each current person is right now (from today's attendance)
+    const today = ctx.today(), nowMin = clockMin(ctx.clock());
+    for (const e of current) { try { e.now = presenceNow(db, getEmployee(db, e.id), today, nowMin); } catch { e.now = null; } }
     const missing = { department: current.filter((e) => !e.department_id).length, job_title: current.filter((e) => !String(e.job_title || "").trim()).length,
       join_date: current.filter((e) => !e.join_date).length, name_ar: current.filter((e) => !String(e.name_ar || "").trim()).length, name_en: current.filter((e) => !String(e.name_en || "").trim()).length };
-    send(req, res, 200, { items, missing, day: DAY, generated_at: nowIso(), by: req.sess.employee ? { name_ar: req.sess.employee.name_ar, name_en: req.sess.employee.name_en } : { name_en: req.sess.user.username, name_ar: req.sess.user.username } });
+    send(req, res, 200, { items, missing, day: DAY, generated_at: nowIso(), clock: ctx.clock(), by: req.sess.employee ? { name_ar: req.sess.employee.name_ar, name_en: req.sess.employee.name_en } : { name_en: req.sess.user.username, name_ar: req.sess.user.username } });
   });
 
   api.get("/api/employees/:id", (req, res) => send(req, res, 200, profile(db, req.sess, load(req.sess, req.params.id), ctx.today())));

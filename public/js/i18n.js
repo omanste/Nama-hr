@@ -797,6 +797,11 @@ const D = {
   upd_day_list: ["التحديثات يوماً بيوم", "Day by day"], upd_count: ["العدد", "Count"], upd_title_col: ["التحديث", "Update"], upd_desc_col: ["الوصف", "Description"],
   upd_envs_col: ["البيئات والتواريخ", "Environments and dates"], upd_since: ["أول تحديث مسجّل: {d}", "First recorded update: {d}"],
   upd_last_deploy: ["آخر نشر هنا: {d} · {v}", "Last deploy here: {d} · {v}"],
+  // where a person is right now (Staff tab)
+  now_on_duty: ["في الدوام", "On duty"], now_checked_out: ["انصرف", "Out"], now_on_break: ["استراحة", "On a break"],
+  now_excused: ["مستأذن", "Excused"], now_on_leave: ["في إجازة", "On leave"], now_mission: ["مهمة خارجية", "External task"], now_holiday: ["عطلة رسمية", "Holiday"],
+  now_rest: ["راحة أسبوعية", "Weekly rest"], now_not_in: ["لم يحضر بعد", "Not in yet"], now_absent: ["غائب", "Absent"], now_pending: ["بانتظار طلب", "Request pending"],
+  now_as_of: ["الآن ({t}):", "Now ({t}):"],
   // degrees and courses with their year
   f_degrees: ["المؤهلات العلمية", "Degrees"], f_courses: ["الدورات", "Courses"], q_year: ["سنة التخرج", "Year"], q_level: ["المؤهل", "Level"],
   q_course_name: ["اسم الدورة أو الشهادة", "Course or certificate"], q_add_degree: ["إضافة مؤهل", "Add a degree"], q_add_course: ["إضافة دورة", "Add a course"], q_remove: ["حذف", "Remove"],

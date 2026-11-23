@@ -688,3 +688,13 @@ input:disabled{background:var(--surface-2);color:var(--muted);cursor:not-allowed
 .ol-cards{display:none}.ol-cname{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 @media (max-width:699px){.ol-wrap{display:none}.ol-cards{display:block}}
 .ol-n{margin-inline-start:4px;color:var(--muted);font-size:11px}
+/* the attendance report: one line per row */
+.att-grid table.att-one{table-layout:fixed;width:100%}
+.att-one td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:44px;padding:4px 3px;vertical-align:middle}
+.att-one td.name-col{overflow:visible;text-overflow:clip;font-size:var(--att-name,13.5px)}.att-one td.name-col > *{display:inline-block;white-space:nowrap}
+.att-one td.num{font-variant-numeric:tabular-nums}
+.pair1{white-space:nowrap;display:inline-block}.pair1 small{font-size:10.5px;color:var(--muted)}
+.att-narrow .att-grid{display:none}.att-narrow .att-cards{display:grid;gap:10px}
+.b-mission{background:color-mix(in srgb,#7b5cc4 18%,transparent);color:#7b5cc4}
+.sl-now{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 10px}
+.sl-now .badge{border:1px solid transparent;cursor:pointer;font:inherit;font-size:12px}.sl-now .badge.on{border-color:currentColor}
