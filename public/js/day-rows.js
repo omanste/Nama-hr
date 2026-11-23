@@ -27,7 +27,7 @@ export function mapPopup(c) {
 }
 
 /** The icons after a time: source, 📍 (tooltip), 📷, 🗺️, ⚠️. `src` is fingerprint / online / correction. */
-function icons(c, src, combined) {
+export function icons(c, src, combined) {
   const out = [];
   if (combined) out.push(srcIcon(src));
   if (!c) return out;

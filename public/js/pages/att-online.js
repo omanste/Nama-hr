@@ -7,6 +7,7 @@ import { checkinPlace, flagLabel } from "../checkin.js";
 import { letterPage, logoData, makePdf } from "../att-pdf.js";
 import { saveXlsx } from "../xlsx-out.js";
 import { pdfPreview } from "../pdf-preview.js";
+import { icons } from "../day-rows.js";
 
 /** The export's columns, Status last: [label, value(row)]. Names in the screen's language. */
 const nameOf = (e) => (document.documentElement.lang === "en" ? e.name_en || e.name_ar : e.name_ar || e.name_en) || "";
@@ -68,14 +69,7 @@ export async function render(el, _p, { me, can, query }) {
         h("div", { class: `card tile ${waiting ? "warn" : ""}` }, h("div", { class: "n" }, num(waiting)), h("div", { class: "l" }, t("ci_appr_pending")))),
       h("section", { class: "card", style: { marginTop: "16px" } },
         h("p", { class: "sub" }, `${dmy(r.from)} – ${dmy(r.to)} · `, t("ol_note")),
-        r.rows.length ? h("div", { class: "table-wrap" }, h("table", { class: "ol-table" },
-          h("thead", null, h("tr", null, [t("date"), t("employee"), t("att_in"), t("att_out"), t("att_on_site")].map((x, i) => h("th", { class: i === 4 ? "num" : null }, x)))),
-          h("tbody", null, r.rows.map((x) => h("tr", null,
-            h("td", null, h("b", null, dmy(x.date)), " ", h("span", { class: "muted" }, weekday(x.date))),
-            h("td", null, h("a", { href: `#/attendance?emp=${x.employee.id}&m=${x.date.slice(0, 7)}` }, nm(x.employee)), h("div", { class: "muted" }, [x.employee.emp_no, nm({ name_ar: x.employee.dept_ar, name_en: x.employee.dept_en })].filter(Boolean).join(" · ")),
-              x.count > 2 ? h("div", { class: "muted" }, t("ol_count", { n: num(x.count) })) : null),
-            cell(x.in), cell(x.out),
-            h("td", { class: "num" }, x.minutes !== null ? durText(x.minutes) : "—")))))) : empty(t("ol_none"))));
+        r.rows.length ? logRows(r.rows) : empty(t("ol_none"))));
   }
   for (const c of [from, to, dept, emp, flag].filter(Boolean)) c.addEventListener("change", load);
   el.append(pageHead(t("nav_att_online"), h("a", { class: "btn", href: "#/attendance/report" }, t("nav_att_report")), xlsBtn, pdfBtn),
@@ -102,4 +96,49 @@ async function logPdf(r, onStep) {
         h("tbody", null, part.map((x) => h("tr", null, LOG_COLS.map(([, f], j) => h("td", { class: j === 1 ? "s n" : [5, 7].includes(j) ? "s" : null }, f(x)))))))]));
   }
   return makePdf(pages, `nama-online-checkin-log-${r.from}-${r.to}.pdf`, onStep);
+}
+
+/** One line per person per day: Date | No. | Name (one line, never cut) | Department | In | Out | Hours | Location | Checks.
+ * Each time has small icons (📷 photo, 🗺️ map, ⚠️ flag, ⏳ waiting); phones get a compact card per row. */
+function logRows(rows) {
+  const L = document.documentElement.lang === "en" ? "en" : "ar";
+  const dept = (e) => (L === "en" ? e.dept_en || e.dept_ar : e.dept_ar || e.dept_en) || "—";
+  // the time, then 🔐 (Face ID), 📷 photo, 🗺️ map, ⚠️ flag (tooltip with the reason), ⏳ waiting for the manager
+  const fid = (c) => (c.checks && c.checks.faceid) || c.verified ? h("span", { class: "ico", title: t("ol_m_faceid"), "aria-label": t("ol_m_faceid") }, "🔐") : null;
+  const time = (c) => (c ? [h("b", { class: "tm" }, c.time), fid(c), ...icons({ ...c, site_ar: null, site_en: null, outside: false }, null, false).filter((i) => !/📍/.test(i.textContent))] : "—");
+  // short in the table: the site's name inside; "Outside · 11.1 km" outside (the full text is in the tooltip and the files)
+  const km = (c) => { const m = c.distance ?? (((c.flags || []).find((f) => f.code === "outside") || {}).km ?? null) * (c.distance ? 1 : 1000); return m ? (m >= 1000 ? `${num(Math.round(m / 100) / 10)} ${L === "en" ? "km" : "كم"}` : `${num(m)} ${L === "en" ? "m" : "م"}`) : ""; };
+  const short = (c) => (!c ? "" : c.outside ? [t("ol_outside_short"), km(c)].filter(Boolean).join(" · ") : (c.site && (L === "en" ? c.site.name_en || c.site.name_ar : c.site.name_ar || c.site.name_en)) || t("ol_inside"));
+  const where = (x) => both(x, short) || "—";
+  const whereFull = (x) => both(x, locText) || "—";
+  const more = (x) => (x.count > 2 ? ` · ${t("ol_count", { n: num(x.count) })}` : "");
+  const hours = (x) => (x.minutes !== null ? durText(x.minutes) : "—");
+  const table = h("div", { class: "table-wrap ol-wrap" }, h("table", { class: "ol-one" },
+    h("colgroup", null, h("col", { style: "width:104px" }), h("col", { style: "width:82px" }), h("col", { class: "ol-name" }), h("col", { style: "width:110px" }),
+      h("col", { style: "width:100px" }), h("col", { style: "width:100px" }), h("col", { style: "width:68px" }), h("col")),
+    h("thead", null, h("tr", null, [t("date"), t("emp_no_short"), t("employee"), t("f_department"), t("att_in"), t("att_out"), t("pdf_hours"), t("ol_c_loc")]
+      .map((k, i) => h("th", { class: [0, 1, 4, 5, 6].includes(i) ? "c" : null }, k)))),
+    h("tbody", null, rows.map((x) => h("tr", null,
+      h("td", { class: "c" }, h("b", null, dmy(x.date).slice(0, 5)), " ", h("span", { class: "muted" }, weekday(x.date))),
+      h("td", { class: "c mono" }, x.employee.emp_no),
+      h("td", { class: "nm" }, h("a", { href: `#/attendance?emp=${x.employee.id}&m=${x.date.slice(0, 7)}&source=online` }, nameOf(x.employee))),
+      h("td", { class: "cut", title: dept(x.employee) }, dept(x.employee)),
+      h("td", { class: "c tmc" }, time(x.in)), h("td", { class: "c tmc" }, time(x.out), x.count > 2 ? h("small", { class: "ol-n", title: t("ol_count", { n: num(x.count) }) }, `×${num(x.count)}`) : null), h("td", { class: "c" }, hours(x)),
+      h("td", { class: `cut${(x.in && x.in.outside) || (x.out && x.out.outside) ? " bad-text" : ""}`, title: whereFull(x) + more(x) }, where(x)))))));
+  const cards = h("div", { class: "ol-cards" }, rows.map((x) => h("div", { class: "dd-card" },
+    h("div", { class: "dd-top" }, h("b", { class: "ol-cname" }, nameOf(x.employee)), h("span", { class: "muted" }, `${dmy(x.date).slice(0, 5)} ${weekday(x.date)}`)),
+    h("div", { class: "dd-times" }, h("span", null, h("small", null, t("att_in")), " ", time(x.in)), h("span", null, h("small", null, t("att_out")), " ", time(x.out)), h("span", null, h("small", null, t("pdf_hours")), " ", hours(x))),
+    h("div", { class: "sub" }, `${x.employee.emp_no} · ${dept(x.employee)} · ${where(x)}${more(x)}`))));
+  const box = h("div", null, table, cards);
+  // the name column as wide as the longest name as drawn, never cut (a little smaller font if the screen is tight)
+  const fit = () => {
+    const tb = box.querySelector(".ol-one"); if (!tb || !tb.offsetParent) return;
+    const cells = [...tb.querySelectorAll("td.nm")]; if (!cells.length) return;
+    const room = tb.parentElement.clientWidth - (104 + 82 + 110 + 100 + 100 + 68) - 130; // and 130 px at least for the location
+    let px = 14, need = 0;
+    for (;;) { tb.style.setProperty("--ol-name", `${px}px`); need = Math.ceil(Math.max(...cells.map((td) => td.firstChild.scrollWidth)) + 30); if (need <= room || px <= 11) break; px -= 0.5; }
+    tb.querySelector("col.ol-name").style.width = `${Math.max(120, need)}px`;
+  };
+  requestAnimationFrame(fit); if (document.fonts) document.fonts.ready.then(() => requestAnimationFrame(fit));
+  return box;
 }

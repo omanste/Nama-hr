@@ -678,3 +678,13 @@ input:disabled{background:var(--surface-2);color:var(--muted);cursor:not-allowed
 @media (max-width:600px){.q-row{padding:8px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}}
 
 .q-exp{gap:16px}.q-exp input{width:90px}
+/* the online check-in log: one line per person per day */
+.ol-one{table-layout:fixed;width:100%}
+.ol-one th,.ol-one td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;height:44px;padding:4px 6px;font-size:13.5px}
+.ol-one th{height:auto;white-space:normal;line-height:1.2;font-size:12.5px}
+.ol-one .c{text-align:center;font-variant-numeric:tabular-nums}
+.ol-one td.nm{overflow:visible;text-overflow:clip;font-size:var(--ol-name,14px)}.ol-one td.nm a{display:inline-block;white-space:nowrap;font-weight:500}
+.ol-one td.tmc{overflow:visible}
+.ol-cards{display:none}.ol-cname{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+@media (max-width:699px){.ol-wrap{display:none}.ol-cards{display:block}}
+.ol-n{margin-inline-start:4px;color:var(--muted);font-size:11px}

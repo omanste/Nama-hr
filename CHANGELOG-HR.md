@@ -22,6 +22,9 @@ The history before this page existed (26 October – 22 November 2026) was fille
 are the dates of each change on dev.
 
 ## 2026-11-23
+- [Attendance · Improvement] Online check-in log: one line per person per day | سجل الحضور الإلكتروني: سطر واحد لكل موظف في اليوم
+  Date, number, name on one line, department, check-in and check-out with small icons (🔐 📷 🗺️ ⚠️), hours and the place — all in one row; phones get a card per row. | التاريخ والرقم والاسم في سطر واحد والقسم والحضور والانصراف مع أيقونات صغيرة (🔐 📷 🗺️ ⚠️) والساعات والموقع — كلها في سطر واحد، وفي الهاتف بطاقة لكل سطر.
+  key: checkin-log-one-line
 - [Profiles · Improvement] Experience before Nama, at Nama and in total | الخبرة قبل نماء وفي نماء والإجمالي
   Staff enter their experience before Nama in years and months with their previous employers; the profile adds the time at Nama (from the join date) for the total. | يُدخل الموظف خبرته قبل نماء بالسنوات والأشهر مع جهات العمل السابقة، ويضيف الملف المدة في نماء (من تاريخ التعيين) ليظهر الإجمالي.
   key: prior-experience

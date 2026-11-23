@@ -822,7 +822,7 @@ const D = {
   ol_export_xlsx: ["تصدير Excel", "Export Excel"], ol_export_pdf: ["تصدير PDF", "Export PDF"], ol_pdf_title: ["سجل الحضور الإلكتروني · Online check-in log", "Online check-in log · سجل الحضور الإلكتروني"],
   ol_flag_filter: ["التنبيهات", "Flags"], ol_flag_all: ["الكل", "All"], ol_flag_flagged: ["المنبَّه عليها فقط", "Flagged only"], ol_flag_unverified: ["غير المتحقق منها فقط", "Unverified only"],
   ol_c_in: ["وقت الحضور", "Check-in time"], ol_c_out: ["وقت الانصراف", "Check-out time"], ol_c_loc: ["الموقع", "Location"], ol_c_method: ["طريقة التحقق", "Method"],
-  ol_c_flag: ["التنبيه", "Flag"], ol_c_decision: ["قرار المدير", "Manager decision"], ol_inside: ["داخل الموقع", "Inside"], ol_outside: ["خارج المواقع", "Outside"],
+  ol_c_flag: ["التنبيه", "Flag"], ol_c_decision: ["قرار المدير", "Manager decision"], ol_inside: ["داخل الموقع", "Inside"], ol_outside_short: ["خارج", "Outside"], ol_outside: ["خارج المواقع", "Outside"],
   ol_m_faceid: ["بصمة الوجه", "Face ID"], ol_m_photo: ["صورة", "Photo"], ol_st_ok: ["سليم", "OK"], ol_st_waiting: ["بانتظار القرار", "Waiting"], ol_st_rejected: ["مرفوض", "Rejected"], ol_st_incomplete: ["ناقص", "Incomplete"],
 };
 
