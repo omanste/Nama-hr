@@ -22,6 +22,9 @@ The history before this page existed (26 October – 22 November 2026) was fille
 are the dates of each change on dev.
 
 ## 2026-11-23
+- [Profiles · Improvement] Staff tab: “Didn't check out” after the shift ends | تبويب الموظفين: «لم يسجّل الانصراف» بعد نهاية الدوام
+  Someone who checked in and hasn't checked out by their expected check-out time now shows “Didn't check out” instead of “On duty”, unless they said they are still working. | من سجّل حضوره ولم يسجّل انصرافه حتى وقت الانصراف المتوقع يظهر «لم يسجّل الانصراف» بدل «في الدوام»، إلا إذا أبلغ أنه ما زال في العمل.
+  key: staff-no-checkout
 - [General · Fix] Phone layout: full names in the check-in log, tidier qualifications | عرض الهاتف: الأسماء كاملة في سجل الحضور وترتيب أفضل للمؤهلات
   On phones the online check-in log shows each name in full on its own line, the years since a degree stay together, and the course box uses the whole width. | على الهاتف يعرض سجل الحضور الإلكتروني كل اسم كاملاً في سطره، وتبقى سنوات المؤهل متصلة، وتأخذ خانة الدورة العرض كاملاً.
   key: phone-polish-nov23

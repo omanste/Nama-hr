@@ -802,6 +802,7 @@ const D = {
   now_excused: ["مستأذن", "Excused"], now_on_leave: ["في إجازة", "On leave"], now_mission: ["مهمة خارجية", "External task"], now_holiday: ["عطلة رسمية", "Holiday"],
   now_rest: ["راحة أسبوعية", "Weekly rest"], now_not_in: ["لم يحضر بعد", "Not in yet"], now_absent: ["غائب", "Absent"], now_pending: ["بانتظار طلب", "Request pending"],
   now_as_of: ["الآن ({t}):", "Now ({t}):"],
+  now_no_checkout: ["لم يسجّل الانصراف", "Didn't check out"], now_expected_out: ["الانصراف المتوقع {t}", "Expected check-out {t}"],
   now_no_record: ["لا يوجد تسجيل اليوم", "No record today"], now_exempt: ["خارج نظام الحضور", "Outside attendance"], now_missing_in: ["بصمة الحضور ناقصة", "Check-in missing"], now_unknown: ["—", "—"],
   now_no_record_tip: ["بيانات البصمة حتى {d}، ولا يوجد تسجيل إلكتروني اليوم", "Fingerprint data up to {d}; no online check-in today"],
   // degrees and courses with their year

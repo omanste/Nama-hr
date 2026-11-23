@@ -541,6 +541,8 @@ function presence(db, emp, today, nowMin) {
   // a weekend or an official holiday reads as one even when today has no attendance data yet (unless they came in)
   const offDay = isRestDay(today) ? "rest" : getSetting(db, "official_holidays", []).some((x) => x.date === today) ? "holiday" : null;
   const reqs = db.prepare("SELECT type, early_time, end_time, details FROM leave_requests WHERE employee_id=? AND status='approved' AND start_date<=? AND end_date>=?").all(emp.id, today, today);
+  // "I'm still working" (extra time after hours, waiting or approved): they are expected to be there after the shift
+  const stayingOn = !!db.prepare("SELECT 1 FROM leave_requests WHERE employee_id=? AND type='overtime' AND status IN ('pending','approved') AND start_date<=? AND end_date>=?").get(emp.id, today, today);
   const within = (a, b) => a !== null && b !== null && nowMin !== null && nowMin >= a && nowMin < b;
   const sh = d.shift || { start: 540, end: 1020 };
   const brk = reqs.find((r) => r.type === "break");
@@ -549,7 +551,13 @@ function presence(db, emp, today, nowMin) {
   if (reqs.some((r) => r.type === "mission" && (!r.early_time || within(clockMin(r.early_time), clockMin(r.end_time)))) || d.status === "mission") return { code: "mission" };
   const excused = reqs.some((r) => PERMISSION_TYPES.includes(r.type) && r.type !== "break" && (() => { try { const [a, b] = permissionSpan(r.type, { time: r.early_time, endTime: r.end_time, dayStart: sh.start, dayEnd: sh.end }); return within(a, b); } catch { return false; } })());
   if (d.in !== null && d.out !== null) return { code: "checked_out", in: d.in, out: d.out };
-  if (d.in !== null) return excused ? { code: "excused", in: d.in } : { code: "on_duty", in: d.in };
+  if (d.in !== null) {
+    if (excused) return { code: "excused", in: d.in };
+    // past the expected check-out (Flexible: arrival + 9 h; otherwise the shift's end) with no check-out
+    const expectedOut = d.expectedOut ?? sh.end;
+    if (nowMin !== null && nowMin >= expectedOut && !stayingOn) return { code: "no_checkout", in: d.in, expectedOut };
+    return { code: "on_duty", in: d.in };
+  }
   if (excused) return { code: "excused" };
   if (offDay) return { code: offDay };
   if (d.status === "holiday" || d.status === "holiday_worked") return { code: "holiday" };

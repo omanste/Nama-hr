@@ -101,3 +101,20 @@ test("no current person is left without a live status: no record today, weekend,
   const items = (await hr.c.get("/api/staff-list")).data.items.filter((x) => ["active", "on_leave"].includes(x.status));
   assert.ok(items.every((x) => x.now && x.now.code), "every current person has one");
 });
+
+test("after the expected check-out with no check-out: 'Didn't check out' — unless they said they're still working", async () => {
+  const { presenceNow } = await import("../server/attendance.mjs");
+  const { getEmployee } = await import("../server/employees.mjs");
+  const e = (await admin.post("/api/employees", { emp_no: "P20", name_ar: "بلا انصراف", join_date: "2021-01-01" })).data.employee;
+  const ins = t.db.prepare("INSERT INTO att_checkins(employee_id,kind,at,lat,lng,outside,created_at,ip,user_agent,checks,verified) VALUES(?,?,?,?,?,?,?,?,?,?,?)");
+  ins.run(e.id, "in", "2026-11-01 09:00", 23.6, 58.5, 0, "x", "1", "u", "{}", 1);
+  ins.run(e.id, "in", "2026-11-23 08:41", 23.6, 58.5, 0, "x", "1", "u", "{}", 1);
+  const at = (h, m) => presenceNow(t.db, getEmployee(t.db, e.id), "2026-11-23", h * 60 + m);
+  const exp = at(23, 0).expectedOut;
+  assert.equal(at(12, 0).code, "on_duty");
+  assert.equal(at(Math.floor((exp - 1) / 60), (exp - 1) % 60).code, "on_duty", "a minute before the expected check-out");
+  const late = at(Math.floor(exp / 60), exp % 60);
+  assert.deepEqual([late.code, late.in], ["no_checkout", 521]);
+  t.db.prepare("INSERT INTO leave_requests(employee_id,type,start_date,end_date,minutes,status,created_at) VALUES(?,?,?,?,?,?,?)").run(e.id, "overtime", "2026-11-23", "2026-11-23", 60, "pending", "x");
+  assert.equal(at(Math.floor(exp / 60), exp % 60 + 5).code, "on_duty", "said they're still working");
+});

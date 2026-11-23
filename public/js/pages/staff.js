@@ -66,12 +66,12 @@ export async function render(el, _p, { can, query }) {
   // the live status: where a current person is right now (from today's attendance); others keep their employment status
   const NOW_CLASS = { on_duty: "b-approved", checked_out: "b-disabled", on_break: "b-pending", excused: "b-on_leave", on_leave: "b-on_leave", mission: "b-mission",
     holiday: "b-disabled", rest: "b-disabled", not_in: "b-pending", absent: "b-rejected", pending: "b-pending",
-    missing_in: "b-pending", no_record: "b-disabled", exempt: "b-disabled", unknown: "b-disabled" };
+    missing_in: "b-pending", no_record: "b-disabled", exempt: "b-disabled", unknown: "b-disabled", no_checkout: "b-pending" };
   const live = (e) => (["active", "on_leave"].includes(e.status) && e.now && NOW_CLASS[e.now.code] ? e.now : null);
   const hm = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
   const nowText = (n) => t("now_" + n.code) + (n.code === "on_duty" || n.code === "excused" ? (n.in !== undefined && n.in !== null ? ` ${hm(n.in)}` : "") : n.code === "checked_out" ? ` ${hm(n.out)}` : n.code === "on_break" && n.since ? ` ${n.since}` : "");
   const statusText = (e) => (live(e) ? nowText(live(e)) : t("st_" + e.status));
-  const tipOf = (e, n) => (n.code === "no_record" ? t("now_no_record_tip", { d: n.lastUpload ? dmy(n.lastUpload) : "—" }) : t("st_" + e.status));
+  const tipOf = (e, n) => (n.code === "no_checkout" ? `${t("att_in")} ${hm(n.in)} · ${t("now_expected_out", { t: hm(n.expectedOut) })}` : n.code === "no_record" ? t("now_no_record_tip", { d: n.lastUpload ? dmy(n.lastUpload) : "—" }) : t("st_" + e.status));
   const statusBadge = (e) => (live(e) ? h("span", { class: `badge ${NOW_CLASS[live(e).code]}`, title: tipOf(e, live(e)) }, nowText(live(e))) : badge(e.status, "st_"));
   const cellText = (e, k) => k === "emp_no" ? e.emp_no || "—" : k === "name" ? (nameOf(e).text ? nameOf(e).text + (nameOf(e).tag ? ` ${nameOf(e).tag}` : "") : "—")
     : k === "dept" ? deptOf(e) || "—" : k === "job" ? jobOf(e) || "—" : k === "join" ? dmy(e.join_date) : k === "remaining" ? t("days", { n: num(daysLeft(e)) }) : statusText(e);
