@@ -685,7 +685,7 @@ input:disabled{background:var(--surface-2);color:var(--muted);cursor:not-allowed
 .ol-one .c{text-align:center;font-variant-numeric:tabular-nums}
 .ol-one td.nm{overflow:visible;text-overflow:clip;font-size:var(--ol-name,14px)}.ol-one td.nm a{display:inline-block;white-space:nowrap;font-weight:500}
 .ol-one td.tmc{overflow:visible}
-.ol-cards{display:none}.ol-cname{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.ol-cards{display:none}.ol-cname{white-space:nowrap;overflow:hidden;font-weight:700;font-size:15px}
 @media (max-width:699px){.ol-wrap{display:none}.ol-cards{display:block}}
 .ol-n{margin-inline-start:4px;color:var(--muted);font-size:11px}
 /* the attendance report: one line per row */
@@ -698,3 +698,5 @@ input:disabled{background:var(--surface-2);color:var(--muted);cursor:not-allowed
 .b-mission{background:color-mix(in srgb,#7b5cc4 18%,transparent);color:#7b5cc4}
 .sl-now{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 10px}
 .sl-now .badge{border:1px solid transparent;cursor:pointer;font:inherit;font-size:12px}.sl-now .badge.on{border-color:currentColor}
+.q-list .q-year b{white-space:nowrap}
+@media (max-width:600px){.q-row:not(:has(.q-d)){display:flex;flex-wrap:wrap;gap:6px}.q-row:not(:has(.q-d)) .q-f{flex:1 1 100%}.q-row:not(:has(.q-d)) .q-y{flex:0 0 110px}}

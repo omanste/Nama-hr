@@ -126,7 +126,8 @@ function logRows(rows) {
       h("td", { class: "c tmc" }, time(x.in)), h("td", { class: "c tmc" }, time(x.out), x.count > 2 ? h("small", { class: "ol-n", title: t("ol_count", { n: num(x.count) }) }, `×${num(x.count)}`) : null), h("td", { class: "c" }, hours(x)),
       h("td", { class: `cut${(x.in && x.in.outside) || (x.out && x.out.outside) ? " bad-text" : ""}`, title: whereFull(x) + more(x) }, where(x)))))));
   const cards = h("div", { class: "ol-cards" }, rows.map((x) => h("div", { class: "dd-card" },
-    h("div", { class: "dd-top" }, h("b", { class: "ol-cname" }, nameOf(x.employee)), h("span", { class: "muted" }, `${dmy(x.date).slice(0, 5)} ${weekday(x.date)}`)),
+    // the name on its own line (the whole width; a slightly smaller font if long — never cut), the date under it
+    h("div", { class: "ol-cname" }, nameOf(x.employee)), h("div", { class: "muted" }, `${dmy(x.date).slice(0, 5)} ${weekday(x.date)}`),
     h("div", { class: "dd-times" }, h("span", null, h("small", null, t("att_in")), " ", time(x.in)), h("span", null, h("small", null, t("att_out")), " ", time(x.out)), h("span", null, h("small", null, t("pdf_hours")), " ", hours(x))),
     h("div", { class: "sub" }, `${x.employee.emp_no} · ${dept(x.employee)} · ${where(x)}${more(x)}`))));
   const box = h("div", null, table, cards);
@@ -139,6 +140,7 @@ function logRows(rows) {
     for (;;) { tb.style.setProperty("--ol-name", `${px}px`); need = Math.ceil(Math.max(...cells.map((td) => td.firstChild.scrollWidth)) + 30); if (need <= room || px <= 11) break; px -= 0.5; }
     tb.querySelector("col.ol-name").style.width = `${Math.max(120, need)}px`;
   };
-  requestAnimationFrame(fit); if (document.fonts) document.fonts.ready.then(() => requestAnimationFrame(fit));
+  const shrink = () => box.querySelectorAll(".ol-cname").forEach((n) => { if (!n.offsetParent) return; n.style.fontSize = ""; let px = parseFloat(getComputedStyle(n).fontSize); while (n.scrollWidth > n.clientWidth + 1 && px > 10) { px -= 0.5; n.style.fontSize = `${px}px`; } });
+  requestAnimationFrame(() => { fit(); shrink(); }); if (document.fonts) document.fonts.ready.then(() => requestAnimationFrame(() => { fit(); shrink(); }));
   return box;
 }

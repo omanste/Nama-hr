@@ -22,6 +22,9 @@ The history before this page existed (26 October – 22 November 2026) was fille
 are the dates of each change on dev.
 
 ## 2026-11-23
+- [General · Fix] Phone layout: full names in the check-in log, tidier qualifications | عرض الهاتف: الأسماء كاملة في سجل الحضور وترتيب أفضل للمؤهلات
+  On phones the online check-in log shows each name in full on its own line, the years since a degree stay together, and the course box uses the whole width. | على الهاتف يعرض سجل الحضور الإلكتروني كل اسم كاملاً في سطره، وتبقى سنوات المؤهل متصلة، وتأخذ خانة الدورة العرض كاملاً.
+  key: phone-polish-nov23
 - [Profiles · Fix] Staff tab: every current person has a live status | تبويب الموظفين: حالة حية لكل موظف حالي
   People with nothing recorded today now show “No record today” (with the date the fingerprint data reaches), weekends and holidays always read as such, and the CEO and Chairman show “Outside attendance” — instead of a plain “Active”. | من لا يوجد له تسجيل اليوم يظهر «لا يوجد تسجيل اليوم» (مع تاريخ آخر بيانات البصمة)، وأيام الراحة والعطل تظهر كذلك دائماً، والرئيس التنفيذي ورئيس مجلس الإدارة «خارج نظام الحضور» — بدلاً من «نشط».
   key: staff-now-every
