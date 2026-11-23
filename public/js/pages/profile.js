@@ -12,7 +12,7 @@ import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, e
 import { balanceHero, requestItem } from "./home.js";
 import { render as rerender, refreshMe } from "../app.js";
 import { registerWithHelp, faceIdSupported, faceIdError } from "../checkin.js";
-import { degreesView, coursesView, listEditor } from "../quals.js";
+import { degreesView, coursesView, listEditor, languagesEditor, highestDegree, parseList } from "../quals.js";
 
 const DOC_TYPES = ["civil_id", "passport", "visa", "resume", "certificate", "course", "contract", "medical", "consent", "other"]; // also the order the categories are listed in
 // staff may add their own papers (a copy of their contract too); payout consents stay with HR (server enforces the same)
@@ -248,10 +248,13 @@ export async function render(el, params, { me, can, opts }) {
     p.seesBank ? bankCard(p, e, mayUpload) : null,
     h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_qualifications")), badgeIfPending(p, "qualifications"),
       mayUpload ? h("button", { class: "btn small", type: "button", onclick: () => qualDialog(e) }, t("edit")) : null), h("dl", { class: "facts" },
-      // each degree and course with its year, and how long ago
-      h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("f_degrees")), h("dd", null, degreesView(e.degrees))),
-      h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("f_courses")), h("dd", null, coursesView(e.courses))),
-      ["education", "specialization", "experience", "languages", "certifications"].map((k) => h("div", null, h("dt", null, t("f_" + k), oneLangTag(e[k])), h("dd", { dir: "auto" }, tx(e[k]) || "—"))),
+      // the highest degree (from the list), years of experience (from the join date), the languages; then each degree and
+      // course with its date and how long ago. A record without the lists still shows what was typed before.
+      h("div", null, h("dt", null, t("f_education")), h("dd", { dir: "auto" }, highestDegree(e.degrees) || tx(e.education) || "—")),
+      h("div", null, h("dt", null, t("f_experience_join")), h("dd", null, serviceLength(e.join_date) || "—")),
+      h("div", null, h("dt", null, t("f_languages"), oneLangTag(e.languages)), h("dd", { dir: "auto" }, tx(e.languages) || "—")),
+      h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("f_degrees")), h("dd", null, parseList(e.degrees).length || !e.specialization ? degreesView(e.degrees) : h("span", { dir: "auto" }, tx(e.specialization)))),
+      h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("f_courses")), h("dd", null, parseList(e.courses).length || !e.certifications ? coursesView(e.courses) : h("span", { dir: "auto" }, tx(e.certifications)))),
       ["skills", "main_tasks"].map((k) => h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("f_" + k), oneLangTag(e[k])), h("dd", { dir: "auto", style: { whiteSpace: "pre-line" } }, tx(e[k]) || "—"))))),
     documents(p, e, can, mayUpload, setPhoto),
     own || can.edit() ? devicesCard(e, own, can) : null,
@@ -483,7 +486,7 @@ function bankDialog(e) {
       return api.put(`/api/employees/${e.id}/bank`, { bank_name: bank.value === "__other" ? other.value.trim() : bank.value || null, bank_account: acct.value || null, bank_iban: iban.value || null });
     }, t("verify_note"));
 }
-const QUAL = ["education", "specialization", "experience", "languages", "certifications", "skills", "main_tasks"];
+const QUAL = ["skills", "main_tasks"]; // typed in both languages; the degrees, courses and languages have their own lists
 /** Qualifications in Arabic and English (stored together as "English | عربي"). */
 function qualDialog(e) {
   const boxes = QUAL.map((k) => {
@@ -493,12 +496,15 @@ function qualDialog(e) {
   });
   const rows = boxes.map(({ k, ar, en }) => h("div", { class: "field full bilingual" }, h("label", null, t("f_" + k)),
     h("div", { class: "pair" }, h("div", null, h("span", { class: "lang-tag" }, "عربي"), ar), h("div", null, h("span", { class: "lang-tag" }, "English"), en))));
-  // the degrees and courses lists, each with its year, come first
-  const deg = listEditor("degrees", e.degrees), crs = listEditor("courses", e.courses);
-  const lists = [h("div", { class: "field full" }, h("label", null, t("f_degrees")), h("div", { class: "hint" }, t("q_hint")), deg),
-    h("div", { class: "field full" }, h("label", null, t("f_courses")), crs)];
+  // the degrees (level from the list, specialization, graduation date — as many as needed), the courses, the languages
+  const deg = listEditor("degrees", e.degrees), crs = listEditor("courses", e.courses), langs = languagesEditor(e.languages);
+  const before = (k) => (!parseList(e[k === "certifications" ? "courses" : "degrees"]).length && tx(e[k]) ? h("div", { class: "hint" }, t("q_before"), " ", h("span", { dir: "auto" }, tx(e[k]))) : null);
+  const lists = [h("div", { class: "field full" }, h("label", null, t("f_degrees")), h("div", { class: "hint" }, t("q_hint")), before("education"), before("specialization"), deg),
+    h("div", { class: "field full" }, h("label", null, t("f_courses")), before("certifications"), crs),
+    h("div", { class: "field full" }, h("label", null, t("f_languages")), langs),
+    h("div", { class: "field full" }, h("label", null, t("f_experience_join")), h("div", null, serviceLength(e.join_date) || "—"), h("div", { class: "hint" }, t("q_exp_hint")))];
   return simpleDialog(t("sec_qualifications"), [...lists, ...rows],
-    () => api.put(`/api/employees/${e.id}/qualifications`, { ...Object.fromEntries(boxes.map(({ k, ar, en }) => [k, joinLangs(ar.value, en.value)])), degrees: deg.read(), courses: crs.read() }), t("verify_note"), true);
+    () => api.put(`/api/employees/${e.id}/qualifications`, { ...Object.fromEntries(boxes.map(({ k, ar, en }) => [k, joinLangs(ar.value, en.value)])), degrees: deg.read(), courses: crs.read(), languages: langs.read() }), t("verify_note"), true);
 }
 /** A dialog with fields and Save/Cancel; save() returns a promise. */
 function simpleDialog(title, fields, save, note, wide = false, onClose = null) {

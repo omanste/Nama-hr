@@ -800,8 +800,12 @@ const D = {
   // degrees and courses with their year
   f_degrees: ["المؤهلات العلمية", "Degrees"], f_courses: ["الدورات", "Courses"], q_year: ["سنة التخرج", "Year"], q_level: ["المؤهل", "Level"],
   q_course_name: ["اسم الدورة أو الشهادة", "Course or certificate"], q_add_degree: ["إضافة مؤهل", "Add a degree"], q_add_course: ["إضافة دورة", "Add a course"], q_remove: ["حذف", "Remove"],
-  q_hint: ["لكل مؤهل: المستوى والتخصص وسنة التخرج، فيظهر كم سنة مضت عليه.", "For each degree: the level, the specialization and the year — the profile then shows how many years ago."],
+  q_hint: ["لكل مؤهل: المستوى من القائمة والتخصص وتاريخ التخرج — أضف سطراً لكل تخصص، فيظهر كم سنة مضت عليه.", "For each degree: the level from the list, the specialization and the graduation date — a line for each specialization; the profile shows how many years ago."],
   q_this_year: ["هذه السنة", "this year"], q_one_year: ["سنة واحدة", "1 year"], q_n_years: ["{n} سنة", "{n} years"], q_two_years: ["سنتان", "2 years"], q_few_years: ["{n} سنوات", "{n} years"],
+  dl_general: ["دبلوم التعليم العام", "General Education Diploma"], dl_professional: ["شهادة مهنية معتمدة", "Professional certificate"],
+  q_grad_date: ["تاريخ التخرج", "Graduation date"], q_other_langs: ["لغات أخرى (افصل بفاصلة)", "Other languages (separate with commas)"],
+  lang_ar: ["العربية", "Arabic"], lang_en: ["الإنجليزية", "English"], f_experience_join: ["سنوات الخبرة (من تاريخ التعيين)", "Years of experience (from the join date)"],
+  q_exp_hint: ["تُحسب تلقائياً من تاريخ التعيين.", "Worked out from the join date."], q_before: ["المكتوب سابقاً:", "Typed before:"],
   dl_diploma: ["دبلوم", "Diploma"], dl_higher_diploma: ["دبلوم عالٍ", "Higher diploma"], dl_bachelor: ["بكالوريوس", "Bachelor"], dl_master: ["ماجستير", "Master"], dl_phd: ["دكتوراه", "PhD"], dl_other: ["أخرى", "Other"],
   // the PDF preview
   dd_note: ["ملاحظة", "Note"],

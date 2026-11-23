@@ -22,6 +22,9 @@ The history before this page existed (26 October – 22 November 2026) was fille
 are the dates of each change on dev.
 
 ## 2026-11-23
+- [Profiles · Improvement] Qualifications: certified levels from a list, a graduation date for each, languages as ticks, experience from the join date | المؤهلات: المستوى من قائمة معتمدة وتاريخ تخرج لكل مؤهل واللغات بالاختيار والخبرة من تاريخ التعيين
+  Add a line for each specialization with its level and graduation date; tick Arabic and English (and type any other language); years of experience are worked out from the join date. | أضف سطراً لكل تخصص مع المستوى وتاريخ التخرج، واختر العربية والإنجليزية (واكتب أي لغة أخرى)، وتُحسب سنوات الخبرة من تاريخ التعيين.
+  key: qual-lists-v2
 - [Profiles · Improvement] Degrees and courses with their year, and how long ago | المؤهلات العلمية والدورات مع سنة التخرج ومدتها
   Each degree (diploma to PhD, with the specialization) and each course has its year; the profile lists them newest first with how many years ago. | لكل مؤهل علمي (من الدبلوم إلى الدكتوراه مع التخصص) ولكل دورة سنتها، ويعرضها الملف من الأحدث مع عدد السنوات منذ الحصول عليها.
   key: degree-years
