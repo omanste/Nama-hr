@@ -246,6 +246,8 @@ const MIGRATIONS = [
     db.exec("ALTER TABLE att_punches ADD COLUMN source TEXT NOT NULL DEFAULT 'fingerprint'; ALTER TABLE att_checkins ADD COLUMN source TEXT DEFAULT 'online';");
     db.exec(`UPDATE att_checkins SET source=NULL WHERE lat IS NULL AND photo_file_id IS NULL AND device_id IS NULL AND ip IS NULL AND user_agent IS NULL AND checks IS NULL`);
   },
+  // 43: degrees and courses as lists with the year each was obtained (the profile shows how many years ago)
+  "ALTER TABLE employees ADD COLUMN degrees TEXT; ALTER TABLE employees ADD COLUMN courses TEXT;",
 ];
 
 /** Staff IDs in one format: NAMA- and three digits (NAMA-07 → NAMA-007), wherever that number isn't on another record

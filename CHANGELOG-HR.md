@@ -22,6 +22,9 @@ The history before this page existed (26 October – 22 November 2026) was fille
 are the dates of each change on dev.
 
 ## 2026-11-23
+- [Profiles · Improvement] Degrees and courses with their year, and how long ago | المؤهلات العلمية والدورات مع سنة التخرج ومدتها
+  Each degree (diploma to PhD, with the specialization) and each course has its year; the profile lists them newest first with how many years ago. | لكل مؤهل علمي (من الدبلوم إلى الدكتوراه مع التخصص) ولكل دورة سنتها، ويعرضها الملف من الأحدث مع عدد السنوات منذ الحصول عليها.
+  key: degree-years
 - [Profiles · Improvement] Work e-mail and personal e-mail side by side in the contact details | البريد الإلكتروني للعمل والبريد الشخصي جنباً إلى جنب في بيانات التواصل
   HR sets the work e-mail from the Contact window next to the personal one; staff see it there but can't change it. | تضبط الموارد البشرية بريد العمل من نافذة التواصل بجانب البريد الشخصي، ويراه الموظف دون أن يغيّره.
   key: work-email-contact

@@ -71,3 +71,19 @@ test("HR sets the work e-mail from the Contact window, next to the personal one;
   await staff.c.put(`/api/employees/${staff.emp.id}/contact`, { email: "other@x.om" });
   assert.equal((await hr.c.get(`/api/employees/${staff.emp.id}`)).data.employee.email, "staff.one@nama.om");
 });
+
+test("degrees and courses with their year: saved newest first, a wrong year refused, staff keep their own current", async () => {
+  const put = (c, b) => c.put(`/api/employees/${staff.emp.id}/qualifications`, b);
+  const r = await put(staff.c, { degrees: [{ level: "bachelor", field: "Marketing", year: 2008 }, { level: "phd", field: "Economics", year: 2019 }, { level: "master", field: "Management", year: 2013 }],
+    courses: [{ name: "Project management", year: 2021 }] });
+  assert.equal(r.status, 200);
+  assert.deepEqual(JSON.parse(r.data.employee.degrees).map((d) => [d.level, d.year]), [["phd", 2019], ["master", 2013], ["bachelor", 2008]]);
+  assert.equal(JSON.parse(r.data.employee.courses)[0].name, "Project management");
+  // a diploma still being finished: this year is fine; next year isn't
+  const thisYear = Number(new Date().toISOString().slice(0, 4));
+  assert.equal((await put(staff.c, { degrees: [{ level: "diploma", field: "Sharia sciences", year: thisYear }] })).status, 200);
+  const bad = await put(staff.c, { degrees: [{ level: "diploma", field: "Sharia sciences", year: 2999 }] });
+  assert.equal(bad.status, 400); assert.equal(bad.data.field, "degrees");
+  assert.equal((await put(staff.c, { degrees: [{ level: "master", field: "", year: 2010 }] })).status, 400, "the specialization is needed");
+  assert.equal((await put(hr.c, { courses: [] })).data.employee.courses, null, "an empty list clears it");
+});

@@ -1,5 +1,6 @@
 // Profile updates to verify (HR, Admin): what each person changed in their own profile — before and after — to confirm or undo.
 import { api } from "../api.js";
+import { listText } from "../quals.js";
 import { t, nm, getLang, tx } from "../i18n.js";
 import { countryName } from "../countries.js";
 import { h, select, pageHead, empty, dmy, dateTime, toast, errText, confirm, avatar, viewFile } from "../ui.js";
@@ -13,6 +14,7 @@ function show(k, v) {
   if (v === null || v === undefined || v === "") return h("span", { class: "muted" }, "—");
   if (k === "photo_file_id") return h("img", { src: `/api/files/${v}?w=192`, alt: "", class: "pc-photo", loading: "lazy" });
   if (DATES.includes(k)) return dmy(v);
+  if (k === "degrees" || k === "courses") return listText(k, v) || "—";
   if (k === "gender") return t("g_" + v);
   if (k === "nationality") return countryName(v, getLang());
   if (k === "bank_name") return bankName(v);

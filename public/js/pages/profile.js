@@ -12,6 +12,7 @@ import { h, badge, avatar, dmy, dateTime, daysText, num, daysOf, empty, toast, e
 import { balanceHero, requestItem } from "./home.js";
 import { render as rerender, refreshMe } from "../app.js";
 import { registerWithHelp, faceIdSupported, faceIdError } from "../checkin.js";
+import { degreesView, coursesView, listEditor } from "../quals.js";
 
 const DOC_TYPES = ["civil_id", "passport", "visa", "resume", "certificate", "course", "contract", "medical", "consent", "other"]; // also the order the categories are listed in
 // staff may add their own papers (a copy of their contract too); payout consents stay with HR (server enforces the same)
@@ -247,6 +248,9 @@ export async function render(el, params, { me, can, opts }) {
     p.seesBank ? bankCard(p, e, mayUpload) : null,
     h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", null, t("sec_qualifications")), badgeIfPending(p, "qualifications"),
       mayUpload ? h("button", { class: "btn small", type: "button", onclick: () => qualDialog(e) }, t("edit")) : null), h("dl", { class: "facts" },
+      // each degree and course with its year, and how long ago
+      h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("f_degrees")), h("dd", null, degreesView(e.degrees))),
+      h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("f_courses")), h("dd", null, coursesView(e.courses))),
       ["education", "specialization", "experience", "languages", "certifications"].map((k) => h("div", null, h("dt", null, t("f_" + k), oneLangTag(e[k])), h("dd", { dir: "auto" }, tx(e[k]) || "—"))),
       ["skills", "main_tasks"].map((k) => h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("f_" + k), oneLangTag(e[k])), h("dd", { dir: "auto", style: { whiteSpace: "pre-line" } }, tx(e[k]) || "—"))))),
     documents(p, e, can, mayUpload, setPhoto),
@@ -489,8 +493,12 @@ function qualDialog(e) {
   });
   const rows = boxes.map(({ k, ar, en }) => h("div", { class: "field full bilingual" }, h("label", null, t("f_" + k)),
     h("div", { class: "pair" }, h("div", null, h("span", { class: "lang-tag" }, "عربي"), ar), h("div", null, h("span", { class: "lang-tag" }, "English"), en))));
-  return simpleDialog(t("sec_qualifications"), rows,
-    () => api.put(`/api/employees/${e.id}/qualifications`, Object.fromEntries(boxes.map(({ k, ar, en }) => [k, joinLangs(ar.value, en.value)]))), t("verify_note"), true);
+  // the degrees and courses lists, each with its year, come first
+  const deg = listEditor("degrees", e.degrees), crs = listEditor("courses", e.courses);
+  const lists = [h("div", { class: "field full" }, h("label", null, t("f_degrees")), h("div", { class: "hint" }, t("q_hint")), deg),
+    h("div", { class: "field full" }, h("label", null, t("f_courses")), crs)];
+  return simpleDialog(t("sec_qualifications"), [...lists, ...rows],
+    () => api.put(`/api/employees/${e.id}/qualifications`, { ...Object.fromEntries(boxes.map(({ k, ar, en }) => [k, joinLangs(ar.value, en.value)])), degrees: deg.read(), courses: crs.read() }), t("verify_note"), true);
 }
 /** A dialog with fields and Save/Cancel; save() returns a promise. */
 function simpleDialog(title, fields, save, note, wide = false, onClose = null) {

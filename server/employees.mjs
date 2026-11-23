@@ -37,7 +37,11 @@ const LEFT = ["resigned", "terminated"]; // left the company: the last working d
 const TEXT = ["name_ar", "name_en", "civil_id", "passport_no", "nationality", "mobile", "address", "emergency_name", "emergency_relation", "emergency_phone", "job_title", "contract_type"];
 const DATES = ["civil_id_expiry", "passport_expiry", "visa_expiry", "dob", "join_date", "contract_end", "last_working_day"];
 export const LONG = ["education", "specialization", "experience", "languages", "skills", "certifications", "main_tasks"];
-export const FIELDS = ["emp_no", ...TEXT, ...LONG, "email", ...DATES, "department_id", "manager_employee_id", "status", "gender", "shift", "shift_locked", "faceid_exempt", "verify_photo", "verify_faceid", "verify_location", "att_mode", "reports_to_top", "personal_email", "personal_phone", "perm_wilayat", "current_area", ...BANK];
+/** Degrees and courses as lists, each with the year it was obtained (so the profile shows how long ago): degrees
+ * [{level, field, year}], courses [{name, year}]; stored as JSON. */
+export const QUAL_LISTS = ["degrees", "courses"];
+export const DEGREE_LEVELS = ["diploma", "higher_diploma", "bachelor", "master", "phd", "other"];
+export const FIELDS = ["emp_no", ...TEXT, ...LONG, ...QUAL_LISTS, "email", ...DATES, "department_id", "manager_employee_id", "status", "gender", "shift", "shift_locked", "faceid_exempt", "verify_photo", "verify_faceid", "verify_location", "att_mode", "reports_to_top", "personal_email", "personal_phone", "perm_wilayat", "current_area", ...BANK];
 export const GENDERS = ["male", "female"];
 const EXPIRIES = ["civil_id_expiry", "passport_expiry", "visa_expiry"];
 /** An email as typed on any keyboard: without invisible direction marks, zero-width characters and spaces, in lower case. */
@@ -64,6 +68,29 @@ export function nextEmpNo(db) {
   return `NAMA-${String(max + 1).padStart(3, "0")}`;
 }
 
+/** A degrees / courses list (array, or its JSON) → clean JSON text, or null when empty. A year from 1950 to this year. */
+function cleanQualList(k, v, today) {
+  if (v === null || v === undefined || v === "") return null;
+  let list = v;
+  if (typeof v === "string") { try { list = JSON.parse(v); } catch { throw bad(k, "a list is expected"); } }
+  if (!Array.isArray(list) || list.length > 30) throw bad(k, "a list of up to 30 items is expected");
+  const thisYear = Number(String(today || new Date().toISOString()).slice(0, 4));
+  const out = list.filter((x) => x && typeof x === "object").map((x, i) => {
+    const year = x.year === null || x.year === undefined || x.year === "" ? null : Number(x.year);
+    if (year !== null && !(Number.isInteger(year) && year >= 1950 && year <= thisYear)) throw bad(k, `line ${i + 1}: the year must be between 1950 and ${thisYear}`);
+    if (k === "degrees") {
+      const level = DEGREE_LEVELS.includes(x.level) ? x.level : "other";
+      const field = String(x.field || "").trim().slice(0, 150);
+      if (!field) throw bad(k, `line ${i + 1}: write the specialization`);
+      return { level, field, year };
+    }
+    const name = String(x.name || "").trim().slice(0, 150);
+    if (!name) throw bad(k, `line ${i + 1}: write the course name`);
+    return { name, year };
+  }).sort((a, b) => (b.year || 0) - (a.year || 0));
+  return out.length ? JSON.stringify(out) : null;
+}
+
 /** Validate and clean a profile payload; `cur` is the existing row on update. */
 export function cleanEmployee(db, body, cur = null, { today = null, form = false } = {}) {
   const out = {};
@@ -82,6 +109,7 @@ export function cleanEmployee(db, body, cur = null, { today = null, form = false
     }
     if (k === "bank_account" && v !== null) { v = v.replace(/[\s-]/g, ""); if (!/^\d{6,20}$/.test(v)) throw bad(k, "The account number is 6–20 digits"); }
     if (k === "bank_iban" && v !== null) { v = v.replace(/\s/g, "").toUpperCase(); if (!validIban(v)) throw bad(k, "Not a valid Oman IBAN (OM + 21 characters)"); }
+    if (QUAL_LISTS.includes(k)) { out[k] = cleanQualList(k, v, today); continue; }
     if (k === "status" && !STATUSES.includes(v ?? "active")) throw bad(k, "unknown status");
     if (k === "status" && v === null) v = "active";
     if (k === "gender" && v !== null && !GENDERS.includes(v)) throw bad(k, "gender must be male or female");
@@ -290,7 +318,7 @@ export function registerEmployees(api, ctx) {
     send(req, res, 200, { employee: emp });
   });
   selfSection("contact", CONTACT, ["email"]);
-  selfSection("qualifications", LONG);
+  selfSection("qualifications", [...LONG, ...QUAL_LISTS]);
   selfSection("bank", BANK);
   // ID numbers and dates typed by hand (when a document couldn't be read) — HR verifies them like the rest
   selfSection("identity", ["civil_id", "civil_id_expiry", "passport_no", "passport_expiry", "visa_expiry"]);
