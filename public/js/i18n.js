@@ -190,7 +190,7 @@ const D = {
   f_status: ["الحالة", "Status"], f_opening_days: ["الرصيد الافتتاحي (أيام)", "Opening balance (days)"],
   f_opening_hint: ["للموظفين الحاليين: الرصيد المتبقي اليوم. اتركه فارغاً لإضافة ٣٠ يوماً.", "For existing staff: today's remaining balance. Leave empty to credit 30 days."],
   sec_qualifications: ["المؤهلات والخبرات", "Qualifications"], f_education: ["أعلى مؤهل علمي", "Highest qualification"],
-  f_specialization: ["التخصص", "Specialization"], f_experience: ["سنوات الخبرة", "Years of experience"], f_languages: ["اللغات", "Languages"],
+  f_specialization: ["التخصص", "Specialization"], f_experience: ["جهات العمل والمهام السابقة", "Previous employers / roles"], f_languages: ["اللغات", "Languages"],
   f_skills: ["المهارات", "Key skills"], f_certifications: ["الدورات والشهادات", "Courses & certifications"], f_main_tasks: ["المهام الرئيسية", "Main tasks"],
   f_manager: ["المدير المباشر (رقم أو اسم)", "Direct manager (ID or name)"],
   login_account: ["حساب الدخول", "Login"], create_login: ["إنشاء حساب دخول", "Create login"], no_login: ["لا يوجد حساب دخول", "No login yet"],
@@ -804,7 +804,8 @@ const D = {
   q_this_year: ["هذه السنة", "this year"], q_one_year: ["سنة واحدة", "1 year"], q_n_years: ["{n} سنة", "{n} years"], q_two_years: ["سنتان", "2 years"], q_few_years: ["{n} سنوات", "{n} years"],
   dl_general: ["دبلوم التعليم العام", "General Education Diploma"], dl_professional: ["شهادة مهنية معتمدة", "Professional certificate"],
   q_grad_date: ["تاريخ التخرج", "Graduation date"], q_other_langs: ["لغات أخرى (افصل بفاصلة)", "Other languages (separate with commas)"],
-  lang_ar: ["العربية", "Arabic"], lang_en: ["الإنجليزية", "English"], f_experience_join: ["سنوات الخبرة (من تاريخ التعيين)", "Years of experience (from the join date)"],
+  lang_ar: ["العربية", "Arabic"], lang_en: ["الإنجليزية", "English"], f_experience_join: ["الخبرة في نماء (من تاريخ التعيين)", "Experience at Nama (from the join date)"],
+  f_prior_exp: ["الخبرة قبل نماء", "Experience before Nama"], f_total_exp: ["إجمالي الخبرة", "Total experience"], q_years: ["سنوات", "Years"], q_months: ["أشهر", "Months"],
   q_exp_hint: ["تُحسب تلقائياً من تاريخ التعيين.", "Worked out from the join date."], q_before: ["المكتوب سابقاً:", "Typed before:"],
   dl_diploma: ["دبلوم", "Diploma"], dl_higher_diploma: ["دبلوم عالٍ", "Higher diploma"], dl_bachelor: ["بكالوريوس", "Bachelor"], dl_master: ["ماجستير", "Master"], dl_phd: ["دكتوراه", "PhD"], dl_other: ["أخرى", "Other"],
   // the PDF preview

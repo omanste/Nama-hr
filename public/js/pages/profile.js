@@ -251,7 +251,12 @@ export async function render(el, params, { me, can, opts }) {
       // the highest degree (from the list), years of experience (from the join date), the languages; then each degree and
       // course with its date and how long ago. A record without the lists still shows what was typed before.
       h("div", null, h("dt", null, t("f_education")), h("dd", { dir: "auto" }, highestDegree(e.degrees) || tx(e.education) || "—")),
+      // experience before Nama (typed), at Nama (from the join date) and the two together
+      h("div", null, h("dt", null, t("f_prior_exp")), h("dd", null, e.prior_exp_months ? monthsText(e.prior_exp_months) : "—",
+        e.experience ? h("div", { class: "sub", dir: "auto", style: { whiteSpace: "pre-line" } }, tx(e.experience)) : null)),
       h("div", null, h("dt", null, t("f_experience_join")), h("dd", null, serviceLength(e.join_date) || "—")),
+      h("div", null, h("dt", null, t("f_total_exp")), h("dd", null, e.prior_exp_months === null || e.prior_exp_months === undefined ? "—"
+        : monthsText(e.prior_exp_months + Math.max(0, serviceMonths(e.join_date) || 0)))),
       h("div", null, h("dt", null, t("f_languages"), oneLangTag(e.languages)), h("dd", { dir: "auto" }, tx(e.languages) || "—")),
       h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("f_degrees")), h("dd", null, parseList(e.degrees).length || !e.specialization ? degreesView(e.degrees) : h("span", { dir: "auto" }, tx(e.specialization)))),
       h("div", { style: { gridColumn: "1/-1" } }, h("dt", null, t("f_courses")), h("dd", null, parseList(e.courses).length || !e.certifications ? coursesView(e.courses) : h("span", { dir: "auto" }, tx(e.certifications)))),
@@ -486,7 +491,7 @@ function bankDialog(e) {
       return api.put(`/api/employees/${e.id}/bank`, { bank_name: bank.value === "__other" ? other.value.trim() : bank.value || null, bank_account: acct.value || null, bank_iban: iban.value || null });
     }, t("verify_note"));
 }
-const QUAL = ["skills", "main_tasks"]; // typed in both languages; the degrees, courses and languages have their own lists
+const QUAL = ["experience", "skills", "main_tasks"]; // typed in both languages; the degrees, courses and languages have their own lists
 /** Qualifications in Arabic and English (stored together as "English | عربي"). */
 function qualDialog(e) {
   const boxes = QUAL.map((k) => {
@@ -498,13 +503,20 @@ function qualDialog(e) {
     h("div", { class: "pair" }, h("div", null, h("span", { class: "lang-tag" }, "عربي"), ar), h("div", null, h("span", { class: "lang-tag" }, "English"), en))));
   // the degrees (level from the list, specialization, graduation date — as many as needed), the courses, the languages
   const deg = listEditor("degrees", e.degrees), crs = listEditor("courses", e.courses), langs = languagesEditor(e.languages);
+  const pm = e.prior_exp_months ?? null;
+  const pYears = h("input", { type: "number", min: "0", max: "50", step: "1", inputmode: "numeric", value: pm === null ? "" : Math.floor(pm / 12), "aria-label": t("q_years") });
+  const pMonths = h("input", { type: "number", min: "0", max: "11", step: "1", inputmode: "numeric", value: pm === null ? "" : pm % 12, "aria-label": t("q_months") });
+  const priorMonths = () => { const y = pYears.value.trim(), m = pMonths.value.trim(); if (!y && !m) return null; return Number(y || 0) * 12 + Number(m || 0); };
   const before = (k) => (!parseList(e[k === "certifications" ? "courses" : "degrees"]).length && tx(e[k]) ? h("div", { class: "hint" }, t("q_before"), " ", h("span", { dir: "auto" }, tx(e[k]))) : null);
   const lists = [h("div", { class: "field full" }, h("label", null, t("f_degrees")), h("div", { class: "hint" }, t("q_hint")), before("education"), before("specialization"), deg),
     h("div", { class: "field full" }, h("label", null, t("f_courses")), before("certifications"), crs),
     h("div", { class: "field full" }, h("label", null, t("f_languages")), langs),
+    // experience before Nama: years and months (saved in months); at Nama: from the join date
+    h("div", { class: "field full" }, h("label", null, t("f_prior_exp")), h("div", { class: "row q-exp" },
+      h("label", { class: "row" }, pYears, t("q_years")), h("label", { class: "row" }, pMonths, t("q_months")))),
     h("div", { class: "field full" }, h("label", null, t("f_experience_join")), h("div", null, serviceLength(e.join_date) || "—"), h("div", { class: "hint" }, t("q_exp_hint")))];
   return simpleDialog(t("sec_qualifications"), [...lists, ...rows],
-    () => api.put(`/api/employees/${e.id}/qualifications`, { ...Object.fromEntries(boxes.map(({ k, ar, en }) => [k, joinLangs(ar.value, en.value)])), degrees: deg.read(), courses: crs.read(), languages: langs.read() }), t("verify_note"), true);
+    () => api.put(`/api/employees/${e.id}/qualifications`, { ...Object.fromEntries(boxes.map(({ k, ar, en }) => [k, joinLangs(ar.value, en.value)])), degrees: deg.read(), courses: crs.read(), languages: langs.read(), prior_exp_months: priorMonths() }), t("verify_note"), true);
 }
 /** A dialog with fields and Save/Cancel; save() returns a promise. */
 function simpleDialog(title, fields, save, note, wide = false, onClose = null) {
@@ -793,11 +805,21 @@ function ageText(dob) {
   return t(years === 1 ? "one_year" : years === 2 ? "two_years" : years <= 10 ? "n_years" : "n_years_11", { n: num(years) });
 }
 /** Time since joining, e.g. "1 year and 6 months" (whole months, as of today). */
-function serviceLength(join) {
+/** Whole months at Nama from the join date (null without one; negative before it starts). */
+function serviceMonths(join) {
   if (!join) return null;
   const [y1, m1, d1] = join.split("-").map(Number), [y2, m2, d2] = todayIso().split("-").map(Number);
-  let months = (y2 - y1) * 12 + (m2 - m1) - (d2 < d1 ? 1 : 0);
-  if (months < 0) return t("not_started");
+  return (y2 - y1) * 12 + (m2 - m1) - (d2 < d1 ? 1 : 0);
+}
+function serviceLength(join) {
+  const m = serviceMonths(join);
+  if (m === null) return null;
+  if (m < 0) return t("not_started");
+  return monthsText(m);
+}
+/** A length in months as "5 years and 6 months" (Arabic counting). */
+function monthsText(total) {
+  let months = total;
   const years = Math.floor(months / 12); months %= 12;
   // Arabic counts: 1 · 2 (dual) · 3–10 (plural) · 11+ (singular)
   const form = (n, unit) => t(n === 1 ? `one_${unit}` : n === 2 ? `two_${unit}s` : n <= 10 ? `n_${unit}s` : `n_${unit}s_11`, { n: num(n) });

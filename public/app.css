@@ -676,3 +676,5 @@ input:disabled{background:var(--surface-2);color:var(--muted);cursor:not-allowed
 @media (max-width:600px){.q-row:has(.q-d){grid-template-columns:1fr auto}.q-row:has(.q-d) .q-f{grid-column:1/-1}}
 .q-langs{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center}.q-langs input[type=checkbox]{width:20px;height:20px;min-height:0}.q-langs > input{flex:1 1 220px}
 @media (max-width:600px){.q-row{padding:8px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}}
+
+.q-exp{gap:16px}.q-exp input{width:90px}

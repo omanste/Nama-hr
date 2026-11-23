@@ -41,7 +41,7 @@ export const LONG = ["education", "specialization", "experience", "languages", "
  * [{level, field, year}], courses [{name, year}]; stored as JSON. */
 export const QUAL_LISTS = ["degrees", "courses"];
 export const DEGREE_LEVELS = ["general", "diploma", "higher_diploma", "bachelor", "master", "phd", "professional", "other"];
-export const FIELDS = ["emp_no", ...TEXT, ...LONG, ...QUAL_LISTS, "email", ...DATES, "department_id", "manager_employee_id", "status", "gender", "shift", "shift_locked", "faceid_exempt", "verify_photo", "verify_faceid", "verify_location", "att_mode", "reports_to_top", "personal_email", "personal_phone", "perm_wilayat", "current_area", ...BANK];
+export const FIELDS = ["emp_no", ...TEXT, ...LONG, ...QUAL_LISTS, "prior_exp_months", "email", ...DATES, "department_id", "manager_employee_id", "status", "gender", "shift", "shift_locked", "faceid_exempt", "verify_photo", "verify_faceid", "verify_location", "att_mode", "reports_to_top", "personal_email", "personal_phone", "perm_wilayat", "current_area", ...BANK];
 export const GENDERS = ["male", "female"];
 const EXPIRIES = ["civil_id_expiry", "passport_expiry", "visa_expiry"];
 /** An email as typed on any keyboard: without invisible direction marks, zero-width characters and spaces, in lower case. */
@@ -113,6 +113,8 @@ export function cleanEmployee(db, body, cur = null, { today = null, form = false
     if (k === "bank_account" && v !== null) { v = v.replace(/[\s-]/g, ""); if (!/^\d{6,20}$/.test(v)) throw bad(k, "The account number is 6–20 digits"); }
     if (k === "bank_iban" && v !== null) { v = v.replace(/\s/g, "").toUpperCase(); if (!validIban(v)) throw bad(k, "Not a valid Oman IBAN (OM + 21 characters)"); }
     if (QUAL_LISTS.includes(k)) { out[k] = cleanQualList(k, v, today); continue; }
+    // experience before Nama: whole months, up to 50 years
+    if (k === "prior_exp_months") { if (v === null) { out[k] = null; continue; } v = Number(v); if (!Number.isInteger(v) || v < 0 || v > 600) throw bad(k, "Experience before Nama: 0 to 50 years"); out[k] = v; continue; }
     if (k === "status" && !STATUSES.includes(v ?? "active")) throw bad(k, "unknown status");
     if (k === "status" && v === null) v = "active";
     if (k === "gender" && v !== null && !GENDERS.includes(v)) throw bad(k, "gender must be male or female");
@@ -321,7 +323,7 @@ export function registerEmployees(api, ctx) {
     send(req, res, 200, { employee: emp });
   });
   selfSection("contact", CONTACT, ["email"]);
-  selfSection("qualifications", [...LONG, ...QUAL_LISTS]);
+  selfSection("qualifications", [...LONG, ...QUAL_LISTS, "prior_exp_months"]);
   selfSection("bank", BANK);
   // ID numbers and dates typed by hand (when a document couldn't be read) — HR verifies them like the rest
   selfSection("identity", ["civil_id", "civil_id_expiry", "passport_no", "passport_expiry", "visa_expiry"]);

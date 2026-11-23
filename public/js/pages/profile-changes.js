@@ -15,6 +15,7 @@ function show(k, v) {
   if (k === "photo_file_id") return h("img", { src: `/api/files/${v}?w=192`, alt: "", class: "pc-photo", loading: "lazy" });
   if (DATES.includes(k)) return dmy(v);
   if (k === "degrees" || k === "courses") return listText(k, v) || "—";
+  if (k === "prior_exp_months") { const y = Math.floor(v / 12), m = v % 12; return `${y ? `${y} ${t("q_years")}` : ""}${y && m ? " · " : ""}${m ? `${m} ${t("q_months")}` : ""}` || "0"; }
   if (k === "gender") return t("g_" + v);
   if (k === "nationality") return countryName(v, getLang());
   if (k === "bank_name") return bankName(v);

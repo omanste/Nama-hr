@@ -91,3 +91,12 @@ test("degrees and courses with their year: saved newest first, a wrong year refu
   assert.equal((await put(staff.c, { degrees: [{ level: "master", field: "", year: 2010 }] })).status, 400, "the specialization is needed");
   assert.equal((await put(hr.c, { courses: [] })).data.employee.courses, null, "an empty list clears it");
 });
+
+test("experience before Nama: kept in months (0–50 years), with the previous employers in both languages", async () => {
+  const put = (c, b) => c.put(`/api/employees/${staff.emp.id}/qualifications`, b);
+  const r = await put(staff.c, { prior_exp_months: 66, experience: "Oman Bank, sales officer | بنك عُمان، موظف مبيعات" });
+  assert.equal(r.status, 200); assert.equal(r.data.employee.prior_exp_months, 66);
+  for (const bad of [601, -1, 2.5, "x"]) assert.equal((await put(staff.c, { prior_exp_months: bad })).status, 400, String(bad));
+  assert.equal((await put(hr.c, { prior_exp_months: 24 })).data.employee.prior_exp_months, 24, "HR can change it");
+  assert.equal((await put(hr.c, { prior_exp_months: null })).data.employee.prior_exp_months, null, "and clear it");
+});

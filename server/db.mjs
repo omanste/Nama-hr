@@ -248,6 +248,8 @@ const MIGRATIONS = [
   },
   // 43: degrees and courses as lists with the year each was obtained (the profile shows how many years ago)
   "ALTER TABLE employees ADD COLUMN degrees TEXT; ALTER TABLE employees ADD COLUMN courses TEXT;",
+  // 44: experience before Nama, in months (the time at Nama comes from the join date)
+  "ALTER TABLE employees ADD COLUMN prior_exp_months INTEGER;",
 ];
 
 /** Staff IDs in one format: NAMA- and three digits (NAMA-07 → NAMA-007), wherever that number isn't on another record

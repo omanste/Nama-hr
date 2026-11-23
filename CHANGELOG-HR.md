@@ -22,6 +22,9 @@ The history before this page existed (26 October – 22 November 2026) was fille
 are the dates of each change on dev.
 
 ## 2026-11-23
+- [Profiles · Improvement] Experience before Nama, at Nama and in total | الخبرة قبل نماء وفي نماء والإجمالي
+  Staff enter their experience before Nama in years and months with their previous employers; the profile adds the time at Nama (from the join date) for the total. | يُدخل الموظف خبرته قبل نماء بالسنوات والأشهر مع جهات العمل السابقة، ويضيف الملف المدة في نماء (من تاريخ التعيين) ليظهر الإجمالي.
+  key: prior-experience
 - [Profiles · Improvement] Qualifications: certified levels from a list, a graduation date for each, languages as ticks, experience from the join date | المؤهلات: المستوى من قائمة معتمدة وتاريخ تخرج لكل مؤهل واللغات بالاختيار والخبرة من تاريخ التعيين
   Add a line for each specialization with its level and graduation date; tick Arabic and English (and type any other language); years of experience are worked out from the join date. | أضف سطراً لكل تخصص مع المستوى وتاريخ التخرج، واختر العربية والإنجليزية (واكتب أي لغة أخرى)، وتُحسب سنوات الخبرة من تاريخ التعيين.
   key: qual-lists-v2
